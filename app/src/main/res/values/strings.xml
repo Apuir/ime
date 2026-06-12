@@ -1,3 +1,52 @@
 <resources>
     <string name="app_name">ime</string>
+    <string name="done">done</string>
+    <string name="rime_daemon">Rime守护进程</string>
+    <string name="rime_deploy_finish">Rime部署完成</string>
+    <string name="rime_deploy_failure">Rime部署失败</string>
+    <string name="deploy_progress">Rime部署进度</string>
+    <string name="rime_restarting">Rime重启中</string>
+
+    <string name="basic_settings">基本设置</string>
+    <string name="theme">主题</string>
+    <string name="theme_follow_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+
+    <string name="key_feedback">按键设置</string>
+    <string name="key_sound">按键音</string>
+    <string name="key_vibration">按键振动</string>
+    <string name="key_x_gap">按键X轴间隔</string>
+    <string name="key_y_gap">按键Y轴间隔</string>
+
+    <string name="keyboard_layout">键盘布局</string>
+    <string name="keyboard_height">键盘高度</string>
+
+    <!-- IME Setup -->
+    <string name="ime_setup_title">输入法设置</string>
+    <string name="ime_setup_description">使用前需要进行以下设置</string>
+    <string name="enable_ime">启用输入法</string>
+    <string name="enable_ime_desc">在系统设置中启用此输入法</string>
+    <string name="set_default_ime">设为默认输入法</string>
+    <string name="set_default_ime_desc">将本输入法设置为系统当前输入法</string>
+    <string name="not_enabled">未启用</string>
+    <string name="enabled">已启用</string>
+    <string name="not_default">未设置为默认输入法</string>
+    <string name="is_default">当前输入法</string>
+    <string name="go_to_settings">前往设置</string>
+    <string name="select_ime">选择输入法</string>
+    <string name="start_using">开始使用</string>
+    <string name="enter_settings">进入设置</string>
+
+    <!-- Keyboard Settings -->
+    <string name="keyboard_settings">键盘设置</string>
+    <string name="keyboard_settings_desc">按键反馈、布局、输入辅助等</string>
+    <string name="horizontal_padding">两侧边距</string>
+    <string name="bottom_padding">底部边距</string>
+    <string name="ignore_system_insets">忽略系统边衬区</string>
+    <string name="keyboard_theme">键盘主题</string>
+
+    <!-- General -->
+    <string name="cancel">取消</string>
+    <string name="back">返回</string>
 </resources>

@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# EngineInitializer is only referenced from AndroidManifest.xml (meta-data),
+# so ProGuard/R8 would strip it during minification. Keep it explicitly.
+-keep class com.ninthsoft.ime.engine.EngineInitializer { *; }
