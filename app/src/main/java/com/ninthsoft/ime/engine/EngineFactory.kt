@@ -17,7 +17,7 @@ object EngineFactory {
     ): T {
         return try {
             clazz.java.getDeclaredConstructor().newInstance().also {
-                it.initialize(context)
+                it.onCreate(context)
             }
         } catch (e: Exception) {
             throw RuntimeException(

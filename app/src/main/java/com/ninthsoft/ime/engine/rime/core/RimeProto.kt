@@ -42,12 +42,12 @@ data class MenuProto(
         if (this === other) return true
         if (other !is MenuProto) return false
         return pageSize == other.pageSize &&
-            pageNumber == other.pageNumber &&
-            isLastPage == other.isLastPage &&
-            highlightedCandidateIndex == other.highlightedCandidateIndex &&
-            candidates.contentEquals(other.candidates) &&
-            selectKeys == other.selectKeys &&
-            selectLabels.contentEquals(other.selectLabels)
+                pageNumber == other.pageNumber &&
+                isLastPage == other.isLastPage &&
+                highlightedCandidateIndex == other.highlightedCandidateIndex &&
+                candidates.contentEquals(other.candidates) &&
+                selectKeys == other.selectKeys &&
+                selectLabels.contentEquals(other.selectLabels)
     }
 
     override fun hashCode(): Int {

@@ -25,6 +25,7 @@ sealed class RimeMessage<T>(val data: T) {
         RimeMessage<Array<Any>>(params) {
         override fun equals(other: Any?): Boolean =
             this === other || (other is UnknownMessage && params.contentEquals(other.params))
+
         override fun hashCode(): Int = params.contentHashCode()
     }
 
@@ -68,8 +69,9 @@ sealed class RimeMessage<T>(val data: T) {
         ) {
             override fun equals(other: Any?): Boolean =
                 this === other || (other is Data && total == other.total &&
-                    highlighted == other.highlighted &&
-                    candidates.contentEquals(other.candidates))
+                        highlighted == other.highlighted &&
+                        candidates.contentEquals(other.candidates))
+
             override fun hashCode(): Int {
                 var r = total
                 r = 31 * r + highlighted
@@ -105,15 +107,18 @@ sealed class RimeMessage<T>(val data: T) {
                 val (id, name) = (params[0] as String).split('/', limit = 2)
                 SchemaMessage(SchemaItem(id, name))
             }
+
             MessageType.Option -> {
                 val raw = params[0] as String
                 OptionMessage(raw.substringAfter('!'), !raw.startsWith('!'))
             }
+
             MessageType.Deploy -> DeployMessage(
                 DeployMessage.State.valueOf(
                     (params[0] as String).replaceFirstChar { it.titlecase() }
                 )
             )
+
             MessageType.Commit -> CommitTextMessage(params[0] as CommitProto)
             MessageType.InlinePreedit -> InlinePreeditMessage(params[0] as String)
             MessageType.Composition -> CompositionMessage(params[0] as CompositionProto)
@@ -124,11 +129,13 @@ sealed class RimeMessage<T>(val data: T) {
                 params[1] as Int,
                 params[2] as Array<CandidateProto>,
             )
+
             MessageType.Key -> KeyMessage(
                 KeyValue(params[0] as Int),
                 KeyModifiers.of(params[1] as Int),
                 params[2] as Boolean,
             )
+
             else -> UnknownMessage(params)
         }
     }

@@ -4,14 +4,15 @@ import android.content.Context
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
+import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
+import com.ninthsoft.ime.input.keyboard.key.ImageTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyPreviewPopup
 import com.ninthsoft.ime.input.keyboard.key.KeyView
-import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
-import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
-import com.ninthsoft.ime.input.keyboard.key.ImageTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.above
@@ -27,7 +28,6 @@ import splitties.views.dsl.constraintlayout.rightOfParent
 import splitties.views.dsl.constraintlayout.rightToLeftOf
 import splitties.views.dsl.constraintlayout.topOfParent
 import splitties.views.dsl.core.add
-import splitties.views.onClick
 
 abstract class BaseKeyboard(
     context: Context,
@@ -38,6 +38,8 @@ abstract class BaseKeyboard(
     var keyActionListener: KeyActionListener? = null
 
     var expandKeypressArea = false
+
+    private val previewPopup = KeyPreviewPopup(context)
 
     protected val keyRows: List<ConstraintLayout>
 
@@ -103,6 +105,11 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Text -> TextKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
         }.apply {
+            val previewText = displayText
+            if (previewText != null) {
+                onTouchDownListener = { showPreview(it as KeyView) }
+                onTouchUpListener = { previewPopup.dismiss() }
+            }
             def.behaviors.forEach { behavior ->
                 when (behavior) {
                     is KeyDef.Behavior.Press -> {
@@ -110,6 +117,7 @@ abstract class BaseKeyboard(
                             onAction(behavior.action)
                         })
                     }
+
                     is KeyDef.Behavior.LongPress -> {
                         longPressEnabled = true
                         setOnLongClickListener {
@@ -150,10 +158,30 @@ abstract class BaseKeyboard(
         }
     }
 
+    private fun showPreview(view: KeyView) {
+        val text = view.displayText ?: return
+        previewPopup.show(
+            anchor = view,
+            text = text,
+            textColor = when (view.def.variant) {
+                KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyText
+                KeyDef.Appearance.Variant.Alternative -> colors.specialKeyText
+                KeyDef.Appearance.Variant.Accent -> colors.accentKeyText
+            },
+            bgColor = when (view.def.variant) {
+                KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyBackground
+                KeyDef.Appearance.Variant.Alternative -> colors.specialKeyBackground
+                KeyDef.Appearance.Variant.Accent -> colors.accentKeyBackground
+            },
+        )
+    }
+
     protected open fun onAction(action: KeyAction) {
         keyActionListener?.onKeyAction(action)
     }
 
     open fun onAttach() {}
-    open fun onDetach() {}
+    open fun onDetach() {
+        previewPopup.dismiss()
+    }
 }

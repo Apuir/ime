@@ -8,7 +8,7 @@ import android.view.KeyEvent
 @JvmInline
 value class KeyValue(val value: Int) {
     val keyCode: Int
-        get() = RimeKeyMapping.valToKeyCode(value)
+        get() = KeyMapping.valToKeyCode(value)
 
     override fun toString(): String = "0x${value.toString(16).padStart(4, '0')}"
 
@@ -23,7 +23,7 @@ value class KeyValue(val value: Int) {
             ) {
                 return KeyValue(charCode)
             }
-            return KeyValue(RimeKeyMapping.keyCodeToVal(event.keyCode))
+            return KeyValue(KeyMapping.keyCodeToVal(event.keyCode))
         }
     }
 }

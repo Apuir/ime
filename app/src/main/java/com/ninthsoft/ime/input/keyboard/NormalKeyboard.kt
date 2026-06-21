@@ -3,11 +3,12 @@ package com.ninthsoft.ime.input.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.engine.rime.core.RimeKeyMapping
+import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.alphabetKey
+import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 
 @SuppressLint("ViewConstructor")
 class NormalKeyboard(
@@ -21,7 +22,7 @@ class NormalKeyboard(
         const val NAME = "Normal"
 
         fun buildLayout(uppercase: Boolean): List<List<KeyDef>> {
-            val q = if (uppercase) "Q" else "q"
+            if (uppercase) "Q" else "q"
             val w = if (uppercase) "W" else "w"
             val e = if (uppercase) "E" else "e"
             val r = if (uppercase) "R" else "r"
@@ -81,7 +82,7 @@ class NormalKeyboard(
                     alphabetKey(b, ";"),
                     alphabetKey(n, ":"),
                     alphabetKey(m, "~"),
-                    makeBackspaceKey(),
+                    backspaceKey(),
                 ),
                 listOf(
                     makeLayoutSwitchKey("?123", NAME, percentWidth = 0.15f),
@@ -107,18 +108,6 @@ class NormalKeyboard(
             ),
         )
 
-        private fun makeBackspaceKey(): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Image(
-                src = android.R.drawable.ic_menu_delete,
-                viewId = KeyView.button_backspace,
-                percentWidth = 0.15f,
-                variant = KeyDef.Appearance.Variant.Alternative,
-            ),
-            behaviors = setOf(
-                KeyDef.Behavior.Press(KeyAction.BackspaceAction),
-                KeyDef.Behavior.Repeat(KeyAction.BackspaceAction),
-            ),
-        )
 
         private fun makeReturnKey(percentWidth: Float): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.Image(
@@ -191,28 +180,28 @@ class NormalKeyboard(
             }
 
             is KeyAction.NormalKeyAction -> {
-                val isLetter = RimeKeyMapping.keyValToName(action.code).let { n ->
+                val isLetter = KeyMapping.keyValToName(action.code).let { n ->
                     n.length == 1 && n[0].isLetter()
                 }
                 if (isLetter) {
                     when (capsState) {
                         CapsState.None -> {
-                            val lo = RimeKeyMapping.keyValToName(action.code).lowercase()
+                            KeyMapping.keyValToName(action.code).lowercase()
                             KeyAction.NormalKeyAction(0, 0)
                         }
 
                         CapsState.Once -> {
-                            val up = RimeKeyMapping.keyValToName(action.code).uppercase()
+                            val up = KeyMapping.keyValToName(action.code).uppercase()
                             switchCapsState()
                             KeyAction.NormalKeyAction(
-                                RimeKeyMapping.nameToKeyVal(up), action.modifiers
+                                KeyMapping.nameToKeyVal(up), action.modifiers
                             )
                         }
 
                         CapsState.Lock -> {
-                            val up = RimeKeyMapping.keyValToName(action.code).uppercase()
+                            val up = KeyMapping.keyValToName(action.code).uppercase()
                             KeyAction.NormalKeyAction(
-                                RimeKeyMapping.nameToKeyVal(up), action.modifiers
+                                KeyMapping.nameToKeyVal(up), action.modifiers
                             )
                         }
                     }

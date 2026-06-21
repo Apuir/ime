@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,17 +48,39 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
 
 object ScreenComponent {
-    val groupFontSize = 14.sp
-    val rowFontSize = 14.sp
+    val barFontSize = 18.sp
+    val groupFontSize = 16.sp
+    val rowFontSize = 16.sp
+
+    val rowSubFontSize = 14.sp
     val spacerHeight = 6.dp
     const val SWITCH_SCALE = 0.7f
 
     @Composable
     fun SettingsGroup(
         title: String,
+        icon: ImageVector? = null,
         content: @Composable () -> Unit,
     ) {
-        Text(text = title, fontSize = groupFontSize, color =  MaterialTheme.colorScheme.primary)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 4.dp),
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = title,
+                fontSize = groupFontSize,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         content()
     }
 
@@ -126,7 +149,9 @@ object ScreenComponent {
                     fontSize = rowFontSize
                 )
             }
-            Spacer(modifier = Modifier.fillMaxWidth().height(spacerHeight))
+            Spacer(modifier = Modifier
+                .fillMaxWidth()
+                .height(spacerHeight))
             Slider(value = value, onValueChange = onValueChange, valueRange = range, thumb = {
                 Surface(
                     modifier = Modifier.size(width = 2.dp, height = 14.dp),
@@ -154,18 +179,32 @@ object ScreenComponent {
     }
 
     @Composable
-    fun SectionHeader(title: String) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
+    fun SectionHeader(title: String, icon: ImageVector? = null) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
-            fontSize = groupFontSize
-        )
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontSize = groupFontSize,
+            )
+        }
     }
 
     @Composable
     fun ClickableSettingItem(
-        title: String, subtitle: String, onClick: () -> Unit, showSpacer: Boolean = false,
+        title: String, subtitle: String, onClick: () -> Unit,
+        icon: ImageVector? = null, showSpacer: Boolean = false,
     ) {
         Card(
             onClick = onClick,
@@ -173,11 +212,26 @@ object ScreenComponent {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge, fontSize = groupFontSize)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontSize = groupFontSize
+                    )
                     if (showSpacer) {
                         Spacer(modifier = Modifier.height(4.dp))
                     }
@@ -185,7 +239,7 @@ object ScreenComponent {
                         subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = rowFontSize
+                        fontSize = rowSubFontSize
                     )
                 }
                 Icon(
@@ -210,9 +264,14 @@ object ScreenComponent {
                 options.forEachIndexed { index, option ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { onSelect(index) }.padding(vertical = 8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(index) }
+                            .padding(vertical = 8.dp)
                     ) {
-                        RadioButton(selected = index == selectedIndex, onClick = { onSelect(index) })
+                        RadioButton(
+                            selected = index == selectedIndex,
+                            onClick = { onSelect(index) })
                         Spacer(Modifier.width(8.dp))
                         Text(option)
                     }
@@ -255,11 +314,15 @@ object ScreenComponent {
             ) {
                 Column {
                     Box(
-                        modifier = Modifier.weight(1f).fillMaxSize()
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
                             .background(Color(colors.keyBackground)),
                     )
                     Box(
-                        modifier = Modifier.weight(1f).fillMaxSize()
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
                             .background(Color(colors.accentKeyBackground)),
                     )
                 }

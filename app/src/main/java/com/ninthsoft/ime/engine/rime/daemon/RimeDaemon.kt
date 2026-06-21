@@ -49,9 +49,7 @@ object RimeDaemon {
         override fun runIfReady(block: suspend RimeApi.() -> Unit) {
             ensureEstablished {
                 if (realRime.isReady) {
-                    realRime.lifecycleScope.launch {
-                        block(rimeImpl)
-                    }
+                    realRime.lifecycleScope.launch { block(rimeImpl) }
                 }
             }
         }

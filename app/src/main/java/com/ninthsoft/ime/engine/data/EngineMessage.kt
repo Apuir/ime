@@ -1,5 +1,7 @@
 package com.ninthsoft.ime.engine.data
 
+import com.ninthsoft.ime.engine.rime.core.CandidateProto
+
 sealed class EngineMessage {
     data class Commit(val text: String) : EngineMessage()
     data class Composition(val preedit: String, val cursorPos: Int) : EngineMessage()
@@ -12,8 +14,40 @@ sealed class EngineMessage {
     data class Status(val schemaName: String, val isAsciiMode: Boolean) : EngineMessage()
     data object CompositionEnd : EngineMessage()
 
+    data class Key(val key: KeyEvent) : EngineMessage()
+
+    data class InlinePreedit(val preedit: String) : EngineMessage()
+
+    data class Schema(val id: String, val name: String) : EngineMessage()
+
+    data class CandidateMenu(
+        val pageSize: Int = 0,
+        val pageNumber: Int = 0,
+        val isLastPage: Boolean = false,
+        val highlightedCandidateIndex: Int = 0,
+        val selectKeys: String? = null,
+        val selectLabels: Array<String> = arrayOf(),
+        val candidates: Array<Candidate>,
+    ) : EngineMessage() {
+        data class Candidate(
+            val index: Int, val text: String, val comment: String, val label: String
+        )
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as CandidateMenu
+            return candidates.contentEquals(other.candidates)
+        }
+
+        override fun hashCode(): Int {
+            return candidates.contentHashCode()
+        }
+    }
+
     data object Unknown : EngineMessage()
     data class Candidate(
+        val index: Int,
         val text: String,
         val comment: String = "",
     )

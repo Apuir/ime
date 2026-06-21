@@ -10,6 +10,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +32,7 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableSettingItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SingleChoiceDialog
+import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.groupFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +56,7 @@ fun MainScreen(
             TopAppBar(title = {
                 Text(
                     text = stringResource(R.string.app_name),
-                    fontSize = groupFontSize,
+                    fontSize = barFontSize,
                     modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp),
                 )
             }, navigationIcon = {
@@ -80,7 +84,8 @@ fun MainScreen(
                 title = stringResource(R.string.theme),
                 subtitle = themes[currentThemeMode],
                 onClick = { showThemeDialog = true },
-                showSpacer = true
+                icon = Icons.Filled.Palette,
+                showSpacer = true,
             )
 
             Spacer(Modifier.height(8.dp))
@@ -90,7 +95,8 @@ fun MainScreen(
                 title = stringResource(R.string.keyboard_settings),
                 subtitle = stringResource(R.string.keyboard_settings_desc),
                 onClick = onOpenKeyboardSettings,
-                showSpacer = true
+                icon = Icons.Filled.Keyboard,
+                showSpacer = true,
             )
 
             Spacer(Modifier.height(32.dp))

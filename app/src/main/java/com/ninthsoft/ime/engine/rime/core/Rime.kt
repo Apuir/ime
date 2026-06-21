@@ -148,6 +148,11 @@ class Rime : RimeApi, RimeLifecycleOwner {
         emitResponse()
     }
 
+    override suspend fun freeContext() = withRimeContext {
+        Companion.freeContext()
+        emitResponse()
+    }
+
     override suspend fun getRawInput(): String = withRimeContext { Companion.getRawInput() }
 
     override suspend fun setRuntimeOption(option: String, value: Boolean) = withRimeContext {
@@ -315,6 +320,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
         external fun clearComposition()
 
         @JvmStatic
+        external fun freeContext()
+
+        @JvmStatic
         external fun getCommit(): CommitProto
 
         @JvmStatic
@@ -376,7 +384,8 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         fun handleMessage(type: Int, params: Array<Any>) {
-            Timber.d("handleMessage: $type $params")
+            val t = params.get(0)
+            Timber.d("handleMessage: $type {${t.toString()}}")
             val message = RimeMessage.nativeCreate(type, params)
             rimeMessageHandlers.forEach { it.invoke(message) }
             messageFlow_.tryEmit(message)

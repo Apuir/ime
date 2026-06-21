@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ime</string>
+    <string name="app_name">简意输入法</string>
     <string name="done">done</string>
     <string name="rime_daemon">Rime守护进程</string>
     <string name="rime_deploy_finish">Rime部署完成</string>
@@ -8,7 +8,7 @@
     <string name="rime_restarting">Rime重启中</string>
 
     <string name="basic_settings">基本设置</string>
-    <string name="theme">主题</string>
+    <string name="theme">应用主题</string>
     <string name="theme_follow_system">跟随系统</string>
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>

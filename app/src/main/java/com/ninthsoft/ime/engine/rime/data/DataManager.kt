@@ -1,7 +1,6 @@
 package com.ninthsoft.ime.engine.rime.data
 
 import android.content.res.AssetManager
-import android.os.Environment
 import com.ninthsoft.ime.util.FileUtil
 import com.ninthsoft.ime.util.ResourceUtil
 import com.ninthsoft.ime.util.appContext
@@ -69,7 +68,7 @@ object DataManager {
         try {
             val newChecksums = appContext.assets.DataSum()
             DataDiff.diff(oldChecksums, newChecksums).sortedByDescending { it.ordinal }.forEach {
-                Timber.Forest.d("Diff: $it")
+                Timber.d("Diff: $it")
                 when (it) {
                     is DataDiff.CreateFile,
                     is DataDiff.UpdateFile,
@@ -96,9 +95,9 @@ object DataManager {
                 }
             }
 
-            Timber.Forest.d("Synced!")
+            Timber.d("Synced!")
         } catch (e: Exception) {
-            Timber.Forest.d("Sync not prepared!")
+            Timber.d("Sync not prepared!")
         }
     }
 }

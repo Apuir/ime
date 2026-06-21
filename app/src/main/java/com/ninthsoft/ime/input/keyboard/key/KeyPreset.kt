@@ -14,3 +14,17 @@ fun alphabetKey(character: String, punctuation: String) = KeyDef(
         ),
     ),
 )
+
+
+fun backspaceKey(): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = android.R.drawable.ic_menu_delete,
+        viewId = KeyView.button_backspace,
+        percentWidth = 0.15f,
+        variant = KeyDef.Appearance.Variant.Alternative,
+    ),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyAction.BackspaceAction),
+        KeyDef.Behavior.Repeat(KeyAction.BackspaceAction),
+    ),
+)

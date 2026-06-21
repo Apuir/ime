@@ -7,13 +7,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
-import androidx.lifecycle.findViewTreeLifecycleOwner
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
@@ -40,9 +41,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    private val lifecycleScope by lazy {
-        findViewTreeLifecycleOwner()?.lifecycleScope!!
-    }
+    private val lifecycleScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @Volatile
     private var touchMovedOutside = false
@@ -78,6 +77,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     private var lastClickTime = 0L
     private var maybeDoubleTap = false
 
+    var onTouchDownListener: ((View) -> Unit)? = null
+    var onTouchUpListener: ((View) -> Unit)? = null
     var onDoubleTapListener: ((View) -> Unit)? = null
     var onRepeatListener: ((View) -> Unit)? = null
     var onGestureListener: OnGestureListener? = null
@@ -137,8 +138,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 if (!isEnabled) return false
                 drawableHotspotChanged(x, y)
                 isPressed = true
-//                InputFeedbacks.hapticFeedback(this)
-//                InputFeedbacks.soundEffect(soundEffect)
+                onTouchDownListener?.invoke(this)
                 dispatchGestureEvent(GestureType.Down, x, y)
                 if (longPressEnabled) {
                     longPressJob?.cancel()
@@ -172,7 +172,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
             MotionEvent.ACTION_UP -> {
                 isPressed = false
-//                InputFeedbacks.hapticFeedback(this, longPress = true, keyUp = true)
+                onTouchUpListener?.invoke(this)
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
                 val shouldPerformClick =
                     !(touchMovedOutside || longPressTriggered || repeatStarted || swipeRepeatTriggered || gestureConsumed)
@@ -223,6 +223,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
             MotionEvent.ACTION_CANCEL -> {
                 isPressed = false
+                onTouchUpListener?.invoke(this)
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
                 resetState()
                 // reset double tap state on cancel
@@ -292,6 +293,11 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     override fun setOnLongClickListener(l: OnLongClickListener?) {
         longPressEnabled = l != null
         super.setOnLongClickListener(l)
+    }
+
+    override fun onDetachedFromWindow() {
+        lifecycleScope.cancel()
+        super.onDetachedFromWindow()
     }
 
     companion object {

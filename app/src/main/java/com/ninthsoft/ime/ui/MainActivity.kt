@@ -7,6 +7,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
@@ -17,11 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import android.provider.DocumentsContract
 import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.input.ImeInputMethodService
 import com.ninthsoft.ime.ui.screen.MainScreen
 import com.ninthsoft.ime.ui.theme.ImeTheme
+
 class MainActivity : ComponentActivity(), SensorEventListener {
 
     private val setupImeLauncher = registerForActivityResult(
@@ -59,10 +60,20 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         themeMode = mode
                     },
                     onOpenImeSetup = {
-                        setupImeLauncher.launch(Intent(this@MainActivity, SetupActivity::class.java))
+                        setupImeLauncher.launch(
+                            Intent(
+                                this@MainActivity,
+                                SetupActivity::class.java
+                            )
+                        )
                     },
                     onOpenKeyboardSettings = {
-                        startActivity(Intent(this@MainActivity, KeyboardSettingsActivity::class.java))
+                        startActivity(
+                            Intent(
+                                this@MainActivity,
+                                KeyboardSettingsActivity::class.java
+                            )
+                        )
                     }
                 )
             }
@@ -117,7 +128,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val isEnabled = imm.enabledInputMethodList.any {
             it.packageName == ourComponent.packageName && it.serviceName == ourComponent.className
         }
-        val currentId = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        val currentId =
+            Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         val ourId = ourComponent.flattenToShortString()
         return isEnabled && currentId == ourId
     }

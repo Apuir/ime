@@ -2,16 +2,13 @@ package com.ninthsoft.ime.util
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.net.toUri
 import java.io.File
 import java.io.IOException
-import java.security.Permission
-import androidx.core.net.toUri
-import timber.log.Timber
 
 object FileUtil {
     fun rename(

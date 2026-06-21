@@ -1,6 +1,5 @@
 package com.ninthsoft.ime.engine.rime.core
 
-import android.view.KeyEvent
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Runnable

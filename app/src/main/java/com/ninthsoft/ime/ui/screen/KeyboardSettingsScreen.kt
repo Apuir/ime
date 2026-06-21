@@ -30,12 +30,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
+import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ThemeChip
+import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.groupFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,7 +74,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
             TopAppBar(title = {
                 Text(
                     text = stringResource(R.string.keyboard_settings),
-                    fontSize = groupFontSize,
+                    fontSize = barFontSize,
                     modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp),
                 )
             }, navigationIcon = {

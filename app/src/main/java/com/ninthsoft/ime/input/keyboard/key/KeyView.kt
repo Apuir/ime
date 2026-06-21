@@ -42,7 +42,7 @@ abstract class KeyView(
     var bordered: Boolean = true
     var borderStroke: Boolean = false
     var rippled: Boolean = true
-    var radius = dp(6f)
+    var radius = dp(5f)
     var hMargin: Int = dp(3)
     var vMargin: Int = dp(4)
 
@@ -59,6 +59,9 @@ abstract class KeyView(
 
     @FloatRange(0.0, 1.0)
     var layoutMarginRight = 0f
+
+    /** Text to show in the key preview popup (null = no preview) */
+    open val displayText: String? get() = null
 
     protected val appearanceView = constraintLayout {
         isDuplicateParentStateEnabled = true
@@ -86,7 +89,7 @@ abstract class KeyView(
                 )
             } else {
                 shadowedKeyBackgroundDrawable(
-                    bkgColor, colors.keyBackground,
+                    bkgColor, Color.argb(30, 0, 0, 0),
                     radius, borderOrShadowWidth, hMargin, vMargin,
                 )
             }
@@ -192,13 +195,15 @@ open class TextKeyView(
     colors: KeyboardColors.ColorScheme,
     def: KeyDef.Appearance.Text,
 ) : KeyView(ctx, colors, def) {
+    override val displayText: String? get() = mainText.text.toString()
+
     val mainText = android.widget.TextView(ctx).apply {
         isClickable = false
         isFocusable = false
         background = null
         text = def.displayText
         setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTypeface(typeface, def.textStyle)
         setTextColor(
             when (def.variant) {

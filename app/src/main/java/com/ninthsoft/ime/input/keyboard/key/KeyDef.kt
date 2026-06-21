@@ -44,7 +44,17 @@ open class KeyDef(
             margin: Boolean = true,
             viewId: Int = -1,
             visibility: Int = View.VISIBLE,
-        ) : Text(displayText, textSize, textStyle, percentWidth, variant, border, margin, viewId, visibility)
+        ) : Text(
+            displayText,
+            textSize,
+            textStyle,
+            percentWidth,
+            variant,
+            border,
+            margin,
+            viewId,
+            visibility
+        )
 
         class Image(
             @DrawableRes val src: Int,
