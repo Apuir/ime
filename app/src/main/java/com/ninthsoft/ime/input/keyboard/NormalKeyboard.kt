@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
@@ -9,6 +10,9 @@ import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.alphabetKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
+import com.ninthsoft.ime.input.keyboard.key.capsLockKey
+import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
+import com.ninthsoft.ime.input.keyboard.key.spaceKey
 
 @SuppressLint("ViewConstructor")
 class NormalKeyboard(
@@ -74,7 +78,7 @@ class NormalKeyboard(
                     alphabetKey(l, ")"),
                 ),
                 listOf(
-                    makeCapsKey(),
+                    capsLockKey(),
                     alphabetKey(z, "\u3002"),
                     alphabetKey(x, ","),
                     alphabetKey(c, "!"),
@@ -85,33 +89,19 @@ class NormalKeyboard(
                     backspaceKey(),
                 ),
                 listOf(
-                    makeLayoutSwitchKey("?123", NAME, percentWidth = 0.15f),
+                    layoutSwitchKey("?123", NAME, percentWidth = 0.15f),
                     makeLangSwitchKey(percentWidth = 0.15f),
-                    makeSpaceKey(),
+                    spaceKey(),
                     makeCommaKey(percentWidth = 0.15f),
                     makeReturnKey(percentWidth = 0.15f),
                 ),
             )
         }
 
-        private fun makeCapsKey(): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Image(
-                src = android.R.drawable.ic_menu_edit,
-                viewId = KeyView.button_caps,
-                percentWidth = 0.15f,
-                variant = KeyDef.Appearance.Variant.Alternative,
-            ),
-            behaviors = setOf(
-                KeyDef.Behavior.Press(KeyAction.CapsAction(false)),
-                KeyDef.Behavior.LongPress(KeyAction.CapsAction(true)),
-                KeyDef.Behavior.DoubleTap(KeyAction.CapsAction(true)),
-            ),
-        )
-
 
         private fun makeReturnKey(percentWidth: Float): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.Image(
-                src = android.R.drawable.ic_menu_send,
+                src = R.drawable.ic_keyboard_return,
                 viewId = KeyView.button_return,
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Accent,
@@ -120,29 +110,21 @@ class NormalKeyboard(
             behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
         )
 
-        private fun makeSpaceKey(): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Text(
-                displayText = " ", textSize = 13f,
-                border = KeyDef.Appearance.Border.Special,
-                viewId = KeyView.button_space,
-                variant = KeyDef.Appearance.Variant.Alternative,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.SpaceAction)),
-        )
 
         private fun makeCommaKey(percentWidth: Float): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.ImageText(
-                displayText = ".", textSize = 23f,
-                src = android.R.drawable.ic_menu_gallery,
+                displayText = ".",
+                textSize = 23f,
+                src = R.drawable.ic_keyboard_emoticon,
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Alternative,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.NormalKeyAction(0, 0))),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.PressKeyAction(0, 0))),
         )
 
         fun makeLangSwitchKey(percentWidth: Float): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.Image(
-                src = android.R.drawable.ic_menu_compass,
+                src = R.drawable.ic_keyboard_language,
                 viewId = KeyView.button_lang,
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Alternative,
@@ -153,19 +135,6 @@ class NormalKeyboard(
             ),
         )
 
-        fun makeLayoutSwitchKey(
-            displayText: String,
-            target: String,
-            percentWidth: Float = 0.15f,
-        ): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Text(
-                displayText = displayText, textSize = 15f,
-                textStyle = android.graphics.Typeface.BOLD,
-                percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Alternative,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LayoutSwitchAction(target))),
-        )
     }
 
     private var capsState = CapsState.None
@@ -179,7 +148,7 @@ class NormalKeyboard(
                 action
             }
 
-            is KeyAction.NormalKeyAction -> {
+            is KeyAction.PressKeyAction -> {
                 val isLetter = KeyMapping.keyValToName(action.code).let { n ->
                     n.length == 1 && n[0].isLetter()
                 }
@@ -187,20 +156,20 @@ class NormalKeyboard(
                     when (capsState) {
                         CapsState.None -> {
                             KeyMapping.keyValToName(action.code).lowercase()
-                            KeyAction.NormalKeyAction(0, 0)
+                            KeyAction.PressKeyAction(0, 0)
                         }
 
                         CapsState.Once -> {
                             val up = KeyMapping.keyValToName(action.code).uppercase()
                             switchCapsState()
-                            KeyAction.NormalKeyAction(
+                            KeyAction.PressKeyAction(
                                 KeyMapping.nameToKeyVal(up), action.modifiers
                             )
                         }
 
                         CapsState.Lock -> {
                             val up = KeyMapping.keyValToName(action.code).uppercase()
-                            KeyAction.NormalKeyAction(
+                            KeyAction.PressKeyAction(
                                 KeyMapping.nameToKeyVal(up), action.modifiers
                             )
                         }

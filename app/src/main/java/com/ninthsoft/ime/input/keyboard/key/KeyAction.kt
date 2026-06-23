@@ -4,7 +4,7 @@ import com.ninthsoft.ime.engine.data.KeyEvent
 
 sealed class KeyAction {
 
-    data class NormalKeyAction(
+    data class PressKeyAction(
         val code: Int, val modifiers: Int
     ) : KeyAction()
 
@@ -25,6 +25,6 @@ sealed class KeyAction {
     data object ShowInputMethodPickerAction : KeyAction()
 }
 
-fun KeyAction.NormalKeyAction.asKeyEvent(isVirtual: Boolean): KeyEvent {
+fun KeyAction.PressKeyAction.asKeyEvent(isVirtual: Boolean): KeyEvent {
     return KeyEvent(this.code, this.modifiers, isVirtual = isVirtual)
 }

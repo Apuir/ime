@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.input.keyboard.key
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
@@ -7,14 +8,14 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.InsetDrawable
-import android.graphics.drawable.RippleDrawable
-import android.graphics.drawable.StateListDrawable
+import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
 import android.view.View
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors.SurfaceStyle
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import splitties.dimensions.dp
@@ -32,6 +33,7 @@ import splitties.views.imageResource
 import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.core.graphics.drawable.toDrawable
 
 abstract class KeyView(
     ctx: Context,
@@ -42,7 +44,7 @@ abstract class KeyView(
     var bordered: Boolean = true
     var borderStroke: Boolean = false
     var rippled: Boolean = true
-    var radius = dp(5f)
+    var radius = if (colors.surfaceStyle == SurfaceStyle.Flat) dp(7f) else dp(5f)
     var hMargin: Int = dp(3)
     var vMargin: Int = dp(4)
 
@@ -76,67 +78,92 @@ abstract class KeyView(
         visibility = def.visibility
 
         if ((bordered && def.border != Border.Off) || def.border == Border.On) {
-            val bkgColor = when (def.variant) {
-                Variant.Normal, Variant.AltForeground -> colors.keyBackground
-                Variant.Alternative -> colors.specialKeyBackground
-                Variant.Accent -> colors.accentKeyBackground
-            }
-            val borderOrShadowWidth = dp(1)
-            appearanceView.background = if (borderStroke) {
-                borderedKeyBackgroundDrawable(
-                    bkgColor, colors.keyBackground,
-                    radius, borderOrShadowWidth, hMargin, vMargin,
-                )
-            } else {
-                shadowedKeyBackgroundDrawable(
-                    bkgColor, Color.argb(30, 0, 0, 0),
-                    radius, borderOrShadowWidth, hMargin, vMargin,
-                )
-            }
-            setupPressHighlight()
+            setupBackgroundWithPress()
         } else {
             if (def.border != Border.Special) {
-                setupPressHighlight()
+                setupBackgroundWithPress()
             }
         }
         add(appearanceView, lParams(matchParent, matchParent))
     }
 
-    private fun setupPressHighlight() {
-        val mask = if (bordered) {
-            insetRadiusDrawable(hMargin, vMargin, radius, Color.WHITE)
+    private var pressedLayerAlpha = 0
+    private var bgAnimator: ValueAnimator? = null
+
+    private fun setupBackgroundWithPress() {
+        val bkgColor = when (def.variant) {
+            Variant.Normal, Variant.AltForeground -> colors.keyBackground
+            Variant.Alternative -> colors.specialKeyBackground
+            Variant.Accent -> colors.accentKeyBackground
+        }
+        val pressedColor = when (def.variant) {
+            Variant.Normal, Variant.AltForeground -> colors.keyPressed
+            Variant.Alternative -> colors.specialKeyPressed
+            Variant.Accent -> colors.accentKeyPressed
+        }
+        val hasShape = (bordered && def.border != Border.Off) || def.border == Border.On
+        val normalBg: android.graphics.drawable.Drawable = if (hasShape) {
+            createShapeBkg(bkgColor)
+        } else {
+            Color.TRANSPARENT.toDrawable()
+        }
+        val pressedBg: android.graphics.drawable.Drawable = if (hasShape) {
+            createShapeBkg(pressedColor)
         } else {
             InsetDrawable(
-                android.graphics.drawable.ColorDrawable(Color.WHITE),
+                pressedColor.toDrawable(),
                 hMargin, vMargin, hMargin, vMargin,
             )
         }
-        appearanceView.foreground = if (rippled) {
-            RippleDrawable(
-                ColorStateList.valueOf(colors.keyPressed),
-                null,
-                mask,
+        val layered = LayerDrawable(arrayOf(normalBg, pressedBg))
+        pressedBg.alpha = 0
+        pressedLayerAlpha = 0
+        appearanceView.background = layered
+    }
+
+    private fun createShapeBkg(color: Int): android.graphics.drawable.Drawable {
+        val borderOrShadowWidth = dp(1)
+        return when {
+            borderStroke -> borderedKeyBackgroundDrawable(
+                color, colors.keyBackground,
+                radius, borderOrShadowWidth, hMargin, vMargin,
             )
-        } else {
-            StateListDrawable().apply {
-                addState(
-                    intArrayOf(android.R.attr.state_pressed),
-                    if (bordered) {
-                        insetRadiusDrawable(hMargin, vMargin, radius, colors.keyPressed)
-                    } else {
-                        InsetDrawable(
-                            android.graphics.drawable.ColorDrawable(colors.keyPressed),
-                            hMargin, vMargin, hMargin, vMargin,
-                        )
-                    },
-                )
-            }
+
+            colors.surfaceStyle == SurfaceStyle.Flat -> flatKeyBackgroundDrawable(
+                color, Color.argb(34, 255, 255, 255),
+                radius, borderOrShadowWidth, hMargin, vMargin,
+            )
+
+            else -> shadowedKeyBackgroundDrawable(
+                color, Color.argb(30, 0, 0, 0),
+                radius, borderOrShadowWidth, hMargin, vMargin,
+            )
         }
     }
 
     override fun setEnabled(enabled: Boolean) {
         super.setEnabled(enabled)
         appearanceView.alpha = if (enabled) 1f else 0.3f
+    }
+
+    override fun drawableStateChanged() {
+        super.drawableStateChanged()
+        val bg = appearanceView.background
+        if (bg !is LayerDrawable || bg.numberOfLayers < 2) return
+
+        bgAnimator?.cancel()
+
+        val target = if (isPressed) 255 else 0
+        val pressedDrawable = bg.getDrawable(1) ?: return
+        bgAnimator = ValueAnimator.ofInt(pressedLayerAlpha, target).apply {
+            duration = if (isPressed) 100 else 80
+            addUpdateListener {
+                val alpha = animatedValue as Int
+                pressedLayerAlpha = alpha
+                pressedDrawable.alpha = alpha
+            }
+            start()
+        }
     }
 
     fun updateBounds() {
@@ -166,15 +193,22 @@ abstract class KeyView(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         if (bordered) return
         if (def.viewId == button_space) {
+            bgAnimator?.cancel()
             val bkgRadius = dp(3f)
             val minHeight = dp(26)
             val hInset = dp(10)
             val vInset = if (h < minHeight) 0 else min((h - minHeight) / 2, dp(16))
-            appearanceView.background = insetRadiusDrawable(
+            val normalBg = insetRadiusDrawable(
                 hInset, vInset, bkgRadius, colors.keyBackground,
             )
+            val pressedBg = insetRadiusDrawable(
+                hInset, vInset, bkgRadius, colors.specialKeyPressed,
+            )
+            val layered = LayerDrawable(arrayOf(normalBg, pressedBg))
+            pressedBg.alpha = 0
+            pressedLayerAlpha = 0
+            appearanceView.background = layered
             appearanceView.padding = 0
-            setupPressHighlight()
         }
     }
 
@@ -247,14 +281,18 @@ class AltTextKeyView(
     }
 
     private fun applyLayout() {
+        mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             bottomToBottom = parentId
+            startToStart = parentId
+            endToEnd = parentId
+            verticalBias = 0.15f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            topToTop = parentId
-            topMargin = vMargin
-            rightToRight = parentId
+            topToBottom = mainText.id
+            startToStart = parentId
+            endToEnd = parentId
         }
     }
 }
@@ -310,15 +348,19 @@ class ImageTextKeyView(
         appearanceView.apply {
             add(img, lParams(dp(13), dp(13)))
         }
+        mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             centerHorizontally()
+            topToTop = parentId
             bottomToBottom = parentId
-            bottomMargin = vMargin + dp(4)
-            topToTop = 0
+            verticalBias = 0.6f
         }
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             centerHorizontally()
+            bottomToTop = mainText.id
             topToTop = parentId
         }
+        img.translationY = dp(12).toFloat()
+        mainText.translationY = dp(4).toFloat()
     }
 }

@@ -1,12 +1,18 @@
 package com.ninthsoft.ime.input.keyboard
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.Resources
 import android.graphics.PixelFormat
-import android.os.Build
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.widget.LinearLayout
+import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isGone
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.engine.data.EngineMessage
@@ -14,12 +20,16 @@ import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.panel.IPanel
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.pinner.PreeditPinner
+import kotlin.math.max
 import kotlin.math.roundToInt
 
+@SuppressLint("ViewConstructor")
 class KeyboardWindowView(
     context: Context,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-) : LinearLayout(context) {
+) : FrameLayout(context) {
+
+    private val fallbackNavBarHeight = 48
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
 
@@ -44,35 +54,122 @@ class KeyboardWindowView(
 
     private var pinnerShown = false
 
-    private val keyboardHeightPct: Int
-        get() {
-            val prefs = context.getSharedPreferences(ThemeManager.PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getInt("keyboard.height", 24)
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(ThemeManager.PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "keyboard.height", "keyboard.padding.horizontal", "keyboard.padding.bottom", "keyboard.ignore_insets" -> post { requestLayout() }
         }
+    }
 
     private val panelHeight: Int
         get() = (48 * resources.displayMetrics.density).roundToInt()
 
-    private val keyboardHeight: Int
-        get() = resources.displayMetrics.heightPixels * keyboardHeightPct / 100
-
     init {
-        orientation = VERTICAL
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            view.requestLayout()
+            insets
+        }
         setBackgroundColor(cachedColors.background)
 
-        addView(panel.view, LayoutParams(LayoutParams.MATCH_PARENT, panelHeight))
+        addView(panel.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         keyboards[NormalKeyboard.NAME] = NormalKeyboard(context, cachedColors)
         attachKeyboard(NormalKeyboard.NAME)
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ViewCompat.requestApplyInsets(this)
+    }
+
+    override fun onDetachedFromWindow() {
+        removePinnerWindow()
+        detachCurrentKeyboard()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        super.onDetachedFromWindow()
+    }
+
+    private fun contentHeight(): Int {
+        val percent = ThemeManager.Keyboard.getHeightPercent(context)
+        return (resources.displayMetrics.heightPixels * percent / 100).coerceAtLeast(minimumHeight)
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), resources.displayMetrics
+        ).toInt()
+    }
+
+    @SuppressLint("DiscouragedApi")
+    private fun navbarFrameHeight(): Int {
+        val resId = resources.getIdentifier("navigation_bar_frame_height", "dimen", "android")
+        return try {
+            resources.getDimensionPixelSize(resId)
+        } catch (_: Resources.NotFoundException) {
+            (fallbackNavBarHeight * resources.displayMetrics.density).toInt()
+        }
+    }
+
+    private fun resolveBottomInset(): Int {
+        if (ThemeManager.Keyboard.getIgnoreInsets(context)) return 0
+        val insets = ViewCompat.getRootWindowInsets(this) ?: return 0
+        val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+        val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+        var insetsBottom = max(navBars.bottom, mandatory.bottom)
+        if (insetsBottom <= 0) {
+            val gesturesBottom = insets.getInsets(WindowInsetsCompat.Type.systemGestures()).bottom
+            if (gesturesBottom > 0) {
+                insetsBottom = max(gesturesBottom, navbarFrameHeight())
+            }
+        }
+        return insetsBottom
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val totalHeight = panelHeight + keyboardHeight
-        super.onMeasure(
-            widthMeasureSpec,
-            MeasureSpec.makeMeasureSpec(totalHeight, MeasureSpec.EXACTLY),
+        val density = resources.displayMetrics.density
+        val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
+        val bPad = dpToPx(ThemeManager.Keyboard.Padding.getBottomDp(context))
+        val cHeight = contentHeight()
+        val totalWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val bottomInset = resolveBottomInset()
+        val barH = panelHeight
+        val contentW = (totalWidth - 2 * hPad).coerceAtLeast(0)
+
+        panel.view.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(barH, MeasureSpec.EXACTLY),
         )
+
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child === panel.view || child.isGone) continue
+            child.measure(
+                MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+            )
+        }
+
+        val totalHeight = barH + cHeight + bPad + bottomInset
+        setMeasuredDimension(totalWidth, totalHeight)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
+        val cHeight = contentHeight()
+        val contentW = right - left - 2 * hPad
+        val barH = panelHeight
+
+        panel.view.layout(hPad, 0, hPad + contentW, barH)
+        var y = barH
+
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child === panel.view || child.isGone) continue
+            child.layout(hPad, y, hPad + contentW, y + cHeight)
+        }
     }
 
     fun switchKeyboard(name: String) {
@@ -101,6 +198,10 @@ class KeyboardWindowView(
         preeditPinner.refreshTheme(context)
     }
 
+    fun refreshLayout() {
+        requestLayout()
+    }
+
     fun setCandidates(list: List<EngineMessage.Candidate>) {
         panel.setCandidates(list)
     }
@@ -125,7 +226,7 @@ class KeyboardWindowView(
         if (pillW <= 0 || pillH <= 0) return
 
         val density = resources.displayMetrics.density
-        val hPad = (4 * density).roundToInt()
+        val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
 
         val loc = IntArray(2)
         panel.view.getLocationOnScreen(loc)
@@ -139,17 +240,10 @@ class KeyboardWindowView(
             this.y = y
             gravity = Gravity.TOP or Gravity.START
             format = PixelFormat.TRANSLUCENT
-            flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            flags =
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
             token = panel.view.windowToken
-            type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
-            }
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
         }
 
         try {
@@ -184,14 +278,8 @@ class KeyboardWindowView(
         currentKeyboardName = name
         keyboards[name]?.let {
             it.keyActionListener = keyActionListener
-            addView(it, LayoutParams(LayoutParams.MATCH_PARENT, keyboardHeight))
+            addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             it.onAttach()
         }
-    }
-
-    override fun onDetachedFromWindow() {
-        removePinnerWindow()
-        detachCurrentKeyboard()
-        super.onDetachedFromWindow()
     }
 }

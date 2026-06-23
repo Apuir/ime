@@ -8,6 +8,7 @@ data class KeyboardTheme(
 ) {
     companion object {
         val PRESETS = listOf(
+            KeyboardThemePresets.SwiftKeyDark,
             KeyboardThemePresets.Warm,
             KeyboardThemePresets.Slate,
             KeyboardThemePresets.Nord,
@@ -18,7 +19,7 @@ data class KeyboardTheme(
             KeyboardThemePresets.Forest,
         )
 
-        val DEFAULT = KeyboardThemePresets.Warm
+        val DEFAULT = KeyboardThemePresets.SwiftKeyDark
 
         fun byId(id: String) = PRESETS.find { it.id == id } ?: DEFAULT
     }

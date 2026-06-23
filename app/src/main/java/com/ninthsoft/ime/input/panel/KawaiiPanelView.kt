@@ -36,9 +36,9 @@ class KawaiiPanelView(context: Context) : View(context) {
         }
 
         fun applyDensity(density: Float) {
-            toolbarTextPaint.textSize = 18f * density
-            candidateTextPaint.textSize = 16f * density
-            candidateIndexPaint.textSize = 12f * density
+            toolbarTextPaint.textSize = 16f * density
+            candidateTextPaint.textSize = 17f * density
+            candidateIndexPaint.textSize = 14f * density
         }
     }
 

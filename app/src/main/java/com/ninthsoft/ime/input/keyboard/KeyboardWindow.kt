@@ -25,6 +25,7 @@ class KeyboardWindow(
 
     fun switchLayout(name: String) { view.switchKeyboard(name) }
     fun refreshTheme() { view.refreshColors() }
+    fun refreshLayout() { view.refreshLayout() }
     fun isNormalKeyboard(): Boolean = view.isNormalKeyboard()
     fun getCurrentKeyboard(): BaseKeyboard? = view.getCurrentKeyboard()
     fun setCandidates(list: List<EngineMessage.Candidate>) { view.setCandidates(list) }

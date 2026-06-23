@@ -6,6 +6,11 @@ import com.ninthsoft.ime.data.theme.ThemeManager
 
 object KeyboardColors {
 
+    enum class SurfaceStyle {
+        Raised,
+        Flat,
+    }
+
     data class ColorScheme(
         val keyBackground: Int,
         val keyPressed: Int,
@@ -18,6 +23,7 @@ object KeyboardColors {
         val accentKeyText: Int,
         val altText: Int,
         val background: Int,
+        val surfaceStyle: SurfaceStyle = SurfaceStyle.Raised,
     )
 
     fun resolve(context: Context): ColorScheme {

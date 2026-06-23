@@ -4,6 +4,28 @@ import android.graphics.Color
 
 object KeyboardThemePresets {
 
+    val SwiftKeyDark = KeyboardTheme(
+        id = "swiftkey_dark",
+        name = "SwiftKey 暗黑",
+        light = swiftKeyDarkScheme(),
+        dark = swiftKeyDarkScheme(),
+    )
+
+    private fun swiftKeyDarkScheme() = KeyboardColors.ColorScheme(
+        keyBackground = Color.rgb(45, 48, 54),
+        keyPressed = Color.rgb(63, 68, 76),
+        specialKeyBackground = Color.rgb(37, 40, 46),
+        specialKeyPressed = Color.rgb(55, 60, 68),
+        accentKeyBackground = Color.rgb(30, 115, 230),
+        accentKeyPressed = Color.rgb(46, 132, 246),
+        keyText = Color.rgb(241, 243, 246),
+        specialKeyText = Color.rgb(224, 228, 234),
+        accentKeyText = Color.rgb(255, 255, 255),
+        altText = Color.rgb(150, 156, 166),
+        background = Color.rgb(24, 26, 30),
+        surfaceStyle = KeyboardColors.SurfaceStyle.Flat,
+    )
+
     val Warm = KeyboardTheme(
         id = "warm",
         name = "暖阳",

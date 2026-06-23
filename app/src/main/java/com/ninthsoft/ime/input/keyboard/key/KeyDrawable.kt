@@ -55,6 +55,26 @@ fun shadowedKeyBackgroundDrawable(
     setLayerInset(1, hMargin, vMargin, hMargin, vMargin)
 }
 
+fun flatKeyBackgroundDrawable(
+    @ColorInt bkgColor: Int,
+    @ColorInt strokeColor: Int,
+    radius: Float,
+    strokeWidth: Int,
+    hMargin: Int,
+    vMargin: Int,
+): Drawable = LayerDrawable(
+    arrayOf(
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(bkgColor)
+            setStroke(strokeWidth, strokeColor)
+        },
+    ),
+).apply {
+    setLayerInset(0, hMargin, vMargin, hMargin, vMargin)
+}
+
 fun borderedKeyBackgroundDrawable(
     @ColorInt bkgColor: Int,
     @ColorInt strokeColor: Int,

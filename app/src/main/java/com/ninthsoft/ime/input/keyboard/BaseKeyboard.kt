@@ -105,10 +105,18 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Text -> TextKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
         }.apply {
-            val previewText = displayText
-            if (previewText != null) {
-                onTouchDownListener = { showPreview(it as KeyView) }
-                onTouchUpListener = { previewPopup.dismiss() }
+            def.popups?.forEach { popup ->
+                when (popup) {
+                    is KeyDef.Popup.Preview -> {
+                        setOnLongClickListener {
+                            showPreview(it as KeyView)
+                            return@setOnLongClickListener true
+                        }
+                        onTouchUpListener = { previewPopup.dismiss() }
+                    }
+
+                    else -> {}
+                }
             }
             def.behaviors.forEach { behavior ->
                 when (behavior) {

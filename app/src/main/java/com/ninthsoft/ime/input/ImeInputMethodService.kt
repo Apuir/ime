@@ -43,7 +43,10 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        keyboardWindow?.view?.onStartInput(info)
+        keyboardWindow?.view?.apply {
+            onStartInput(info)
+            refreshLayout()
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

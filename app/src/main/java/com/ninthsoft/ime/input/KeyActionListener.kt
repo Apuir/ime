@@ -18,7 +18,7 @@ class KeyActionListener(
 
     override fun onKeyAction(action: KeyAction) {
         when (action) {
-            is KeyAction.NormalKeyAction -> {
+            is KeyAction.PressKeyAction -> {
                 engine?.processKey(service, action.asKeyEvent(isVirtual = false))
             }
 

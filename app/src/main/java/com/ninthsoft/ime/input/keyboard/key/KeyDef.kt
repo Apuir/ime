@@ -7,7 +7,7 @@ import androidx.annotation.DrawableRes
 open class KeyDef(
     val appearance: Appearance,
     val behaviors: Set<Behavior>,
-    val popup: Array<Popup>? = null,
+    val popups: Array<Popup>? = null,
 ) {
     sealed class Appearance(
         val percentWidth: Float,
