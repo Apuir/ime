@@ -44,6 +44,18 @@ class MessageHandler(
                 }
             }
 
+            is EngineMessage.RerankStarted -> {
+                withContext(Dispatchers.Main) {
+                    keyboardWindow?.panel?.showRerankAnimation()
+                }
+            }
+
+            is EngineMessage.RerankedCandidate -> {
+                withContext(Dispatchers.Main) {
+                    keyboardWindow?.setRerankedCandidate(message.best)
+                }
+            }
+
             is EngineMessage.Status -> {
                 Timber.d("status: schema=${message.schemaName}")
             }

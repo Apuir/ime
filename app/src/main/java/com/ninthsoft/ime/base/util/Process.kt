@@ -1,4 +1,4 @@
-package com.ninthsoft.ime.util
+package com.ninthsoft.ime.base.util
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow

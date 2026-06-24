@@ -52,9 +52,18 @@ plugins {
             version = "3.22.1"
         }
     }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.directories.add("src/main/libs")
+        }
+    }
 }
 
 dependencies {
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    // implementation(libs.tokenizer)
+    implementation(libs.onnxruntime.android)
     implementation(libs.androidx.startup.runtime)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.timber)

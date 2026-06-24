@@ -6,6 +6,7 @@ import com.ninthsoft.ime.engine.data.EngineMessage
 class KawaiiPanel(
     context: Context,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
+    var onRerankedSelected: ((String) -> Unit)? = null,
     var onToolbarAction: ((Action) -> Unit)? = null,
 ) : IPanel {
 
@@ -19,6 +20,7 @@ class KawaiiPanel(
     sealed class TouchResult {
         data class ToolbarAction(val action: Action) : TouchResult()
         data class SelectCandidate(val candidate: EngineMessage.Candidate) : TouchResult()
+        data class SelectRerankedCandidate(val text: String) : TouchResult()
     }
 
     sealed class State {
@@ -31,6 +33,7 @@ class KawaiiPanel(
             when (result) {
                 is TouchResult.ToolbarAction -> onToolbarAction?.invoke(result.action)
                 is TouchResult.SelectCandidate -> onCandidateSelected?.invoke(result.candidate)
+                is TouchResult.SelectRerankedCandidate -> onRerankedSelected?.invoke(result.text)
                 null -> {}
             }
         }
@@ -53,6 +56,14 @@ class KawaiiPanel(
             else -> KawaiiPanelView.ComposingRenderer(list)
         }
         view.invalidate()
+    }
+
+    override fun showRerankAnimation() {
+        view.showRerankAnimation()
+    }
+
+    override fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
+        view.setRerankedCandidate(candidate)
     }
 
     override fun refreshTheme() {

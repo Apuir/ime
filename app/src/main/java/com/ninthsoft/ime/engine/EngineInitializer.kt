@@ -3,6 +3,8 @@ package com.ninthsoft.ime.engine
 import android.content.Context
 import androidx.startup.Initializer
 import com.ninthsoft.ime.base.logger.LoggerInitializer
+import com.ninthsoft.ime.base.registry.SingletonRegistry
+import com.ninthsoft.ime.engine.ranking.RankingInitializer
 
 class EngineInitializer : Initializer<IEngine> {
 
@@ -11,6 +13,6 @@ class EngineInitializer : Initializer<IEngine> {
     }
 
     override fun dependencies(): List<Class<out Initializer<*>>> {
-        return listOf(LoggerInitializer::class.java)
+        return listOf(LoggerInitializer::class.java, RankingInitializer::class.java)
     }
 }

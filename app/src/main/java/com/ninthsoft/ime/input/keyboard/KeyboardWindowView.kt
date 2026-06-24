@@ -27,6 +27,7 @@ import kotlin.math.roundToInt
 class KeyboardWindowView(
     context: Context,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
+    onRerankedSelected: ((String) -> Unit)? = null,
 ) : FrameLayout(context) {
 
     private val fallbackNavBarHeight = 48
@@ -46,6 +47,7 @@ class KeyboardWindowView(
     val panel: IPanel = KawaiiPanel(
         context = context,
         onCandidateSelected = onCandidateSelected,
+        onRerankedSelected = onRerankedSelected,
     )
 
     private val preeditPinner = PreeditPinner(context)
@@ -204,6 +206,10 @@ class KeyboardWindowView(
 
     fun setCandidates(list: List<EngineMessage.Candidate>) {
         panel.setCandidates(list)
+    }
+
+    fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
+        panel.setRerankedCandidate(candidate)
     }
 
     fun updatePreedit(text: String?) {

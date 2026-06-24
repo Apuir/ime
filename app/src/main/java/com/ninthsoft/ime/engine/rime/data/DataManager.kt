@@ -1,9 +1,9 @@
 package com.ninthsoft.ime.engine.rime.data
 
 import android.content.res.AssetManager
-import com.ninthsoft.ime.util.FileUtil
-import com.ninthsoft.ime.util.ResourceUtil
-import com.ninthsoft.ime.util.appContext
+import com.ninthsoft.ime.base.util.FileUtil
+import com.ninthsoft.ime.base.util.ResourceUtil
+import com.ninthsoft.ime.base.util.appContext
 import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.io.File

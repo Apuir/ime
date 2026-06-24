@@ -1,6 +1,6 @@
 package com.ninthsoft.ime.engine.rime.data.userdict
 
-import com.ninthsoft.ime.util.appContext
+import com.ninthsoft.ime.base.util.appContext
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream

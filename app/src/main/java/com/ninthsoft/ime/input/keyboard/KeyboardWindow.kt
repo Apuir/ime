@@ -9,10 +9,12 @@ import com.ninthsoft.ime.input.panel.IPanel
 class KeyboardWindow(
     context: Context,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
+    onRerankedSelected: ((String) -> Unit)? = null,
 ) {
     val view: KeyboardWindowView = KeyboardWindowView(
         context = context,
         onCandidateSelected = onCandidateSelected,
+        onRerankedSelected = onRerankedSelected,
     )
 
     val colors: KeyboardColors.ColorScheme get() = KeyboardColors.resolve(view.context)
@@ -29,5 +31,6 @@ class KeyboardWindow(
     fun isNormalKeyboard(): Boolean = view.isNormalKeyboard()
     fun getCurrentKeyboard(): BaseKeyboard? = view.getCurrentKeyboard()
     fun setCandidates(list: List<EngineMessage.Candidate>) { view.setCandidates(list) }
+    fun setRerankedCandidate(candidate: EngineMessage.Candidate) { view.setRerankedCandidate(candidate) }
     fun updatePreedit(text: String?) { view.updatePreedit(text) }
 }

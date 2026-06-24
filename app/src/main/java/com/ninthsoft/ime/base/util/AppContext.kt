@@ -1,4 +1,4 @@
-package com.ninthsoft.ime.util
+package com.ninthsoft.ime.base.util
 
 import android.content.Context
 import android.widget.Toast

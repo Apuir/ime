@@ -20,6 +20,8 @@ sealed class EngineMessage {
 
     data class Schema(val id: String, val name: String) : EngineMessage()
 
+    data class RerankedCandidate(val best: Candidate) : EngineMessage()
+    data object RerankStarted : EngineMessage()
     data class CandidateMenu(
         val pageSize: Int = 0,
         val pageNumber: Int = 0,

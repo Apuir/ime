@@ -2,6 +2,7 @@ package com.ninthsoft.ime
 
 import android.app.Application
 import androidx.startup.AppInitializer
+import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.engine.EngineInitializer
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.MainScope

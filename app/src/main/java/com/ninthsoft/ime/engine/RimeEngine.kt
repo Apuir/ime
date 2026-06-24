@@ -3,14 +3,18 @@ package com.ninthsoft.ime.engine
 import android.content.Context
 import android.inputmethodservice.InputMethodService
 import androidx.lifecycle.lifecycleScope
+import com.ninthsoft.ime.base.registry.SingletonRegistry
+import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.data.KeyEvent
+import com.ninthsoft.ime.engine.ranking.IReranker
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.engine.rime.core.RimeApi
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
 import com.ninthsoft.ime.engine.rime.daemon.launchOnReady
+import com.ninthsoft.ime.input.ImeInputMethodService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -22,6 +26,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -32,6 +37,9 @@ class RimeEngine : IEngine {
     private val session: RimeSession = daemon.createSession(javaClass.name)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val jobs = Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED)
+    private var messageCallback: (suspend (EngineMessage) -> Unit)? = null
+    private var lastPreedit: String = ""
+    private var rerankJob: Job? = null
 
     override fun onCreate(context: Context) {
         scope.launch {
@@ -42,12 +50,14 @@ class RimeEngine : IEngine {
     }
 
     override fun onDestroy() {
+        rerankJob?.cancel()
         jobs.close()
         scope.cancel()
         daemon.destroySession(javaClass.name)
     }
 
     override fun processKey(service: InputMethodService, key: KeyEvent): Unit {
+        rerankJob?.cancel()
         val value = KeyMapping.keyCodeToVal(key.code)
         when (value) {
             KeyMapping.Key_BackSpace -> {
@@ -95,18 +105,19 @@ class RimeEngine : IEngine {
     }
 
     override fun observeMessage(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
+        messageCallback = on
         scope.launch { daemon.observeMessages { msg -> on(msg.EngineMessage()) } }
     }
 
     private fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         is RimeMessage.CommitTextMessage -> {
+            lastPreedit += data.text.orEmpty()
             EngineMessage.Commit(data.text.orEmpty())
         }
 
         is RimeMessage.CompositionMessage -> {
             val preedit = data.preedit.orEmpty()
             val cursor = data.cursorPos
-
             if (preedit.isEmpty()) {
                 EngineMessage.CompositionEnd
             } else {
@@ -115,14 +126,22 @@ class RimeEngine : IEngine {
         }
 
         is RimeMessage.CandidateListMessage -> {
+            val candidates = data.candidates.mapIndexed { i, c ->
+                EngineMessage.Candidate(
+                    index = i,
+                    text = c.text,
+                    comment = c.comment,
+                )
+            }
+            if (candidates.size >= 2 && lastPreedit.isNotEmpty()) {
+                rerankJob?.cancel()
+                rerankJob = scope.launch {
+                    delay(1000)
+                    triggerRerank(lastPreedit, candidates.take(5))
+                }
+            }
             EngineMessage.Candidates(
-                list = data.candidates.mapIndexed { i, c ->
-                    EngineMessage.Candidate(
-                        index = i,
-                        text = c.text,
-                        comment = c.comment,
-                    )
-                },
+                list = candidates,
                 highlighted = data.highlighted,
                 page = 0,
             )
@@ -182,5 +201,27 @@ class RimeEngine : IEngine {
         block: suspend RimeApi.() -> Unit,
     ) {
         jobs.trySend(block)
+    }
+
+    private suspend fun triggerRerank(query: String, candidates: List<EngineMessage.Candidate>) {
+        try {
+            val reranker = SingletonRegistry.get<IReranker>()
+            messageCallback?.invoke(EngineMessage.RerankStarted)
+            val results = reranker.rerank(query, candidates.map { it.text })
+            Timber.d("zzzzz $query")
+            results.forEach {
+                Timber.d("mmmmm ${it.document} ${it.score}")
+            }
+            if (results.isNotEmpty()) {
+                val best = results.first()
+                messageCallback?.invoke(
+                    EngineMessage.RerankedCandidate(
+                        EngineMessage.Candidate(index = 0, text = best.document)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Rerank failed")
+        }
     }
 }

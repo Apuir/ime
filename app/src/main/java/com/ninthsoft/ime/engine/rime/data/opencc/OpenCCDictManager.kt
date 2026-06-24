@@ -4,7 +4,7 @@ import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.dict.Dictionary
 import com.ninthsoft.ime.engine.rime.data.opencc.dict.OpenCCDictionary
 import com.ninthsoft.ime.engine.rime.data.opencc.dict.TextDictionary
-import com.ninthsoft.ime.util.appContext
+import com.ninthsoft.ime.base.util.appContext
 import timber.log.Timber
 import java.io.File
 import java.io.InputStream

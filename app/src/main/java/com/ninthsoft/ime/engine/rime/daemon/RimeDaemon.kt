@@ -9,10 +9,10 @@ import com.ninthsoft.ime.engine.rime.core.RimeLifecycle
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.core.lifecycleScope
 import com.ninthsoft.ime.engine.rime.core.whenReady
-import com.ninthsoft.ime.util.appContext
-import com.ninthsoft.ime.util.appScope
-import com.ninthsoft.ime.util.createNotificationChannel
-import com.ninthsoft.ime.util.subProcess
+import com.ninthsoft.ime.base.util.appContext
+import com.ninthsoft.ime.base.util.appScope
+import com.ninthsoft.ime.base.util.createNotificationChannel
+import com.ninthsoft.ime.base.util.subProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -14,9 +14,11 @@ import kotlinx.coroutines.cancel
 class ImeInputMethodService : InputMethodService() {
     private val engine: IEngine? = EngineFactory.current()
     private var keyboardWindow: KeyboardWindow? = null
-    private var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private lateinit var messageHandler: MessageHandler
     private lateinit var keyActionListener: KeyActionListener
+
+    var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +37,9 @@ class ImeInputMethodService : InputMethodService() {
             context = this,
             onCandidateSelected = { candidate ->
                 engine?.selectCandidate(candidate.index)
+            },
+            onRerankedSelected = { text ->
+                currentInputConnection?.commitText(text, 1)
             },
         ).apply { setKeyActionListener(keyActionListener) }
         messageHandler.setKeyboardWindow(keyboardWindow)

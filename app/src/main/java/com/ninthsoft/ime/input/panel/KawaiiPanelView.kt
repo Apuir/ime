@@ -1,8 +1,10 @@
 package com.ninthsoft.ime.input.panel
 
 import android.annotation.SuppressLint
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.view.MotionEvent
@@ -11,6 +13,7 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.EngineMessage
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 class KawaiiPanelView(context: Context) : View(context) {
 
@@ -85,6 +88,9 @@ class KawaiiPanelView(context: Context) : View(context) {
 
         private var lastPills: List<PillRect> = emptyList()
         var maxScrollX: Float = 0f
+        var rerankAnimProgress: Float = -1f
+        var rerankedText: String? = null
+        var rerankInsertProgress: Float = 0f
 
         override fun draw(canvas: Canvas, width: Int, height: Int, paints: Paints, scrollX: Float) {
             lastPills = emptyList()
@@ -99,7 +105,16 @@ class KawaiiPanelView(context: Context) : View(context) {
             val textY =
                 pillY + pillH / 2f - (paints.candidateTextPaint.descent() + paints.candidateTextPaint.ascent()) / 2f
 
-            var x = pad
+            val hasRerankPill = rerankInsertProgress > 0f || rerankedText != null
+            val rerankLabel = "0. "
+            val rerankText = rerankedText ?: "\u22EF"
+            val rerankPillW = if (hasRerankPill) {
+                paints.candidateIndexPaint.measureText(rerankLabel) +
+                    paints.candidateTextPaint.measureText(rerankText) + pad * 2
+            } else 0f
+            val slideW = rerankPillW * rerankInsertProgress.coerceIn(0f, 1f)
+
+            var x = pad + slideW + if (hasRerankPill) gap else 0f
             val pills = mutableListOf<PillRect>()
             for (c in candidates) {
                 val indexW = paints.candidateIndexPaint.measureText("${c.index}. ")
@@ -117,6 +132,40 @@ class KawaiiPanelView(context: Context) : View(context) {
             canvas.save()
             canvas.clipRect(0f, 0f, width.toFloat(), height.toFloat())
             canvas.translate(scrollX, 0f)
+
+            if (hasRerankPill && slideW > 0f) {
+                val rerankLeft = pad
+                val rerankRight = pad + slideW
+                canvas.drawRoundRect(
+                    rerankLeft, pillY, rerankRight, pillY + pillH, pillR, pillR,
+                    paints.candidateBgPaint,
+                )
+
+                canvas.save()
+                canvas.clipRect(rerankLeft, 0f, rerankRight, height.toFloat())
+                paints.candidateIndexPaint.alpha = (255 * rerankInsertProgress.coerceIn(0f, 1f)).toInt()
+                paints.candidateTextPaint.alpha = paints.candidateIndexPaint.alpha
+                val idxW = paints.candidateIndexPaint.measureText(rerankLabel)
+                canvas.drawText(rerankLabel, rerankLeft + pad, textY, paints.candidateIndexPaint)
+                canvas.drawText(rerankText, rerankLeft + pad + idxW, textY, paints.candidateTextPaint)
+                paints.candidateIndexPaint.alpha = 255
+                paints.candidateTextPaint.alpha = 255
+                canvas.restore()
+
+                lastPills = listOf(PillRect(rerankLeft, rerankRight, -1)) + lastPills
+
+                if (rerankAnimProgress >= 0f) {
+                    val shimmerAlpha = ((sin(rerankAnimProgress * Math.PI * 2).toFloat() + 1f) / 2f * 100 + 30).toInt()
+                    val shimmerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.argb(shimmerAlpha, 100, 140, 255)
+                        style = Paint.Style.FILL
+                    }
+                    canvas.drawRoundRect(
+                        rerankLeft, pillY, rerankRight, pillY + pillH,
+                        pillR, pillR, shimmerPaint,
+                    )
+                }
+            }
 
             for ((i, c) in candidates.withIndex()) {
                 val pill = pills[i]
@@ -155,6 +204,9 @@ class KawaiiPanelView(context: Context) : View(context) {
             val adjustedX = x - scrollX
             for (pill in lastPills) {
                 if (adjustedX >= pill.left && adjustedX <= pill.right) {
+                    if (pill.index == -1) {
+                        return KawaiiPanel.TouchResult.SelectRerankedCandidate(rerankedText ?: "")
+                    }
                     val c = candidates.find { it.index == pill.index } ?: return null
                     return KawaiiPanel.TouchResult.SelectCandidate(c)
                 }
@@ -170,6 +222,47 @@ class KawaiiPanelView(context: Context) : View(context) {
     private val paints = Paints(context)
     private var lastTouchX = 0f
     private var isScrolling = false
+    private var rerankShimmer: ValueAnimator? = null
+    private var rerankInsert: ValueAnimator? = null
+
+    fun showRerankAnimation() {
+        val renderer = currentRenderer as? ComposingRenderer ?: return
+        rerankShimmer?.cancel()
+        rerankInsert?.cancel()
+
+        renderer.rerankInsertProgress = 0.01f
+        rerankInsert = ValueAnimator.ofFloat(0.01f, 1f).apply {
+            duration = 220
+            addUpdateListener {
+                renderer.rerankInsertProgress = animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+
+        rerankShimmer = ValueAnimator.ofFloat(0f, 1f).apply {
+            startDelay = 220
+            duration = 700
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener {
+                renderer.rerankAnimProgress = animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
+        rerankShimmer?.cancel()
+        rerankShimmer = null
+        rerankInsert?.cancel()
+        rerankInsert = null
+        val renderer = currentRenderer as? ComposingRenderer
+        renderer?.rerankAnimProgress = -1f
+        renderer?.rerankInsertProgress = 1f
+        renderer?.rerankedText = candidate.text
+        invalidate()
+    }
 
     init {
         paints.updateColors(context)
