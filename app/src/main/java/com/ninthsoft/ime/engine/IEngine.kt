@@ -7,18 +7,15 @@ import com.ninthsoft.ime.engine.data.KeyEvent
 import kotlinx.coroutines.CoroutineScope
 
 interface IEngine {
-    fun onCreate(context: Context)
+    fun initialize(context: Context)
+    fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit)
+    fun resetState()
+    fun postProcessKey(
+        service: InputMethodService, key: KeyEvent, on: (Boolean) -> Unit = {}
+    ): Unit?
 
-    fun onDestroy()
-
-    fun processKey(service: InputMethodService, key: KeyEvent): Unit?
-
-    fun selectCandidate(index: Int)
-
-    fun observeMessage(
-        scope: CoroutineScope,
-        on: suspend (EngineMessage) -> Unit,
-    )
-
-    fun reset()
+    fun postSelectCandidate(index: Int, on: (Boolean) -> Unit = {})
+    fun postSchemeList(on: (List<EngineMessage.Schema>) -> Unit)
+    fun postClear(service: InputMethodService, on: (Boolean) -> Unit = {})
+    fun finalize()
 }

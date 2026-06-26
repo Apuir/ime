@@ -12,9 +12,9 @@ class PreeditPinner(context: Context) : IPinner {
     }
 
     override fun refreshTheme(context: Context) {
-        val scheme = KeyboardColors.resolve(context)
+        val pinner = KeyboardColors.resolve(context).pinner
         val textSize = 15f * context.resources.displayMetrics.density
-        view.applyTheme(scheme.keyBackground, scheme.accentKeyText, textSize)
+        view.applyTheme(pinner.background, pinner.textColor, textSize)
     }
 
     override fun updateText(text: String?) {

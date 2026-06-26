@@ -7,7 +7,14 @@ import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -27,6 +35,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,16 +48,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.input.ImeInputMethodService
-import com.ninthsoft.ime.ui.screen.ScreenComponent.groupFontSize
-import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
+import com.ninthsoft.ime.ui.theme.ExpressiveShapes
 import com.ninthsoft.ime.ui.theme.ImeTheme
+import com.ninthsoft.ime.ui.theme.OnPrimaryLight
+import com.ninthsoft.ime.ui.theme.SuccessContainerLight
+import com.ninthsoft.ime.ui.theme.SuccessDark
+import com.ninthsoft.ime.ui.theme.SuccessLight
 
 class SetupActivity : ComponentActivity() {
 
@@ -72,7 +87,8 @@ class SetupActivity : ComponentActivity() {
                     onFinish = {
                         setResult(RESULT_OK)
                         finish()
-                    })
+                    },
+                )
             }
         }
     }
@@ -101,8 +117,6 @@ class SetupActivity : ComponentActivity() {
             Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         val ourId = ourComponent.flattenToShortString()
         isImeDefault = currentId == ourId
-
-        // auto-finish intentionally removed; user always clicks the button to proceed
     }
 
     private fun openImeSettings() {
@@ -121,37 +135,43 @@ private fun SetupScreen(
     isImeDefault: Boolean,
     onOpenImeSettings: () -> Unit,
     onShowImePicker: () -> Unit,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
 ) {
+    val isConfigured = isImeEnabled && isImeDefault
+
     Surface(
-        modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.Keyboard,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
 
             Text(
                 text = stringResource(R.string.ime_setup_description),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                fontSize = rowFontSize,
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(36.dp))
 
             SetupStatusCard(
                 title = stringResource(R.string.enable_ime),
@@ -160,10 +180,10 @@ private fun SetupScreen(
                 completeText = stringResource(R.string.enabled),
                 incompleteText = stringResource(R.string.not_enabled),
                 actionText = stringResource(R.string.go_to_settings),
-                onAction = onOpenImeSettings
+                onAction = onOpenImeSettings,
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
             SetupStatusCard(
                 title = stringResource(R.string.set_default_ime),
@@ -172,42 +192,44 @@ private fun SetupScreen(
                 completeText = stringResource(R.string.is_default),
                 incompleteText = stringResource(R.string.not_default),
                 actionText = stringResource(R.string.select_ime),
-                onAction = onShowImePicker
+                onAction = onShowImePicker,
             )
 
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(32.dp))
 
-            val isConfigured = isImeEnabled && isImeDefault
-            val buttonColors = if (isConfigured) {
-                ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.secondary
-                )
-            } else {
-                ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            val buttonText = if (isConfigured) {
-                stringResource(R.string.start_using)
-            } else {
-                stringResource(R.string.enter_settings)
-            }
+            val buttonScale by animateFloatAsState(
+                targetValue = if (isConfigured) 1f else 0.98f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+                label = "buttonScale",
+            )
 
             Button(
                 onClick = onFinish,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
-                colors = buttonColors
+                    .height(52.dp)
+                    .scale(buttonScale),
+                shape = ExpressiveShapes.medium,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = if (isConfigured) if (isSystemInDarkTheme()) SuccessDark else SuccessLight
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = if (isConfigured) 4.dp else 0.dp,
+                ),
             ) {
                 Text(
-                    buttonText, fontSize = groupFontSize
+                    text = if (isConfigured) stringResource(R.string.start_using)
+                    else stringResource(R.string.enter_settings),
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
@@ -220,45 +242,75 @@ private fun SetupStatusCard(
     completeText: String,
     incompleteText: String,
     actionText: String,
-    onAction: () -> Unit
+    onAction: () -> Unit,
 ) {
+    val isDark = isSystemInDarkTheme()
+    val successColor = if (isDark) SuccessDark else SuccessLight
+    val successContainer = if (isDark) SuccessDark.copy(alpha = 0.15f) else SuccessContainerLight
+
+    val iconColor by animateColorAsState(
+        targetValue = if (isComplete) successColor else MaterialTheme.colorScheme.error,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "iconColor",
+    )
+
     Card(
-        modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth(),
+        shape = ExpressiveShapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isComplete) {
+                if (isDark) MaterialTheme.colorScheme.surface
+                else successContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isComplete) 2.dp else 1.dp,
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    imageVector = if (isComplete) Icons.Default.CheckCircle
+                    else Icons.Default.Warning,
                     contentDescription = null,
-                    tint = if (isComplete) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(24.dp)
+                    tint = iconColor,
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         if (isComplete) completeText else incompleteText,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (isComplete) MaterialTheme.colorScheme.secondary
-                        else MaterialTheme.colorScheme.error
+                        color = iconColor,
+                        fontWeight = if (isComplete) FontWeight.Medium else FontWeight.Normal,
                     )
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp,
+            )
+
+            Spacer(Modifier.height(10.dp))
 
             Text(
                 description,
@@ -267,16 +319,23 @@ private fun SetupStatusCard(
             )
 
             if (!isComplete) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = onAction,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = ExpressiveShapes.small,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 2.dp,
+                    ),
                 ) {
-                    Text(actionText)
+                    Text(
+                        actionText,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }

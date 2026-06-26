@@ -1,5 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
+import android.animation.Animator
+import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -34,6 +36,8 @@ import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
+import com.ninthsoft.ime.input.keyboard.widget.SidePanelRender
+import org.fcitx.fcitx5.android.input.keyboard.widget.SidePanelView
 
 abstract class KeyView(
     ctx: Context,
@@ -42,11 +46,12 @@ abstract class KeyView(
 ) : CustomGestureView(ctx) {
 
     var bordered: Boolean = true
-    var borderStroke: Boolean = false
-    var rippled: Boolean = true
-    var radius = if (colors.surfaceStyle == SurfaceStyle.Flat) dp(7f) else dp(5f)
-    var hMargin: Int = dp(3)
-    var vMargin: Int = dp(4)
+    var borderStroke: Boolean = true
+    var radius = colors.cornerRadius.let { dp(it) }
+    var hMargin: Int = colors.keyHMargin.let { dp(it).toInt() }
+    var vMargin: Int = colors.keyVMargin.let { dp(it).toInt() }
+    var onPressedChanged: ((KeyView) -> Unit)? = null
+    private var wasPressed = false
 
     private val cachedLocation = intArrayOf(0, 0)
     private val cachedBounds = Rect()
@@ -62,7 +67,6 @@ abstract class KeyView(
     @FloatRange(0.0, 1.0)
     var layoutMarginRight = 0f
 
-    /** Text to show in the key preview popup (null = no preview) */
     open val displayText: String? get() = null
 
     protected val appearanceView = constraintLayout {
@@ -88,7 +92,7 @@ abstract class KeyView(
     }
 
     private var pressedLayerAlpha = 0
-    private var bgAnimator: ValueAnimator? = null
+    private var bgAnimator: Animator? = null
 
     private fun setupBackgroundWithPress() {
         val bkgColor = when (def.variant) {
@@ -150,19 +154,31 @@ abstract class KeyView(
         super.drawableStateChanged()
         val bg = appearanceView.background
         if (bg !is LayerDrawable || bg.numberOfLayers < 2) return
+        val pressed = isPressed
+        if (pressed == wasPressed) return
+        wasPressed = pressed
+        if (pressed) {
+            onPressedChanged?.invoke(this)
+        }
 
         bgAnimator?.cancel()
 
-        val target = if (isPressed) 255 else 0
         val pressedDrawable = bg.getDrawable(1) ?: return
-        bgAnimator = ValueAnimator.ofInt(pressedLayerAlpha, target).apply {
-            duration = if (isPressed) 100 else 80
+        fun anim(from: Int, to: Int, durationMs: Long) = ValueAnimator.ofInt(from, to).apply {
+            duration = durationMs
             addUpdateListener {
                 val alpha = animatedValue as Int
                 pressedLayerAlpha = alpha
                 pressedDrawable.alpha = alpha
             }
-            start()
+        }
+        bgAnimator = if (pressed) {
+            anim(pressedLayerAlpha, 255, 220).also { it.start() }
+        } else {
+            AnimatorSet().apply {
+                playSequentially(anim(pressedLayerAlpha, 255, 70), anim(255, 0, 180))
+                start()
+            }
         }
     }
 
@@ -287,15 +303,53 @@ class AltTextKeyView(
             bottomToBottom = parentId
             startToStart = parentId
             endToEnd = parentId
-            verticalBias = 0.15f
+            verticalBias = 0.2f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToBottom = mainText.id
             startToStart = parentId
             endToEnd = parentId
+            verticalBias = 0.2f
+        }
+        def as KeyDef.Appearance.AltText
+        mainText.translationY = dp(def.mainTextTranslationY).toFloat()
+        altText.translationY = dp(def.altTextTranslationY).toFloat()
+    }
+}
+
+@SuppressLint("ViewConstructor")
+class SidePanelKeyView(
+    ctx: Context, colors: KeyboardColors.ColorScheme, def: KeyDef.Appearance.SidePannel
+) : SidePanelView(ctx, colors, def) {
+    override val render: SidePanelRender = object : SidePanelRender(
+        colors,
+        resources.displayMetrics.density,
+        visibleItemCount = 4,
+        appearance = def,
+    ) {
+        override fun cornerRadius(): Float = dp(theme.cornerRadius)
+
+        override fun toItem(itemDef: KeyDef): Item? {
+            val itemAppearance = itemDef.appearance as? KeyDef.Appearance.Text ?: return null
+            val action = itemDef.behaviors.firstNotNullOfOrNull { behavior ->
+                (behavior as? KeyDef.Behavior.Press)?.action
+            }
+            val textColor = when (itemAppearance.variant) {
+                Variant.Normal -> theme.keyText
+                Variant.AltForeground, Variant.Alternative -> theme.altText
+                Variant.Accent -> theme.accentKeyText
+            }
+            return Item(
+                label = itemAppearance.displayText,
+                textSize = itemAppearance.textSize,
+                textStyle = itemAppearance.textStyle,
+                textColor = textColor,
+                action = action,
+            )
         }
     }
 }
+
 
 @SuppressLint("ViewConstructor")
 class ImageKeyView(
@@ -353,7 +407,6 @@ class ImageTextKeyView(
             centerHorizontally()
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.6f
         }
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             centerHorizontally()

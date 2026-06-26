@@ -36,6 +36,8 @@ open class KeyDef(
         class AltText(
             displayText: String,
             val altText: String,
+            val altTextTranslationY: Int = 0,
+            val mainTextTranslationY: Int = 0,
             textSize: Float,
             textStyle: Int = Typeface.NORMAL,
             percentWidth: Float = 0.1f,
@@ -55,6 +57,15 @@ open class KeyDef(
             viewId,
             visibility
         )
+
+        class SidePannel(
+            val rowSpan: Int = 1,
+            percentWidth: Float = 0.1f,
+            variant: Variant = Variant.Normal,
+            border: Border = Border.Default,
+            margin: Boolean = true,
+            viewId: Int = -1,
+        ) : Appearance(percentWidth, variant, border, margin, viewId)
 
         class Image(
             @DrawableRes val src: Int,

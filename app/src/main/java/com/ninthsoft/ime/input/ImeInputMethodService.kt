@@ -29,14 +29,14 @@ class ImeInputMethodService : InputMethodService() {
             onSwitchLayout = { target -> keyboardWindow?.switchLayout(target) },
             getCurrentKeyboard = { keyboardWindow?.getCurrentKeyboard() },
         )
-        engine?.observeMessage(scope!!) { messageHandler.handle(it) }
+        engine?.observe(scope!!) { messageHandler.handle(it) }
     }
 
     override fun onCreateInputView(): View {
         keyboardWindow = KeyboardWindow(
             context = this,
             onCandidateSelected = { candidate ->
-                engine?.selectCandidate(candidate.index)
+                engine?.postSelectCandidate(candidate.index)
             },
             onRerankedSelected = { text ->
                 currentInputConnection?.commitText(text, 1)
@@ -49,13 +49,14 @@ class ImeInputMethodService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         keyboardWindow?.view?.apply {
+            refreshColors()
             onStartInput(info)
             refreshLayout()
         }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        engine?.reset()
+        engine?.resetState()
         super.onFinishInputView(finishingInput)
     }
 

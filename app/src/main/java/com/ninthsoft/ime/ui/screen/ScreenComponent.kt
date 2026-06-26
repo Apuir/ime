@@ -1,8 +1,15 @@
 package com.ninthsoft.ime.ui.screen
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -33,14 +42,16 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,12 +60,9 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
 
 object ScreenComponent {
     val barFontSize = 18.sp
-    val groupFontSize = 16.sp
-    val rowFontSize = 16.sp
-
-    val rowSubFontSize = 14.sp
-    val spacerHeight = 6.dp
-    const val SWITCH_SCALE = 0.7f
+    val rowFontSize = 15.sp
+    val rowSubFontSize = 13.sp
+    const val SWITCH_SCALE = 0.75f
 
     @Composable
     fun SettingsGroup(
@@ -62,26 +70,44 @@ object ScreenComponent {
         icon: ImageVector? = null,
         content: @Composable () -> Unit,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 4.dp),
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.width(6.dp))
             }
-            Text(
-                text = title,
-                fontSize = groupFontSize,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    content()
+                }
+            }
         }
-        content()
     }
 
     @Composable
@@ -92,32 +118,33 @@ object ScreenComponent {
         showDivider: Boolean = false,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
-                fontSize = rowFontSize
+                fontSize = rowSubFontSize,
             )
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 modifier = Modifier.scale(SWITCH_SCALE),
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    checkedTrackColor = MaterialTheme.colorScheme.secondary,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                )
+                ),
             )
         }
         if (showDivider) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 4.dp, end = 4.dp),
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
     }
@@ -132,48 +159,59 @@ object ScreenComponent {
         onValueChange: (Float) -> Unit,
         showDivider: Boolean = false,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
-                    fontSize = rowFontSize
+                    fontSize = rowSubFontSize,
                 )
                 Text(
                     text = valueLabel,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontSize = rowFontSize
+                    fontSize = rowSubFontSize,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(modifier = Modifier
-                .fillMaxWidth()
-                .height(spacerHeight))
-            Slider(value = value, onValueChange = onValueChange, valueRange = range, thumb = {
-                Surface(
-                    modifier = Modifier.size(width = 2.dp, height = 14.dp),
-                    shape = RoundedCornerShape(1.dp),
-                    color = MaterialTheme.colorScheme.secondary
-                ) {}
-            }, track = { sliderState ->
-                SliderDefaults.Track(
-                    sliderState = sliderState,
-                    modifier = Modifier.height(4.dp),
-                    colors = SliderDefaults.colors(
-                        activeTrackColor = MaterialTheme.colorScheme.secondary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(modifier = Modifier.height(4.dp))
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = range,
+                modifier = Modifier.offset(x = (-6).dp),
+                thumb = {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 3.dp, height = 14.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(MaterialTheme.colorScheme.primary),
                     )
-                )
-            })
+                },
+                track = { sliderState ->
+                    SliderDefaults.Track(
+                        sliderState = sliderState,
+                        modifier = Modifier.height(4.dp),
+                        colors = SliderDefaults.colors(
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                    )
+                },
+            )
         }
         if (showDivider) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 4.dp, end = 4.dp),
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
     }
@@ -182,7 +220,7 @@ object ScreenComponent {
     fun SectionHeader(title: String, icon: ImageVector? = null) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
+            modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 8.dp),
         ) {
             if (icon != null) {
                 Icon(
@@ -196,56 +234,82 @@ object ScreenComponent {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
-                fontSize = groupFontSize,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 
     @Composable
     fun ClickableSettingItem(
-        title: String, subtitle: String, onClick: () -> Unit,
-        icon: ImageVector? = null, showSpacer: Boolean = false,
+        title: String,
+        subtitle: String,
+        onClick: () -> Unit,
+        icon: ImageVector? = null,
+        showSpacer: Boolean = false,
     ) {
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val elevation by animateDpAsState(
+            targetValue = if (isPressed) 0.dp else 0.dp,
+            animationSpec = spring(stiffness = Spring.StiffnessHigh),
+            label = "elevation",
+        )
+
         Card(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                     Spacer(Modifier.width(12.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         title,
                         style = MaterialTheme.typography.bodyLarge,
-                        fontSize = groupFontSize
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
                     )
                     if (showSpacer) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                     }
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = rowSubFontSize
+                        fontSize = rowSubFontSize,
                     )
                 }
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -257,31 +321,64 @@ object ScreenComponent {
         options: List<String>,
         selectedIndex: Int,
         onSelect: (Int) -> Unit,
-        onDismiss: () -> Unit
+        onDismiss: () -> Unit,
     ) {
-        AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
-            Column {
-                options.forEachIndexed { index, option ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(index) }
-                            .padding(vertical = 8.dp)
-                    ) {
-                        RadioButton(
-                            selected = index == selectedIndex,
-                            onClick = { onSelect(index) })
-                        Spacer(Modifier.width(8.dp))
-                        Text(option)
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Column {
+                    options.forEachIndexed { index, option ->
+                        val isSelected = index == selectedIndex
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onSelect(index) }
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                    else Color.Transparent
+                                )
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onSelect(index) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = option,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
-            }
-        }, confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        })
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        stringResource(R.string.cancel),
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            },
+        )
     }
 
     @Composable
@@ -290,49 +387,113 @@ object ScreenComponent {
         selected: Boolean,
         onClick: () -> Unit,
     ) {
-        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        val colors = if (isDark) theme.dark else theme.light
+        val colors = theme.colors
+
+        val borderColor by animateColorAsState(
+            targetValue = if (selected) MaterialTheme.colorScheme.primary
+            else Color.Transparent,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
+            label = "borderColor",
+        )
+        val bgColor by animateColorAsState(
+            targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            else Color.Transparent,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
+            label = "bgColor",
+        )
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .clip(MaterialTheme.shapes.small)
+                .clip(RoundedCornerShape(12.dp))
+                .background(bgColor)
                 .clickable(onClick = onClick)
-                .padding(4.dp)
+                .padding(8.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .border(
-                        width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                        shape = CircleShape,
-                    )
-                    .padding(if (selected) 2.dp else 1.dp)
+                    .size(width = 48.dp, height = 40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(colors.background))
+                    .padding(2.dp),
             ) {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxSize()
-                            .background(Color(colors.keyBackground)),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxSize()
-                            .background(Color(colors.accentKeyBackground)),
-                    )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        repeat(5) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(colors.keyBackground)),
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Spacer(Modifier.weight(0.4f))
+                        repeat(4) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(colors.keyBackground)),
+                            )
+                        }
+                        Spacer(Modifier.weight(0.4f))
+                    }
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(colors.specialKeyBackground)),
+                        )
+                        repeat(3) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(colors.keyBackground)),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(colors.accentKeyBackground)),
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = theme.name,
                 style = MaterialTheme.typography.labelSmall,
-                fontSize = rowFontSize,
+                fontSize = 13.sp,
                 textAlign = TextAlign.Center,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )

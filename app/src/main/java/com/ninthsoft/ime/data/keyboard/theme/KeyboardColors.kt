@@ -24,13 +24,65 @@ object KeyboardColors {
         val altText: Int,
         val background: Int,
         val surfaceStyle: SurfaceStyle = SurfaceStyle.Raised,
-    )
+        val cornerRadius: Float = 5f,
+        val keyHMargin: Float = 3f,
+        val keyVMargin: Float = 4f,
+        val panel: PanelColors,
+        val pinner: PinnerColors,
+    ) {
+        data class PanelColors(
+            val background: Int,
+            val toolbarText: Int,
+            val candidateBackground: Int,
+            val candidateText: Int,
+            val candidateIndex: Int,
+        ) {
+            companion object {
+                fun from(c: ColorScheme) = PanelColors(
+                    background = c.background,
+                    toolbarText = c.keyText,
+                    candidateBackground = c.specialKeyBackground,
+                    candidateText = c.keyText,
+                    candidateIndex = c.altText,
+                )
+            }
+        }
+
+        data class PinnerColors(
+            val background: Int,
+            val textColor: Int,
+        ) {
+            companion object {
+                fun from(c: ColorScheme) = PinnerColors(
+                    background = c.keyBackground,
+                    textColor = c.accentKeyText,
+                )
+            }
+        }
+    }
 
     fun resolve(context: Context): ColorScheme {
-        val isDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-                Configuration.UI_MODE_NIGHT_YES
+        val c = themeFor(context).colors
+        val userRadius = ThemeManager.Keyboard.KeyRadius.getDp(context).toFloat()
+        val userHMargin = ThemeManager.Keyboard.Gap.getHorizontalDp(context).toFloat()
+        val userVMargin = ThemeManager.Keyboard.Gap.getVerticalDp(context).toFloat()
+        return c.copy(
+            cornerRadius = userRadius,
+            keyHMargin = userHMargin,
+            keyVMargin = userVMargin,
+        )
+    }
+
+    fun themeFor(context: Context): KeyboardTheme {
+        val followSystem = ThemeManager.Keyboard.getFollowSystem(context)
+        if (followSystem) {
+            val isDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+                    Configuration.UI_MODE_NIGHT_YES
+            val themeId = if (isDark) ThemeManager.Keyboard.getDarkThemeId(context)
+                else ThemeManager.Keyboard.getLightThemeId(context)
+            return KeyboardTheme.byId(themeId)
+        }
         val themeId = ThemeManager.Keyboard.getThemeId(context)
-        val theme = KeyboardTheme.byId(themeId)
-        return if (isDark) theme.dark else theme.light
+        return KeyboardTheme.byId(themeId)
     }
 }

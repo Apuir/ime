@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,11 +14,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -28,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
@@ -37,12 +42,13 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ThemeChip
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
-import com.ninthsoft.ime.ui.screen.ScreenComponent.groupFontSize
+import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KeyboardSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+
     var keySoundEnabled by remember { mutableStateOf(true) }
     var keyVibrationEnabled by remember {
         mutableStateOf(ThemeManager.Keyboard.Feedback.getVibrationEnabled(context))
@@ -65,52 +71,142 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
     var ignoreInsets by remember {
         mutableStateOf(ThemeManager.Keyboard.getIgnoreInsets(context))
     }
+    var keyRadius by remember {
+        mutableFloatStateOf(ThemeManager.Keyboard.KeyRadius.getDp(context).toFloat())
+    }
+    var rippleEnabled by remember {
+        mutableStateOf(ThemeManager.Keyboard.RippleEffect.isEnabled(context))
+    }
+    var followSystem by remember {
+        mutableStateOf(ThemeManager.Keyboard.getFollowSystem(context))
+    }
     var selectedThemeId by remember {
         mutableStateOf(ThemeManager.Keyboard.getThemeId(context))
+    }
+    var selectedLightThemeId by remember {
+        mutableStateOf(ThemeManager.Keyboard.getLightThemeId(context))
+    }
+    var selectedDarkThemeId by remember {
+        mutableStateOf(ThemeManager.Keyboard.getDarkThemeId(context))
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = {
-                Text(
-                    text = stringResource(R.string.keyboard_settings),
-                    fontSize = barFontSize,
-                    modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp),
-                )
-            }, navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.back),
-                        modifier = Modifier.scale(0.7f)
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.keyboard_settings),
+                        fontSize = barFontSize,
+                        fontWeight = FontWeight.Bold,
                     )
-                }
-            })
-        }) { padding ->
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back),
+                            modifier = Modifier.scale(0.8f),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
 
             SettingsGroup(title = stringResource(R.string.keyboard_theme)) {
                 Spacer(Modifier.height(4.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(KeyboardTheme.PRESETS) { theme ->
-                        val isSelected = theme.id == selectedThemeId
-                        ThemeChip(
-                            theme = theme, selected = isSelected, onClick = {
-                                selectedThemeId = theme.id
-                                ThemeManager.Keyboard.setThemeId(context, theme.id)
-                            })
+                SwitchRow(
+                    title = stringResource(R.string.keyboard_theme_follow_system),
+                    checked = followSystem,
+                    onCheckedChange = {
+                        followSystem = it
+                        ThemeManager.Keyboard.setFollowSystem(context, it)
+                    },
+                    showDivider = true,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (followSystem) {
+                    Text(
+                        text = stringResource(R.string.keyboard_theme_light),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(KeyboardTheme.PRESETS) { theme ->
+                            val isSelected = theme.id == selectedLightThemeId
+                            ThemeChip(
+                                theme = theme,
+                                selected = isSelected,
+                                onClick = {
+                                    selectedLightThemeId = theme.id
+                                    ThemeManager.Keyboard.setLightThemeId(context, theme.id)
+                                },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Text(
+                        text = stringResource(R.string.keyboard_theme_dark),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(KeyboardTheme.PRESETS) { theme ->
+                            val isSelected = theme.id == selectedDarkThemeId
+                            ThemeChip(
+                                theme = theme,
+                                selected = isSelected,
+                                onClick = {
+                                    selectedDarkThemeId = theme.id
+                                    ThemeManager.Keyboard.setDarkThemeId(context, theme.id)
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(KeyboardTheme.PRESETS) { theme ->
+                            val isSelected = theme.id == selectedThemeId
+                            ThemeChip(
+                                theme = theme,
+                                selected = isSelected,
+                                onClick = {
+                                    selectedThemeId = theme.id
+                                    ThemeManager.Keyboard.setThemeId(context, theme.id)
+                                },
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
             }
 
             SettingsGroup(title = stringResource(R.string.key_feedback)) {
@@ -127,11 +223,30 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                         ThemeManager.Keyboard.Feedback.setVibrationEnabled(context, it)
                     },
                 )
+                SwitchRow(
+                    title = stringResource(R.string.key_ripple_effect),
+                    checked = rippleEnabled,
+                    onCheckedChange = {
+                        rippleEnabled = it
+                        ThemeManager.Keyboard.RippleEffect.setEnabled(context, it)
+                    },
+                )
+                Spacer(Modifier.height(14.dp))
+                SliderRow(
+                    title = stringResource(R.string.key_corner_radius),
+                    value = keyRadius,
+                    valueLabel = "${keyRadius.toInt()} dp",
+                    range = 0f..32f,
+                    onValueChange = {
+                        keyRadius = it
+                        ThemeManager.Keyboard.KeyRadius.setDp(context, it.toInt())
+                    },
+                )
                 SliderRow(
                     title = stringResource(R.string.key_x_gap),
                     value = keyXGap,
                     valueLabel = "${keyXGap.toInt()} dp",
-                    range = 0f..12f,
+                    range = 0f..16f,
                     onValueChange = {
                         keyXGap = it
                         ThemeManager.Keyboard.Gap.setHorizontalDp(context, it.toInt())
@@ -146,12 +261,12 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                         keyYGap = it
                         ThemeManager.Keyboard.Gap.setVerticalDp(context, it.toInt())
                     },
-                    showDivider = true
+                    showDivider = true,
                 )
             }
 
             SettingsGroup(title = stringResource(R.string.keyboard_layout)) {
-                Spacer(modifier = Modifier.height(1.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 SliderRow(
                     title = stringResource(R.string.keyboard_height),
@@ -190,10 +305,10 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                         ignoreInsets = it
                         ThemeManager.Keyboard.setIgnoreInsets(context, it)
                     },
-                    showDivider = false
+                    showDivider = false,
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(14.dp))
         }
     }
 }

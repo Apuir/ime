@@ -3,9 +3,19 @@ package com.ninthsoft.ime.input.keyboard.key
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.engine.data.KeyEvent
 
-fun alphabetKey(character: String, punctuation: String) = KeyDef(
+fun alphabetKey(
+    character: String,
+    punctuation: String,
+    altTextTranslationY: Int = 0,
+    mainTextTranslationY: Int = 0,
+) = KeyDef(
     appearance = KeyDef.Appearance.AltText(
-        displayText = character, altText = punctuation, textSize = 23f,
+        displayText = character,
+        altText = punctuation,
+        textSize = 23f,
+        altTextTranslationY = altTextTranslationY,
+        mainTextTranslationY = mainTextTranslationY,
+        variant = KeyDef.Appearance.Variant.Normal
     ), behaviors = setOf(
         KeyDef.Behavior.Press(
             KeyAction.PressKeyAction(
@@ -15,6 +25,38 @@ fun alphabetKey(character: String, punctuation: String) = KeyDef(
     ), popups = arrayOf(
         KeyDef.Popup.Preview(character)
     )
+)
+
+fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.23333f) = KeyDef(
+    appearance = KeyDef.Appearance.AltText(
+        displayText = letters,
+        altText = digit,
+        textSize = 18f,
+        percentWidth = percentWidth,
+        mainTextTranslationY = 4,
+        altTextTranslationY = 4
+    ),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(
+            KeyAction.PressKeyAction(code = KeyEvent.code(digit), modifiers = 0)
+        )
+    ),
+)
+
+fun sidePannelKey(percentWidth: Float = 0.15f, rowSpan: Int = 1) = KeyDef(
+    appearance = KeyDef.Appearance.SidePannel(
+        rowSpan = rowSpan, percentWidth = percentWidth
+    ),
+    behaviors = setOf(),
+)
+
+fun sidePannelNormalItem(character: String, percentWidth: Float = 0.15f) = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = character,
+        textSize = 15f,
+        percentWidth = percentWidth,
+    ),
+    behaviors = setOf(),
 )
 
 fun capsLockKey(): KeyDef = KeyDef(
@@ -59,7 +101,7 @@ fun layoutSwitchKey(
     behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LayoutSwitchAction(target))),
 )
 
-fun spaceKey(percentWidth: Float = 0.4f): KeyDef = KeyDef(
+fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
         displayText = "拼音",
         textSize = 13f,
@@ -69,4 +111,14 @@ fun spaceKey(percentWidth: Float = 0.4f): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
     behaviors = setOf(KeyDef.Behavior.Press(KeyAction.SpaceAction)),
+)
+
+fun languageSwitchKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_language,
+        viewId = KeyView.button_lang,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LangSwitchAction)),
 )

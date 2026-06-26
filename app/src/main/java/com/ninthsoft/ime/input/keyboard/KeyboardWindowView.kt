@@ -62,6 +62,13 @@ class KeyboardWindowView(
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "keyboard.height", "keyboard.padding.horizontal", "keyboard.padding.bottom", "keyboard.ignore_insets" -> post { requestLayout() }
+            "keyboard.key_radius", "keyboard.theme", "keyboard.gap.horizontal", "keyboard.gap.vertical" -> post { refreshColors() }
+            "keyboard.ripple_effect" -> post {
+                val enabled = ThemeManager.Keyboard.RippleEffect.isEnabled(context)
+                for (kb in keyboards.values) {
+                    kb.setRippleEnabled(enabled)
+                }
+            }
         }
     }
 
@@ -78,7 +85,9 @@ class KeyboardWindowView(
 
         addView(panel.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
-        keyboards[NormalKeyboard.NAME] = NormalKeyboard(context, cachedColors)
+        createKeyboard(NormalKeyboard.NAME) { NormalKeyboard(context, cachedColors) }
+        createKeyboard(T9Keyboard.NAME) { T9Keyboard(context, cachedColors) }
+        createKeyboard(SymbolKeyboard.NAME) { SymbolKeyboard(context, cachedColors) }
         attachKeyboard(NormalKeyboard.NAME)
     }
 
@@ -198,6 +207,23 @@ class KeyboardWindowView(
         setBackgroundColor(cachedColors.background)
         panel.refreshTheme()
         preeditPinner.refreshTheme(context)
+        rebuildKeyboards()
+    }
+
+    private fun rebuildKeyboards() {
+        val currentName = currentKeyboardName
+        detachCurrentKeyboard()
+        keyboards.clear()
+        createKeyboard(NormalKeyboard.NAME) { NormalKeyboard(context, cachedColors) }
+        createKeyboard(T9Keyboard.NAME) { T9Keyboard(context, cachedColors) }
+        createKeyboard(SymbolKeyboard.NAME) { SymbolKeyboard(context, cachedColors) }
+        if (currentName.isNotEmpty()) attachKeyboard(currentName)
+    }
+
+    private fun createKeyboard(name: String, factory: () -> BaseKeyboard) {
+        val kb = factory()
+        kb.setRippleEnabled(ThemeManager.Keyboard.RippleEffect.isEnabled(context))
+        keyboards[name] = kb
     }
 
     fun refreshLayout() {
@@ -210,6 +236,14 @@ class KeyboardWindowView(
 
     fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
         panel.setRerankedCandidate(candidate)
+    }
+
+    fun updateSidePanel(items: List<com.ninthsoft.ime.input.keyboard.key.KeyDef>) {
+        (getCurrentKeyboard() as? T9Keyboard)?.updateSidePanel(items)
+    }
+
+    fun setSidePanelItemListener(listener: (com.ninthsoft.ime.input.keyboard.key.KeyAction) -> Unit) {
+        (getCurrentKeyboard() as? T9Keyboard)?.setSidePanelItemListener(listener)
     }
 
     fun updatePreedit(text: String?) {

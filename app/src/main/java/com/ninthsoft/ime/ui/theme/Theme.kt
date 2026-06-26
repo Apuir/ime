@@ -4,90 +4,112 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.ninthsoft.ime.data.theme.ThemeManager.Theme.MODE_DARK
 import com.ninthsoft.ime.data.theme.ThemeManager.Theme.MODE_LIGHT
 
+object ExpressiveShapes {
+    val extraSmall = RoundedCornerShape(4.dp)
+    val small = RoundedCornerShape(8.dp)
+    val medium = RoundedCornerShape(12.dp)
+    val large = RoundedCornerShape(16.dp)
+    val extraLarge = RoundedCornerShape(24.dp)
+}
+
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF2080F0),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFD9EBFF),
-    onPrimaryContainer = Color(0xFF003E8A),
+    primary = PrimaryLight,
+    onPrimary = OnPrimaryLight,
+    primaryContainer = PrimaryContainerLight,
+    onPrimaryContainer = OnPrimaryContainerLight,
 
-    secondary = Color(0xFF18A058),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDDF5E8),
-    onSecondaryContainer = Color(0xFF004D1A),
+    secondary = SecondaryLight,
+    onSecondary = OnSecondaryLight,
+    secondaryContainer = SecondaryContainerLight,
+    onSecondaryContainer = OnSecondaryContainerLight,
 
-    tertiary = Color(0xFFF0A020),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFE8C2),
-    onTertiaryContainer = Color(0xFF6B4200),
+    tertiary = TertiaryLight,
+    onTertiary = OnTertiaryLight,
+    tertiaryContainer = TertiaryContainerLight,
+    onTertiaryContainer = OnTertiaryContainerLight,
 
-    background = Color(0xFFF8F9FB),
-    onBackground = Color(0xFF18181C),
+    error = ErrorLight,
+    onError = OnErrorLight,
+    errorContainer = ErrorContainerLight,
+    onErrorContainer = OnErrorContainerLight,
 
-    surface = Color(0xFFF8F9FB),
-    onSurface = Color(0xFF18181C),
+    background = BackgroundLight,
+    onBackground = OnBackgroundLight,
 
-    surfaceVariant = Color(0xFFF2F3F5),
-    onSurfaceVariant = Color(0xFF606266),
+    surface = SurfaceLight,
+    onSurface = OnSurfaceLight,
 
-    error = Color(0xFFD03050),
-    onError = Color.White,
-    errorContainer = Color(0xFFFFDCE3),
-    onErrorContainer = Color(0xFF7A001D),
+    surfaceVariant = SurfaceVariantLight,
+    onSurfaceVariant = OnSurfaceVariantLight,
 
-    outline = Color(0xFFD0D3D8)
+    outline = OutlineLight,
+    outlineVariant = OutlineVariantLight,
 )
 
-
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF63A9FF),
-    onPrimary = Color(0xFF002C63),
-    primaryContainer = Color(0xFF004A9F),
-    onPrimaryContainer = Color(0xFFD9EBFF),
+    primary = PrimaryDark,
+    onPrimary = OnPrimaryDark,
+    primaryContainer = PrimaryContainerDark,
+    onPrimaryContainer = OnPrimaryContainerDark,
 
-    secondary = Color(0xFF4CD787),
-    onSecondary = Color(0xFF00381A),
-    secondaryContainer = Color(0xDF005A2D),
-    onSecondaryContainer = Color(0xFFDDF5E8),
+    secondary = SecondaryDark,
+    onSecondary = OnSecondaryDark,
+    secondaryContainer = SecondaryContainerDark,
+    onSecondaryContainer = OnSecondaryContainerDark,
 
-    tertiary = Color(0xFFFFC75E),
-    onTertiary = Color(0xFF4A2C00),
-    tertiaryContainer = Color(0xFF6A4300),
-    onTertiaryContainer = Color(0xFFFFE8C2),
+    tertiary = TertiaryDark,
+    onTertiary = OnTertiaryDark,
+    tertiaryContainer = TertiaryContainerDark,
+    onTertiaryContainer = OnTertiaryContainerDark,
 
-    background = Color(0xFF18181C),
-    onBackground = Color(0xFFE5E7EB),
+    error = ErrorDark,
+    onError = OnErrorDark,
+    errorContainer = ErrorContainerDark,
+    onErrorContainer = OnErrorContainerDark,
 
-    surface = Color(0xFF18181C),
-    onSurface = Color(0xFFE5E7EB),
+    background = BackgroundDark,
+    onBackground = OnBackgroundDark,
 
-    surfaceVariant = Color(0xFF2A2D33),
-    onSurfaceVariant = Color(0xFFB5B8BE),
+    surface = SurfaceDark,
+    onSurface = OnSurfaceDark,
 
-    error = Color(0xFFFF6B81),
-    onError = Color(0xFF4A0010),
-    errorContainer = Color(0xFF7A1F34),
-    onErrorContainer = Color(0xFFFFDCE3),
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = OnSurfaceVariantDark,
 
-    outline = Color(0xFF5A5F68)
+    outline = OutlineDark,
+    outlineVariant = OutlineVariantDark,
+)
+
+private val ExpressiveShapesScheme = Shapes(
+    extraSmall = ExpressiveShapes.extraSmall,
+    small = ExpressiveShapes.small,
+    medium = ExpressiveShapes.medium,
+    large = ExpressiveShapes.large,
+    extraLarge = ExpressiveShapes.extraLarge,
 )
 
 @SuppressLint("ContextCastToActivity")
 @Composable
 fun ImeTheme(
-    themeMode: Int = 0, dynamicColor: Boolean = false, content: @Composable () -> Unit
+    themeMode: Int = 0,
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
         MODE_LIGHT -> false
@@ -100,18 +122,23 @@ fun ImeTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
 
     MaterialTheme(
-        colorScheme = colorScheme, typography = Typography, content = content
+        colorScheme = colorScheme,
+        typography = Typography,
+        shapes = ExpressiveShapesScheme,
+        content = content,
     )
 
     val activity = LocalContext.current as? Activity
     SideEffect {
         activity?.window?.let { window ->
+            val bgColor = colorScheme.background.toArgb()
+            window.statusBarColor = bgColor
+            window.navigationBarColor = bgColor
             WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars =
                 !darkTheme
         }

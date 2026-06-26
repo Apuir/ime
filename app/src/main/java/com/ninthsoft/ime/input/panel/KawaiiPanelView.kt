@@ -29,13 +29,13 @@ class KawaiiPanelView(context: Context) : View(context) {
         val candidateIndexPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { }
 
         fun updateColors(context: Context) {
-            val scheme = KeyboardColors.resolve(context)
-            bgPaint.color = scheme.background
-            dividerPaint.color = (scheme.background and 0x00ffffff) or 0x18000000
-            toolbarTextPaint.color = scheme.keyText
-            candidateBgPaint.color = scheme.specialKeyBackground
-            candidateTextPaint.color = scheme.keyText
-            candidateIndexPaint.color = scheme.altText
+            val panel = KeyboardColors.resolve(context).panel
+            bgPaint.color = panel.background
+            dividerPaint.color = (panel.background and 0x00ffffff) or 0x18000000
+            toolbarTextPaint.color = panel.toolbarText
+            candidateBgPaint.color = panel.candidateBackground
+            candidateTextPaint.color = panel.candidateText
+            candidateIndexPaint.color = panel.candidateIndex
         }
 
         fun applyDensity(density: Float) {

@@ -19,7 +19,11 @@ class KeyActionListener(
     override fun onKeyAction(action: KeyAction) {
         when (action) {
             is KeyAction.PressKeyAction -> {
-                engine?.processKey(service, action.asKeyEvent(isVirtual = false))
+                engine?.postProcessKey(service, action.asKeyEvent(isVirtual = false))
+            }
+
+            is KeyAction.ClearAction -> {
+                engine?.postClear(service)
             }
 
             is KeyAction.CommitAction -> {
@@ -52,24 +56,22 @@ class KeyActionListener(
             }
 
             is KeyAction.BackspaceAction -> {
-                engine?.processKey(service, KeyEvent(KeyEvent.code("DEL"), 0, true))
+                engine?.postProcessKey(service, KeyEvent(KeyEvent.code("DEL"), 0, true))
             }
 
             is KeyAction.ReturnAction -> {
-                engine?.processKey(service, KeyEvent(KeyEvent.code("ENTER"), 0, true))
+                engine?.postProcessKey(service, KeyEvent(KeyEvent.code("ENTER"), 0, true))
             }
 
             is KeyAction.SpaceAction -> {
             }
 
             is KeyAction.LangSwitchAction -> {
-                @SuppressLint("NewApi")
-                service.switchToNextInputMethod(false)
+                @SuppressLint("NewApi") service.switchToNextInputMethod(false)
             }
 
             is KeyAction.ShowInputMethodPickerAction -> {
-                @SuppressLint("NewApi")
-                service.requestShowSelf(0)
+                @SuppressLint("NewApi") service.requestShowSelf(0)
             }
         }
     }

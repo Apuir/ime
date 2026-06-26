@@ -54,6 +54,17 @@ object ThemeManager {
             }
         }
 
+        fun getFollowSystem(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean("$PREFIX.follow_system", true)
+        }
+
+        fun setFollowSystem(context: Context, followSystem: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putBoolean("$PREFIX.follow_system", followSystem)
+            }
+        }
+
         fun getThemeId(context: Context): String {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getString("$PREFIX.theme", KeyboardTheme.DEFAULT.id) ?: KeyboardTheme.DEFAULT.id
@@ -62,6 +73,30 @@ object ThemeManager {
         fun setThemeId(context: Context, themeId: String) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                 putString("$PREFIX.theme", themeId)
+            }
+        }
+
+        fun getLightThemeId(context: Context): String {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString("$PREFIX.light_theme", KeyboardTheme.LIGHT_DEFAULT.id)
+                    ?: KeyboardTheme.LIGHT_DEFAULT.id
+        }
+
+        fun setLightThemeId(context: Context, themeId: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString("$PREFIX.light_theme", themeId)
+            }
+        }
+
+        fun getDarkThemeId(context: Context): String {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString("$PREFIX.dark_theme", KeyboardTheme.DARK_DEFAULT.id)
+                    ?: KeyboardTheme.DARK_DEFAULT.id
+        }
+
+        fun setDarkThemeId(context: Context, themeId: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString("$PREFIX.dark_theme", themeId)
             }
         }
 
@@ -110,7 +145,7 @@ object ThemeManager {
             private const val PREFIX = "keyboard.gap"
 
             private const val DEFAULT_HORIZONTAL_DP = 3
-            private const val DEFAULT_VERTICAL_DP = 4
+            private const val DEFAULT_VERTICAL_DP = 3
 
             fun getHorizontalDp(context: Context): Int {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -131,6 +166,37 @@ object ThemeManager {
             fun setVerticalDp(context: Context, dp: Int) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                     putInt("$PREFIX.vertical", dp)
+                }
+            }
+        }
+
+        object KeyRadius {
+            private const val PREFIX = "keyboard.key_radius"
+            private const val DEFAULT_RADIUS_DP = 14
+
+            fun getDp(context: Context): Int {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getInt(PREFIX, DEFAULT_RADIUS_DP)
+            }
+
+            fun setDp(context: Context, dp: Int) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putInt(PREFIX, dp)
+                }
+            }
+        }
+
+        object RippleEffect {
+            private const val KEY = "keyboard.ripple_effect"
+
+            fun isEnabled(context: Context): Boolean {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY, true)
+            }
+
+            fun setEnabled(context: Context, enabled: Boolean) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putBoolean(KEY, enabled)
                 }
             }
         }

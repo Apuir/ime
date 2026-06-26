@@ -8,6 +8,8 @@ sealed class KeyAction {
         val code: Int, val modifiers: Int
     ) : KeyAction()
 
+    data object ClearAction: KeyAction()
+
     data class CommitAction(val text: String) : KeyAction()
 
     data class CapsAction(val lock: Boolean) : KeyAction()

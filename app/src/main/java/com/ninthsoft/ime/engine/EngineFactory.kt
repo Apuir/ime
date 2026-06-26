@@ -18,7 +18,7 @@ object EngineFactory {
     ): T {
         return try {
             clazz.java.getDeclaredConstructor().newInstance().also {
-                it.onCreate(context)
+                it.initialize(context)
                 SingletonRegistry.registerIfAbsent(clazz, it)
             }
         } catch (e: Exception) {

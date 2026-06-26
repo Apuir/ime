@@ -41,6 +41,12 @@
             android:label="@string/keyboard_settings"
             android:theme="@style/Theme.Ime" />
 
+        <activity
+            android:name=".ui.SchemaSettingsActivity"
+            android:exported="false"
+            android:label="@string/schema_settings"
+            android:theme="@style/Theme.Ime" />
+
         <service
             android:name=".input.ImeInputMethodService"
             android:exported="true"

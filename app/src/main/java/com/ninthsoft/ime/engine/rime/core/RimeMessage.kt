@@ -2,7 +2,17 @@
 
 package com.ninthsoft.ime.engine.rime.core
 
+import com.ninthsoft.ime.engine.data.EngineMessage
+import com.ninthsoft.ime.engine.data.KeyEvent
 import com.ninthsoft.ime.engine.data.KeyModifiers
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateListMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateMenuMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.CommitTextMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.CompositionMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.InlinePreeditMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.KeyMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.SchemaMessage
+import com.ninthsoft.ime.engine.rime.core.RimeMessage.StatusMessage
 
 sealed class RimeMessage<T>(val data: T) {
 
@@ -21,41 +31,34 @@ sealed class RimeMessage<T>(val data: T) {
             is KeyMessage -> MessageType.Key
         }
 
-    data class UnknownMessage(val params: Array<Any>) :
-        RimeMessage<Array<Any>>(params) {
+    data class UnknownMessage(val params: Array<Any>) : RimeMessage<Array<Any>>(params) {
         override fun equals(other: Any?): Boolean =
             this === other || (other is UnknownMessage && params.contentEquals(other.params))
 
         override fun hashCode(): Int = params.contentHashCode()
     }
 
-    data class SchemaMessage(val schema: SchemaItem) :
-        RimeMessage<SchemaItem>(schema)
+    data class SchemaMessage(val schema: SchemaItem) : RimeMessage<SchemaItem>(schema)
 
     data class OptionMessage(val option: String, val value: Boolean) :
         RimeMessage<OptionMessage.Data>(Data(option, value)) {
         data class Data(val option: String, val value: Boolean)
     }
 
-    data class DeployMessage(val state: State) :
-        RimeMessage<DeployMessage.State>(state) {
+    data class DeployMessage(val state: State) : RimeMessage<DeployMessage.State>(state) {
         enum class State { Start, Success, Failure }
     }
 
-    data class CommitTextMessage(val commit: CommitProto) :
-        RimeMessage<CommitProto>(commit)
+    data class CommitTextMessage(val commit: CommitProto) : RimeMessage<CommitProto>(commit)
 
-    data class InlinePreeditMessage(val preedit: String) :
-        RimeMessage<String>(preedit)
+    data class InlinePreeditMessage(val preedit: String) : RimeMessage<String>(preedit)
 
     data class CompositionMessage(val composition: CompositionProto) :
         RimeMessage<CompositionProto>(composition)
 
-    data class CandidateMenuMessage(val menu: MenuProto) :
-        RimeMessage<MenuProto>(menu)
+    data class CandidateMenuMessage(val menu: MenuProto) : RimeMessage<MenuProto>(menu)
 
-    data class StatusMessage(val status: StatusProto) :
-        RimeMessage<StatusProto>(status)
+    data class StatusMessage(val status: StatusProto) : RimeMessage<StatusProto>(status)
 
     data class CandidateListMessage(
         val total: Int = -1,
@@ -68,9 +71,9 @@ sealed class RimeMessage<T>(val data: T) {
             val candidates: Array<CandidateProto> = arrayOf(),
         ) {
             override fun equals(other: Any?): Boolean =
-                this === other || (other is Data && total == other.total &&
-                        highlighted == other.highlighted &&
-                        candidates.contentEquals(other.candidates))
+                this === other || (other is Data && total == other.total && highlighted == other.highlighted && candidates.contentEquals(
+                    other.candidates
+                ))
 
             override fun hashCode(): Int {
                 var r = total
@@ -94,8 +97,7 @@ sealed class RimeMessage<T>(val data: T) {
     }
 
     enum class MessageType {
-        Unknown, Schema, Option, Deploy, Commit,
-        InlinePreedit, Composition, Menu, Status, Candidate, Key,
+        Unknown, Schema, Option, Deploy, Commit, InlinePreedit, Composition, Menu, Status, Candidate, Key,
     }
 
     companion object {
@@ -115,8 +117,7 @@ sealed class RimeMessage<T>(val data: T) {
 
             MessageType.Deploy -> DeployMessage(
                 DeployMessage.State.valueOf(
-                    (params[0] as String).replaceFirstChar { it.titlecase() }
-                )
+                    (params[0] as String).replaceFirstChar { it.titlecase() })
             )
 
             MessageType.Commit -> CommitTextMessage(params[0] as CommitProto)
@@ -138,5 +139,85 @@ sealed class RimeMessage<T>(val data: T) {
 
             else -> UnknownMessage(params)
         }
+    }
+}
+
+
+fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
+    is CommitTextMessage -> {
+        EngineMessage.Commit(data.text.orEmpty())
+    }
+
+    is CompositionMessage -> {
+        val preedit = data.preedit.orEmpty()
+        val cursor = data.cursorPos
+        if (preedit.isEmpty()) {
+            EngineMessage.CompositionEnd
+        } else {
+            EngineMessage.Composition(preedit, cursor)
+        }
+    }
+
+    is CandidateListMessage -> {
+        val candidates = data.candidates.mapIndexed { i, c ->
+            EngineMessage.Candidate(
+                index = i,
+                text = c.text,
+                comment = c.comment,
+            )
+        }
+        EngineMessage.Candidates(
+            list = candidates,
+            highlighted = data.highlighted,
+            page = 0,
+        )
+    }
+
+    is StatusMessage -> {
+        EngineMessage.Status(
+            schemaName = data.schemaName,
+            isAsciiMode = data.isAsciiMode,
+        )
+    }
+
+    is KeyMessage -> {
+        EngineMessage.Key(
+            KeyEvent(
+                code = data.value.keyCode,
+                modifiers = data.modifiers.toInt(),
+                isVirtual = data.isVirtual
+            )
+        )
+    }
+
+    is CandidateMenuMessage -> {
+        EngineMessage.CandidateMenu(
+            isLastPage = data.isLastPage,
+            pageSize = data.pageSize,
+            pageNumber = data.pageNumber,
+            selectKeys = data.selectKeys,
+            selectLabels = data.selectLabels,
+            highlightedCandidateIndex = data.highlightedCandidateIndex,
+            candidates = data.candidates.mapIndexed { index, item ->
+                EngineMessage.CandidateMenu.Candidate(
+                    index = index,
+                    text = item.text,
+                    comment = item.comment,
+                    label = item.label,
+                )
+            }.toTypedArray()
+        )
+    }
+
+    is InlinePreeditMessage -> {
+        EngineMessage.InlinePreedit(data)
+    }
+
+    is SchemaMessage -> {
+        EngineMessage.Schema(data.id, data.name)
+    }
+
+    else -> {
+        EngineMessage.Unknown
     }
 }

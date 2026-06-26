@@ -33,4 +33,6 @@ class KeyboardWindow(
     fun setCandidates(list: List<EngineMessage.Candidate>) { view.setCandidates(list) }
     fun setRerankedCandidate(candidate: EngineMessage.Candidate) { view.setRerankedCandidate(candidate) }
     fun updatePreedit(text: String?) { view.updatePreedit(text) }
+    fun updateSidePanel(items: List<com.ninthsoft.ime.input.keyboard.key.KeyDef>) { view.updateSidePanel(items) }
+    fun setSidePanelItemListener(listener: (com.ninthsoft.ime.input.keyboard.key.KeyAction) -> Unit) { view.setSidePanelItemListener(listener) }
 }

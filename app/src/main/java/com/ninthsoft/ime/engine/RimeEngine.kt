@@ -2,34 +2,22 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import android.inputmethodservice.InputMethodService
-import androidx.lifecycle.lifecycleScope
 import com.ninthsoft.ime.base.registry.SingletonRegistry
-import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.data.KeyEvent
 import com.ninthsoft.ime.engine.ranking.IReranker
+import com.ninthsoft.ime.engine.rime.core.EngineMessage
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.engine.rime.core.RimeApi
-import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
-import com.ninthsoft.ime.engine.rime.daemon.launchOnReady
-import com.ninthsoft.ime.input.ImeInputMethodService
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.channels.onFailure
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 
 class RimeEngine : IEngine {
@@ -38,10 +26,9 @@ class RimeEngine : IEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val jobs = Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED)
     private var messageCallback: (suspend (EngineMessage) -> Unit)? = null
-    private var lastPreedit: String = ""
     private var rerankJob: Job? = null
 
-    override fun onCreate(context: Context) {
+    override fun initialize(context: Context) {
         scope.launch {
             for (job in jobs) {
                 session.runOnReady(job)
@@ -49,151 +36,81 @@ class RimeEngine : IEngine {
         }
     }
 
-    override fun onDestroy() {
+    override fun finalize() {
         rerankJob?.cancel()
         jobs.close()
         scope.cancel()
         daemon.destroySession(javaClass.name)
     }
 
-    override fun processKey(service: InputMethodService, key: KeyEvent): Unit {
+    override fun postProcessKey(service: InputMethodService, key: KeyEvent, on: (Boolean) -> Unit) {
         rerankJob?.cancel()
-        val value = KeyMapping.keyCodeToVal(key.code)
-        when (value) {
-            KeyMapping.Key_BackSpace -> {
-                postJob {
-                    if (getRawInput().isNotEmpty()) {
-                        val v = KeyMapping.keyCodeToVal(android.view.KeyEvent.KEYCODE_DEL)
-                        processKey(v, 0u, true)
-                        return@postJob
-                    }
-                    service.currentInputConnection?.let { ic ->
-                        val before = ic.getTextBeforeCursor(1, 0)
-                        if (!before.isNullOrEmpty()) {
-                            ic.deleteSurroundingText(1, 0)
-                        } else {
-                            ic.deleteSurroundingText(0, 1)
-                        }
-                    }
-                }
-                return
-            }
-
-            KeyMapping.Key_Return -> {
-                postJob {
-                    if (compositionCached.preedit?.isNotEmpty() == true) {
-                        val v = KeyMapping.keyCodeToVal(android.view.KeyEvent.KEYCODE_ENTER)
-                        processKey(v, 0u, true)
-                        return@postJob
-                    }
-                    service.currentInputConnection.commitText("\n", 1)
-                }
-                return
-            }
-        }
         postJob {
-            processKey(value, key.modifiers.toUInt(), key.isVirtual)
+            var value = KeyMapping.keyCodeToVal(key.code)
+            when (value) {
+                KeyMapping.Key_BackSpace -> {
+                    if (getRawInput().isEmpty()) {
+                        service.currentInputConnection?.let { ic ->
+                            val before = ic.getTextBeforeCursor(1, 0)
+                            if (!before.isNullOrEmpty()) {
+                                ic.deleteSurroundingText(1, 0)
+                            } else {
+                                ic.deleteSurroundingText(0, 1)
+                            }
+                            on(true)
+                        }
+                        return@postJob
+                    }
+                    value = KeyMapping.keyCodeToVal(android.view.KeyEvent.KEYCODE_DEL)
+                }
+
+                KeyMapping.Key_Return -> {
+                    if (getRawInput().isEmpty()) {
+                        service.currentInputConnection.commitText("\n", 1)
+                        on(true)
+                        return@postJob
+                    }
+                    value = KeyMapping.keyCodeToVal(android.view.KeyEvent.KEYCODE_ENTER)
+                }
+            }
+            on(processKey(value, key.modifiers.toUInt(), key.isVirtual))
         }
     }
 
-    override fun selectCandidate(index: Int) {
-        postJob { selectCandidate(index, global = true) }
+    override fun postSelectCandidate(index: Int, on: (Boolean) -> Unit) {
+        postJob { on(selectCandidate(index, global = true)) }
     }
 
-    override fun reset() {
+    override fun resetState() {
         postJob { clearComposition() }
     }
 
-    override fun observeMessage(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
+    override fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
         messageCallback = on
         scope.launch { daemon.observeMessages { msg -> on(msg.EngineMessage()) } }
     }
 
-    private fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
-        is RimeMessage.CommitTextMessage -> {
-            lastPreedit += data.text.orEmpty()
-            EngineMessage.Commit(data.text.orEmpty())
+    override fun postSchemeList(on: (List<EngineMessage.Schema>) -> Unit) {
+        postJob {
+            val schemas = availableSchemata()
+            on(schemas.map {
+                EngineMessage.Schema(it.id, it.name)
+            })
         }
+    }
 
-        is RimeMessage.CompositionMessage -> {
-            val preedit = data.preedit.orEmpty()
-            val cursor = data.cursorPos
-            if (preedit.isEmpty()) {
-                EngineMessage.CompositionEnd
+    override fun postClear(service: InputMethodService, on: (Boolean) -> Unit) {
+        postJob {
+            if (compositionCached.preedit?.isNotEmpty() ?: false) {
+                resetState()
             } else {
-                EngineMessage.Composition(preedit, cursor)
-            }
-        }
-
-        is RimeMessage.CandidateListMessage -> {
-            val candidates = data.candidates.mapIndexed { i, c ->
-                EngineMessage.Candidate(
-                    index = i,
-                    text = c.text,
-                    comment = c.comment,
-                )
-            }
-            if (candidates.size >= 2 && lastPreedit.isNotEmpty()) {
-                rerankJob?.cancel()
-                rerankJob = scope.launch {
-                    delay(1000)
-                    triggerRerank(lastPreedit, candidates.take(5))
+                service.currentInputConnection?.let {
+                    it.finishComposingText()
+                    it.performContextMenuAction(android.R.id.selectAll)
+                    it.commitText("", 1)
                 }
             }
-            EngineMessage.Candidates(
-                list = candidates,
-                highlighted = data.highlighted,
-                page = 0,
-            )
-        }
-
-        is RimeMessage.StatusMessage -> {
-            EngineMessage.Status(
-                schemaName = data.schemaName,
-                isAsciiMode = data.isAsciiMode,
-            )
-        }
-
-        is RimeMessage.KeyMessage -> {
-            EngineMessage.Key(
-                KeyEvent(
-                    code = data.value.keyCode,
-                    modifiers = data.modifiers.toInt(),
-                    isVirtual = data.isVirtual
-                )
-            )
-        }
-
-        is RimeMessage.CandidateMenuMessage -> {
-            EngineMessage.CandidateMenu(
-                isLastPage = data.isLastPage,
-                pageSize = data.pageSize,
-                pageNumber = data.pageNumber,
-                selectKeys = data.selectKeys,
-                selectLabels = data.selectLabels,
-                highlightedCandidateIndex = data.highlightedCandidateIndex,
-                candidates = data.candidates.mapIndexed { index, item ->
-                    EngineMessage.CandidateMenu.Candidate(
-                        index = index,
-                        text = item.text,
-                        comment = item.comment,
-                        label = item.label,
-                    )
-                }.toTypedArray()
-            )
-        }
-
-        is RimeMessage.InlinePreeditMessage -> {
-            EngineMessage.InlinePreedit(data)
-        }
-
-        is RimeMessage.SchemaMessage -> {
-            EngineMessage.Schema(data.id, data.name)
-        }
-
-        else -> {
-            Timber.d("EngineMessage.Unknown ${data.toString()}")
-            EngineMessage.Unknown
+            on(true)
         }
     }
 

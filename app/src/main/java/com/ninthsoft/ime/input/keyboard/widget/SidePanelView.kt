@@ -1,0 +1,364 @@
+package org.fcitx.fcitx5.android.input.keyboard.widget
+
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.View
+import android.view.ViewConfiguration
+import android.widget.OverScroller
+import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyView
+import com.ninthsoft.ime.input.keyboard.widget.SidePanelRender
+import splitties.views.dsl.core.add
+import splitties.views.dsl.core.lParams
+import splitties.views.dsl.core.matchParent
+import kotlin.math.abs
+import kotlin.math.max
+
+@SuppressLint("ViewConstructor")
+abstract class SidePanelView(
+    ctx: Context,
+    theme: KeyboardColors.ColorScheme,
+    def: KeyDef.Appearance,
+) : KeyView(ctx, theme, def) {
+
+    protected abstract val render: SidePanelRender
+
+    private val contentView = SidePanelCanvasView(ctx)
+
+    init {
+        appearanceView.add(contentView, lParams(matchParent, matchParent))
+    }
+
+    fun updateItems(items: List<KeyDef>) {
+        render.updateItems(items.mapNotNull(render::toItem))
+        contentView.resetPosition(true)
+    }
+
+    fun updateVisibleItemCount(count: Int) {
+        render.updateVisibleItemCount(count)
+        contentView.clampScroll()
+        contentView.invalidate()
+    }
+
+    fun resetPosition() {
+        contentView.resetPosition(false)
+    }
+
+    var onRippleRequest: ((Float, Float) -> Unit)? = null
+
+    fun setOnItemActionListener(listener: (KeyAction) -> Unit) {
+        contentView.onItemAction = {
+//            InputFeedbacks.hapticFeedback(contentView)
+//            InputFeedbacks.soundEffect(InputFeedbacks.SoundEffect.Standard)
+            listener.invoke(it)
+        }
+    }
+
+    // =========================================================
+    // Canvas View
+    // =========================================================
+    private inner class SidePanelCanvasView(ctx: Context) : View(ctx) {
+
+        private val panel = RectF()
+        private val scroller = OverScroller(ctx)
+        private val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop
+        private val minFlingVelocity = ViewConfiguration.get(ctx).scaledMinimumFlingVelocity
+        private val maxFlingVelocity = ViewConfiguration.get(ctx).scaledMaximumFlingVelocity
+
+        private var velocityTracker: VelocityTracker? = null
+
+        private var scrollOffset = 0f
+        private var lastY = 0f
+        private var downY = 0f
+
+        private var pressedIndex = -1
+        private var dragging = false
+
+        private var stretch = 0f
+        private var stretchAnimator: ValueAnimator? = null
+
+        var onItemAction: ((KeyAction) -> Unit)? = null
+
+        private val rippleLoc = IntArray(2)
+
+        // =====================================================
+        // 🌊 Ripple（同色简化版）
+        // =====================================================
+        private var rippleIndex = -1
+        private var rippleX = 0f
+        private var rippleY = 0f
+        private var rippleRadius = 0f
+        private var rippleActive = false
+
+        private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
+
+        private val overScrollLimit: Float
+            get() = max(panel.height() * 0.45f, 1f)
+
+        init {
+            isClickable = true
+            isFocusable = false
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+
+            panel.set(
+                hMargin.toFloat(),
+                vMargin.toFloat(),
+                width - hMargin.toFloat(),
+                height - vMargin.toFloat(),
+            )
+
+            render.draw(canvas, panel, scrollOffset, pressedIndex, stretch)
+
+            drawRipple(canvas)
+            updateRipple()
+        }
+
+        // =====================================================
+        // 🌊 同色 ripple（核心）
+        // =====================================================
+        private fun drawRipple(canvas: Canvas) {
+            if (!rippleActive || rippleIndex !in render.items.indices) return
+
+            val itemHeight = render.itemHeight(panel.height())
+
+            val top = panel.top + itemHeight * rippleIndex - scrollOffset + stretch
+            val bottom = top + itemHeight
+            canvas.save()
+            canvas.clipRect(panel.left, top, panel.right, bottom)
+
+//            ripplePaint.color = 0
+            ripplePaint.alpha = 25   // 👈 永远同色，不渐变
+
+            canvas.drawCircle(rippleX, rippleY, rippleRadius, ripplePaint)
+            canvas.restore()
+        }
+
+        // =====================================================
+        // 🌊 更自然扩散（无 alpha 变化）
+        // =====================================================
+        private fun updateRipple() {
+            if (!rippleActive) return
+            val maxRadius = width * 1.25f
+            rippleRadius += width * 0.014f * (1f + rippleRadius * 0.02f)
+            if (rippleRadius > maxRadius) {
+                rippleActive = false
+                rippleIndex = -1
+            }
+            invalidate()
+        }
+
+        override fun computeScroll() {
+            if (dragging) return
+
+            if (scroller.computeScrollOffset()) {
+                scrollOffset = scroller.currY.toFloat()
+                if (scroller.isFinished) clampScroll()
+                invalidate()
+            }
+        }
+
+        private var longPressTriggered = false
+
+        private val longPressRunnable = Runnable {
+            longPressTriggered = true
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent.requestDisallowInterceptTouchEvent(true)
+
+                    if (!scroller.isFinished) scroller.abortAnimation()
+
+                    velocityTracker = VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+
+                    downY = event.y
+                    lastY = event.y
+                    dragging = false
+                    postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                    invalidate()
+                    return true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
+
+                    val dy = lastY - event.y
+
+                    if (!dragging && abs(event.y - downY) > touchSlop) {
+                        dragging = true
+                        pressedIndex = -1
+                        stretch = 0f
+                        if (!scroller.isFinished) scroller.abortAnimation()
+                    }
+
+                    if (dragging) {
+                        dragBy(dy)
+                        invalidate()
+                    }
+
+                    lastY = event.y
+                    return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    velocityTracker?.addMovement(event)
+                    velocityTracker?.computeCurrentVelocity(1000, maxFlingVelocity.toFloat())
+
+                    val velocityY = velocityTracker?.yVelocity ?: 0f
+                    var index = -1
+                    var click = false
+
+                    recycleVelocityTracker()
+                    removeCallbacks(longPressRunnable)
+                    if (!longPressTriggered) {
+                        pressedIndex = render.itemIndexAt(panel, event.y, scrollOffset)
+                        val itemHeight = render.itemHeight(panel.height())
+                        if (pressedIndex >= 0 && abs(event.y - downY) < itemHeight) {
+                            rippleIndex = pressedIndex
+                            rippleX = event.x
+                            rippleY = event.y
+                            rippleRadius = width * 0.2f  // 轻微压入
+                            rippleActive = true
+                            click = true
+                            index = pressedIndex
+                        }
+                        invalidate()
+                    }
+
+                    pressedIndex = -1
+                    dragging = false
+                    longPressTriggered = false
+
+                    parent.requestDisallowInterceptTouchEvent(false)
+                    if (click) {
+                        getLocationOnScreen(rippleLoc)
+                        val sx = rippleLoc[0] + event.x
+                        val sy = rippleLoc[1] + event.y
+                        this@SidePanelView.onRippleRequest?.invoke(sx.toFloat(), sy.toFloat())
+
+                        render.items[index].action?.let { onItemAction?.invoke(it) }
+                    } else if (springBackIfNeeded()) {
+                        invalidate()
+                    } else if (abs(velocityY) >= minFlingVelocity) {
+                        fling(-velocityY.toInt())
+                    }
+
+                    return true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    recycleVelocityTracker()
+                    removeCallbacks(longPressRunnable)
+
+                    pressedIndex = -1
+                    dragging = false
+                    longPressTriggered = false
+
+                    springBackIfNeeded()
+                    return true
+                }
+            }
+            return true
+        }
+
+        fun clampScroll() {
+            val maxScroll = render.maxScroll(panel.height())
+            scrollOffset = scrollOffset.coerceIn(0f, maxScroll)
+        }
+
+        fun resetPosition(immediate: Boolean) {
+            if (immediate) {
+                if (!scroller.isFinished) scroller.abortAnimation()
+                scrollOffset = 0f
+                stretch = 0f
+                invalidate()
+            } else {
+                scroller.startScroll(0, scrollOffset.toInt(), 0, -scrollOffset.toInt())
+                animateStretchBack()
+                postInvalidateOnAnimation()
+            }
+        }
+
+        private fun fling(velocityY: Int) {
+            val maxScroll = render.maxScroll(panel.height()).toInt()
+            scroller.fling(0, scrollOffset.toInt(), 0, velocityY, 0, 0, 0, maxScroll)
+            postInvalidateOnAnimation()
+        }
+
+        private fun dragBy(deltaY: Float) {
+            val maxScroll = render.maxScroll(panel.height())
+            val proposed = scrollOffset + deltaY
+
+            when {
+                proposed < 0f -> {
+                    scrollOffset = 0f
+                    stretch = rubberBand(-proposed)
+                }
+                proposed > maxScroll -> {
+                    scrollOffset = maxScroll
+                    stretch = -rubberBand(proposed - maxScroll)
+                }
+                else -> {
+                    scrollOffset = proposed
+                    stretch = 0f
+                }
+            }
+        }
+
+        private fun rubberBand(d: Float): Float {
+            val limit = overScrollLimit
+            return limit * d / (limit + d)
+        }
+
+        private fun springBackIfNeeded(): Boolean {
+            val maxScroll = render.maxScroll(panel.height()).toInt()
+            val currentScroll = scrollOffset.toInt()
+
+            if (stretch != 0f) {
+                animateStretchBack()
+                return true
+            }
+
+            if (currentScroll < 0 || currentScroll > maxScroll) {
+                scroller.springBack(0, currentScroll, 0, 0, 0, maxScroll)
+                return true
+            }
+
+            clampScroll()
+            return false
+        }
+
+        private fun animateStretchBack() {
+            stretchAnimator?.cancel()
+            val start = stretch
+
+            stretchAnimator = ValueAnimator.ofFloat(start, 0f).apply {
+                duration = 260
+                addUpdateListener {
+                    stretch = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        }
+
+        private fun recycleVelocityTracker() {
+            velocityTracker?.recycle()
+            velocityTracker = null
+        }
+    }
+}

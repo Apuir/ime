@@ -11,6 +11,7 @@ import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.alphabetKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.capsLockKey
+import com.ninthsoft.ime.input.keyboard.key.languageSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
 
@@ -71,7 +72,7 @@ class NormalKeyboard(
                     alphabetKey(s, "+"),
                     alphabetKey(d, "-"),
                     alphabetKey(f, "*"),
-                    alphabetKey(g, "/"),
+                    alphabetKey(g, "/", mainTextTranslationY = -2),
                     alphabetKey(h, "="),
                     alphabetKey(j, "#"),
                     alphabetKey(k, "("),
@@ -79,20 +80,20 @@ class NormalKeyboard(
                 ),
                 listOf(
                     capsLockKey(),
-                    alphabetKey(z, "\u3002"),
-                    alphabetKey(x, ","),
+                    alphabetKey(z, ".", altTextTranslationY = -4),
+                    alphabetKey(x, ",", altTextTranslationY = -4),
                     alphabetKey(c, "!"),
                     alphabetKey(v, "?"),
-                    alphabetKey(b, ";"),
+                    alphabetKey(b, ";", altTextTranslationY = -2),
                     alphabetKey(n, ":"),
                     alphabetKey(m, "~"),
                     backspaceKey(),
                 ),
                 listOf(
-                    layoutSwitchKey("?123", NAME, percentWidth = 0.15f),
-                    makeLangSwitchKey(percentWidth = 0.15f),
+                    layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
+                    languageSwitchKey(0.13f),
                     spaceKey(),
-                    makeCommaKey(percentWidth = 0.15f),
+                    makeCommaKey(percentWidth = 0.13f),
                     makeReturnKey(percentWidth = 0.15f),
                 ),
             )
