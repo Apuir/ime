@@ -69,6 +69,7 @@ class KeyboardWindowView(
                     kb.setRippleEnabled(enabled)
                 }
             }
+            "keyboard.key_border_stroke" -> post { refreshColors() }
         }
     }
 

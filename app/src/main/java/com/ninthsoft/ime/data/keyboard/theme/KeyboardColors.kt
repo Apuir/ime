@@ -14,10 +14,13 @@ object KeyboardColors {
     data class ColorScheme(
         val keyBackground: Int,
         val keyPressed: Int,
+        val keyBorderStroke: Int,
         val specialKeyBackground: Int,
         val specialKeyPressed: Int,
+        val specialKeyBorderStroke: Int,
         val accentKeyBackground: Int,
         val accentKeyPressed: Int,
+        val accentKeyBorderStroke: Int,
         val keyText: Int,
         val specialKeyText: Int,
         val accentKeyText: Int,

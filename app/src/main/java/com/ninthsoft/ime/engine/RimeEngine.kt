@@ -48,6 +48,13 @@ class RimeEngine : IEngine {
         postJob {
             var value = KeyMapping.keyCodeToVal(key.code)
             when (value) {
+                KeyMapping.Key_space ->{
+                    if (getRawInput().isEmpty()) {
+                        service.currentInputConnection.commitText(" ", 1)
+                        on(true)
+                        return@postJob
+                    }
+                }
                 KeyMapping.Key_BackSpace -> {
                     if (getRawInput().isEmpty()) {
                         service.currentInputConnection?.let { ic ->

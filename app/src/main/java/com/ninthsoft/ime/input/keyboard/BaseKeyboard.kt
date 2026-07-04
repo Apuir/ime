@@ -5,6 +5,7 @@ import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
@@ -175,6 +176,7 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.SidePannel -> SidePanelKeyView(context, colors, def.appearance)
         }.apply {
+            borderStroke = ThemeManager.Keyboard.KeyBorderStroke.isEnabled(context)
             onPressedChanged = { key ->
                 if (key.isPressed) {
                     val keyLoc = IntArray(2)

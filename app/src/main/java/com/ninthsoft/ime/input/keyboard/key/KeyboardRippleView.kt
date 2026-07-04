@@ -53,6 +53,7 @@ class KeyboardRippleView(
     private val perturbFreqs = floatArrayOf(2f, 3f, 5f, 7f)
     private val perturbPhases = FloatArray(4)
     private var ringScale = 1f
+    private var radiusMultiplier = 1f
 
     private val density = resources.displayMetrics.density
 
@@ -104,6 +105,7 @@ class KeyboardRippleView(
             perturbPhases[i] = (Math.random().toFloat() * 2f * kotlin.math.PI).toFloat()
         }
         ringScale = 0.5f + Math.random().toFloat() * 0.3f
+        radiusMultiplier = if (sourceView is KeyView && sourceView.def.viewId == KeyView.button_space) 1.5f else 1f
         animProgress = 0f
 
         animator?.let {
@@ -131,12 +133,12 @@ class KeyboardRippleView(
         if (t <= 0f || t >= 1f) return
 
         // 绘制扩散的圆环（带角度扰动，模拟水波不规则扩散）
-        val ringProgress = sqrt(t * 0.7f)
+        val ringProgress = sqrt(t * 0.35f)
         val waveFade = (1f - t).coerceIn(0f, 1f)
         for (i in 0 until RING_COUNT) {
-            val radius = 140f * density * ringScale * (ringProgress - i * 0.15f)
+            val radius = 140f * density * ringScale * radiusMultiplier * (ringProgress - i * 0.1f)
             if (radius <= 0f) continue
-            val alpha = (waveFade * 80 - i * 16).toInt().coerceIn(5, 80)
+            val alpha = (waveFade * 50 - i * 16).toInt().coerceIn(5, 50)
             wavePaint.alpha = alpha
             drawWaterRing(canvas, cx, cy, radius, wavePaint)
         }

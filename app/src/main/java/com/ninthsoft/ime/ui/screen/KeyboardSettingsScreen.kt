@@ -77,6 +77,9 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
     var rippleEnabled by remember {
         mutableStateOf(ThemeManager.Keyboard.RippleEffect.isEnabled(context))
     }
+    var keyBorderEnabled by remember {
+        mutableStateOf(ThemeManager.Keyboard.KeyBorderStroke.isEnabled(context))
+    }
     var followSystem by remember {
         mutableStateOf(ThemeManager.Keyboard.getFollowSystem(context))
     }
@@ -229,6 +232,14 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     onCheckedChange = {
                         rippleEnabled = it
                         ThemeManager.Keyboard.RippleEffect.setEnabled(context, it)
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.key_border),
+                    checked = keyBorderEnabled,
+                    onCheckedChange = {
+                        keyBorderEnabled = it
+                        ThemeManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
                     },
                 )
                 Spacer(Modifier.height(14.dp))

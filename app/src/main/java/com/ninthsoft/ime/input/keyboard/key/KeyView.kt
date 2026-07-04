@@ -12,7 +12,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
-import android.view.View
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
@@ -47,6 +46,12 @@ abstract class KeyView(
 
     var bordered: Boolean = true
     var borderStroke: Boolean = true
+        set(value) {
+            if (field != value) {
+                field = value
+                setupBackgroundWithPress()
+            }
+        }
     var radius = colors.cornerRadius.let { dp(it) }
     var hMargin: Int = colors.keyHMargin.let { dp(it).toInt() }
     var vMargin: Int = colors.keyVMargin.let { dp(it).toInt() }
@@ -127,9 +132,14 @@ abstract class KeyView(
 
     private fun createShapeBkg(color: Int): android.graphics.drawable.Drawable {
         val borderOrShadowWidth = dp(1)
+        val strokeColor = when (def.variant) {
+            Variant.Alternative -> colors.specialKeyBorderStroke
+            Variant.Accent -> colors.accentKeyBorderStroke
+            else -> colors.keyBorderStroke
+        }
         return when {
             borderStroke -> borderedKeyBackgroundDrawable(
-                color, colors.keyBackground,
+                color, strokeColor,
                 radius, borderOrShadowWidth, hMargin, vMargin,
             )
 

@@ -55,15 +55,13 @@ class KeyActionListener(
                 onSwitchLayout(action.target)
             }
 
-            is KeyAction.BackspaceAction -> {
-                engine?.postProcessKey(service, KeyEvent(KeyEvent.code("DEL"), 0, true))
-            }
-
-            is KeyAction.ReturnAction -> {
-                engine?.postProcessKey(service, KeyEvent(KeyEvent.code("ENTER"), 0, true))
-            }
-
-            is KeyAction.SpaceAction -> {
+            is KeyAction.BackspaceAction, KeyAction.ReturnAction, KeyAction.SpaceAction -> {
+                val character = when (action) {
+                    KeyAction.BackspaceAction -> "DEL"
+                    KeyAction.ReturnAction -> "ENTER"
+                    KeyAction.SpaceAction -> "SPACE"
+                }
+                engine?.postProcessKey(service, KeyEvent(KeyEvent.code(character), 0, true))
             }
 
             is KeyAction.LangSwitchAction -> {

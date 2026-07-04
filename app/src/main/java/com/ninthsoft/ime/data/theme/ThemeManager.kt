@@ -200,5 +200,20 @@ object ThemeManager {
                 }
             }
         }
+
+        object KeyBorderStroke {
+            private const val KEY = "keyboard.key_border_stroke"
+
+            fun isEnabled(context: Context): Boolean {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY, true)
+            }
+
+            fun setEnabled(context: Context, enabled: Boolean) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putBoolean(KEY, enabled)
+                }
+            }
+        }
     }
 }
