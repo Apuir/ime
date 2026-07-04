@@ -35,7 +35,7 @@ import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
-import com.ninthsoft.ime.input.keyboard.widget.SidePanelRender
+import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import org.fcitx.fcitx5.android.input.keyboard.widget.SidePanelView
 
 abstract class KeyView(
@@ -104,11 +104,13 @@ abstract class KeyView(
             Variant.Normal, Variant.AltForeground -> colors.keyBackground
             Variant.Alternative -> colors.specialKeyBackground
             Variant.Accent -> colors.accentKeyBackground
+            Variant.None -> Color.TRANSPARENT
         }
         val pressedColor = when (def.variant) {
             Variant.Normal, Variant.AltForeground -> colors.keyPressed
             Variant.Alternative -> colors.specialKeyPressed
             Variant.Accent -> colors.accentKeyPressed
+            Variant.None -> Color.TRANSPARENT
         }
         val hasShape = (bordered && def.border != Border.Off) || def.border == Border.On
         val normalBg: android.graphics.drawable.Drawable = if (hasShape) {
@@ -270,6 +272,7 @@ open class TextKeyView(
                 Variant.Normal, Variant.AltForeground -> colors.keyText
                 Variant.Alternative -> colors.specialKeyText
                 Variant.Accent -> colors.accentKeyText
+                Variant.None -> colors.keyText
             },
         )
     }
@@ -334,7 +337,7 @@ class SidePanelKeyView(
     override val render: SidePanelRender = object : SidePanelRender(
         colors,
         resources.displayMetrics.density,
-        visibleItemCount = 4,
+        visibleItemCount = def.visableRow,
         appearance = def,
     ) {
         override fun cornerRadius(): Float = dp(theme.cornerRadius)
@@ -348,6 +351,7 @@ class SidePanelKeyView(
                 Variant.Normal -> theme.keyText
                 Variant.AltForeground, Variant.Alternative -> theme.altText
                 Variant.Accent -> theme.accentKeyText
+                Variant.None -> colors.keyText
             }
             return Item(
                 label = itemAppearance.displayText,
@@ -375,6 +379,7 @@ class ImageKeyView(
                 Variant.Normal, Variant.AltForeground -> colors.keyText
                 Variant.Alternative -> colors.specialKeyText
                 Variant.Accent -> colors.accentKeyText
+                Variant.None -> colors.keyText
             },
         )
         imageResource = def.src
@@ -403,6 +408,7 @@ class ImageTextKeyView(
                 Variant.Normal, Variant.AltForeground -> colors.keyText
                 Variant.Alternative -> colors.specialKeyText
                 Variant.Accent -> colors.accentKeyText
+                Variant.None -> colors.keyText
             },
         )
         imageResource = def.src

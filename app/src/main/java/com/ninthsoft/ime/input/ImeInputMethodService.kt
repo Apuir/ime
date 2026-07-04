@@ -5,7 +5,9 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
-import com.ninthsoft.ime.input.keyboard.KeyboardWindow
+import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.CloseKeyboard
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.SwitchKeyboard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,19 +29,25 @@ class ImeInputMethodService : InputMethodService() {
             service = this,
             engine = engine,
             onSwitchLayout = { target -> keyboardWindow?.switchLayout(target) },
-            getCurrentKeyboard = { keyboardWindow?.getCurrentKeyboard() },
         )
         engine?.observe(scope!!) { messageHandler.handle(it) }
     }
 
     override fun onCreateInputView(): View {
         keyboardWindow = KeyboardWindow(
-            context = this,
+            service = this,
             onCandidateSelected = { candidate ->
                 engine?.postSelectCandidate(candidate.index)
             },
             onRerankedSelected = { text ->
                 currentInputConnection?.commitText(text, 1)
+            },
+            onToolbarAction = { action ->
+                when (action) {
+                    CloseKeyboard -> requestHideSelf(0)
+                    SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
+                    else -> {}
+                }
             },
         ).apply { setKeyActionListener(keyActionListener) }
         messageHandler.setKeyboardWindow(keyboardWindow)
@@ -47,17 +55,19 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
+        keyboardWindow?.onStartInputView(info, restarting)
         super.onStartInputView(info, restarting)
-        keyboardWindow?.view?.apply {
-            refreshColors()
-            onStartInput(info)
-            refreshLayout()
-        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         engine?.resetState()
+        keyboardWindow?.onFinishInputView(finishingInput)
         super.onFinishInputView(finishingInput)
+    }
+
+    override fun onWindowHidden() {
+        keyboardWindow?.onDetach()
+        super.onWindowHidden()
     }
 
     override fun onDestroy() {

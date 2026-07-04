@@ -21,13 +21,15 @@ object KeyboardThemePresets {
             specialKeyText = Color.rgb(155, 155, 155),
             accentKeyText = Color.rgb(255, 255, 255),
             altText = Color.rgb(130, 130, 130),
-            background = Color.rgb( 0, 0, 0),
+            background = Color.rgb( 10, 10, 10),
             panel = KeyboardColors.ColorScheme.PanelColors(
-                background = Color.argb(180, 10, 10, 10),
+                background = Color.rgb( 10, 10, 10),
                 toolbarText = Color.rgb(255, 255, 255),
-                candidateBackground = Color.argb(255, 20, 20, 20),
+                toolbarPressed = Color.rgb(255, 255, 255),
+                candidateBackground =Color.argb(220,22, 22, 22),
                 candidateText = Color.rgb(255, 255, 255),
                 candidateIndex = Color.rgb(130, 130, 130),
+                candidateDivider = Color.argb(120,130, 130, 130),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(46, 46, 46),
@@ -61,6 +63,8 @@ object KeyboardThemePresets {
                 candidateBackground = Color.rgb(174, 174, 178),
                 candidateText = Color.rgb(0, 0, 0),
                 candidateIndex = Color.rgb(140, 140, 145),
+                candidateDivider = Color.argb(130,140, 140, 145),
+                toolbarPressed = Color.rgb(229, 229, 234),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(255, 255, 255),
@@ -93,6 +97,8 @@ object KeyboardThemePresets {
                 candidateBackground = Color.rgb(46, 66, 58),
                 candidateText = Color.rgb(224, 235, 228),
                 candidateIndex = Color.rgb(120, 155, 130),
+                candidateDivider = Color.rgb(120, 155, 130),
+                toolbarPressed = Color.rgb(46, 66, 58),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(33, 52, 46),
@@ -125,6 +131,8 @@ object KeyboardThemePresets {
                 candidateBackground = Color.rgb(52, 68, 82),
                 candidateText = Color.rgb(225, 235, 245),
                 candidateIndex = Color.rgb(120, 150, 180),
+                candidateDivider = Color.rgb(120, 150, 180),
+                toolbarPressed = Color.rgb(52, 68, 82),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(38, 52, 66),
@@ -157,6 +165,8 @@ object KeyboardThemePresets {
                 candidateBackground = Color.rgb(72, 66, 72),
                 candidateText = Color.rgb(240, 235, 230),
                 candidateIndex = Color.rgb(160, 145, 135),
+                candidateDivider = Color.rgb(160, 145, 135),
+                toolbarPressed = Color.rgb(72, 66, 72),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(58, 52, 58),
@@ -189,6 +199,8 @@ object KeyboardThemePresets {
                 candidateBackground = Color.rgb(66, 56, 74),
                 candidateText = Color.rgb(235, 228, 242),
                 candidateIndex = Color.rgb(150, 135, 165),
+                candidateDivider = Color.rgb(150, 135, 165),
+                toolbarPressed = Color.rgb(66, 56, 74),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(50, 42, 58),

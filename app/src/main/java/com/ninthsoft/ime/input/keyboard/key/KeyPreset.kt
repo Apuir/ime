@@ -43,9 +43,12 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
     ),
 )
 
-fun sidePannelKey(percentWidth: Float = 0.15f, rowSpan: Int = 1) = KeyDef(
+fun sidePannelKey(percentWidth: Float = 0.15f, rowSpan: Int = 3, visableRow: Int = 4) = KeyDef(
     appearance = KeyDef.Appearance.SidePannel(
-        rowSpan = rowSpan, percentWidth = percentWidth
+        rowSpan = rowSpan,
+        visableRow = visableRow,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Alternative
     ),
     behaviors = setOf(),
 )
@@ -121,4 +124,35 @@ fun languageSwitchKey(percentWidth: Float): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
     behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LangSwitchAction)),
+)
+
+fun returnKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_return,
+        viewId = KeyView.button_return,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Accent,
+        border = KeyDef.Appearance.Border.Special,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+)
+
+fun prevPageKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_arrow_up,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Alternative,
+        border = KeyDef.Appearance.Border.On,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+)
+
+fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_arrow_down,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Alternative,
+        border = KeyDef.Appearance.Border.On,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
 )

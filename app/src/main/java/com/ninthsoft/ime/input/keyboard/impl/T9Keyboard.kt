@@ -1,9 +1,11 @@
-package com.ninthsoft.ime.input.keyboard
+package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
@@ -42,7 +44,7 @@ class T9Keyboard(
             ),
             behaviors = setOf(
                 KeyDef.Behavior.Press(
-                    KeyAction.PressKeyAction(android.view.KeyEvent.KEYCODE_APOSTROPHE, 0)
+                    KeyAction.PressKeyAction(KeyEvent.KEYCODE_APOSTROPHE, 0)
                 )
             ),
         )
@@ -105,7 +107,7 @@ class T9Keyboard(
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                sidePannelKey(rowSpan = 3),
+                sidePannelKey(rowSpan = 3, visableRow = 4),
                 segmentKey(percentWidth = 0.23333f),
                 mixedAlphabetKey("2", "ABC"),
                 mixedAlphabetKey("3", "DEF"),
@@ -131,5 +133,9 @@ class T9Keyboard(
                 makeReturnKey(percentWidth = 0.15f),
             ),
         )
+    }
+
+    override fun name(): String {
+        return NAME
     }
 }

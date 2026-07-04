@@ -2,7 +2,7 @@ package com.ninthsoft.ime.input
 
 import android.inputmethodservice.InputMethodService
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.KeyboardWindow
+import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber

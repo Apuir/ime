@@ -1,9 +1,10 @@
-package com.ninthsoft.ime.input.keyboard
+package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.KeyEvent
+import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
@@ -66,5 +67,9 @@ class SymbolKeyboard(
                 layoutSwitchKey("符", NAME, percentWidth = 0.18f),
             ),
         )
+    }
+
+    override fun name(): String {
+        return NAME
     }
 }

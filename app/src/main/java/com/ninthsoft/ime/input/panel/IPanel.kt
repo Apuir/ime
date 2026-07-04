@@ -9,4 +9,5 @@ interface IPanel {
     fun showRerankAnimation()
     fun setRerankedCandidate(candidate: EngineMessage.Candidate)
     fun refreshTheme()
+    fun onFinishInputView(finishingInput: Boolean)
 }

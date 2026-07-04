@@ -39,6 +39,8 @@ object KeyboardColors {
             val candidateBackground: Int,
             val candidateText: Int,
             val candidateIndex: Int,
+            val candidateDivider: Int,
+            val toolbarPressed: Int,
         ) {
             companion object {
                 fun from(c: ColorScheme) = PanelColors(
@@ -47,6 +49,8 @@ object KeyboardColors {
                     candidateBackground = c.specialKeyBackground,
                     candidateText = c.keyText,
                     candidateIndex = c.altText,
+                    candidateDivider = c.altText,
+                    toolbarPressed = c.keyPressed,
                 )
             }
         }

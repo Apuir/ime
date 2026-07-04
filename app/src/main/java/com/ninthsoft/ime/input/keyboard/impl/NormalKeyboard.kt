@@ -1,10 +1,11 @@
-package com.ninthsoft.ime.input.keyboard
+package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
+import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
@@ -13,7 +14,9 @@ import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.capsLockKey
 import com.ninthsoft.ime.input.keyboard.key.languageSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
+import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
+import timber.log.Timber
 
 @SuppressLint("ViewConstructor")
 class NormalKeyboard(
@@ -94,22 +97,10 @@ class NormalKeyboard(
                     languageSwitchKey(0.13f),
                     spaceKey(),
                     makeCommaKey(percentWidth = 0.13f),
-                    makeReturnKey(percentWidth = 0.15f),
+                    returnKey(percentWidth = 0.15f),
                 ),
             )
         }
-
-
-        private fun makeReturnKey(percentWidth: Float): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Image(
-                src = R.drawable.ic_keyboard_return,
-                viewId = KeyView.button_return,
-                percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Accent,
-                border = KeyDef.Appearance.Border.Special,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
-        )
 
 
         private fun makeCommaKey(percentWidth: Float): KeyDef = KeyDef(
@@ -184,7 +175,16 @@ class NormalKeyboard(
     }
 
     override fun onAttach() {
+        Timber.d("oNormalKeyboard attached")
         capsState = CapsState.None
+    }
+
+    override fun onDetach() {
+        Timber.d("oNormalKeyboard detached")
+    }
+
+    override fun name(): String {
+        return NAME
     }
 
     private fun switchCapsState(lock: Boolean = false) {

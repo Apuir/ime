@@ -17,7 +17,7 @@ open class KeyDef(
         val viewId: Int,
         var visibility: Int = View.VISIBLE,
     ) {
-        enum class Variant { Normal, Alternative, Accent, AltForeground }
+        enum class Variant { Normal, Alternative, Accent, AltForeground, None }
 
         enum class Border { Default, On, Off, Special }
 
@@ -59,7 +59,8 @@ open class KeyDef(
         )
 
         class SidePannel(
-            val rowSpan: Int = 1,
+            val rowSpan: Int = 3,
+            val visableRow: Int = 4,
             percentWidth: Float = 0.1f,
             variant: Variant = Variant.Normal,
             border: Border = Border.Default,

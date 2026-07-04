@@ -2,11 +2,12 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2021-2026 Fcitx5 for Android Contributors
  */
-package com.ninthsoft.ime.input.keyboard.widget
+package com.ninthsoft.ime.input.keyboard.key.widget
 
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -14,6 +15,8 @@ import androidx.annotation.ColorInt
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
+import timber.log.Timber
 import kotlin.math.max
 
 abstract class SidePanelRender(
@@ -37,12 +40,16 @@ abstract class SidePanelRender(
         companion object {
             fun fromTheme(theme: KeyboardColors.ColorScheme, appearance: KeyDef.Appearance) = Style(
                 panelColor = when (appearance.variant) {
-                    KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> theme.keyBackground
-                    KeyDef.Appearance.Variant.Alternative -> theme.specialKeyBackground
-                    KeyDef.Appearance.Variant.Accent -> theme.accentKeyBackground
-                },
-                pressedItemColor = theme.keyBackground,
-                scrollbarColor = theme.specialKeyBackground
+                    Variant.Normal, Variant.AltForeground -> theme.keyBackground
+                    Variant.Alternative -> theme.specialKeyBackground
+                    Variant.Accent -> theme.accentKeyBackground
+                    Variant.None -> Color.TRANSPARENT
+                }, pressedItemColor = when (appearance.variant) {
+                    Variant.Normal, Variant.AltForeground -> theme.keyPressed
+                    Variant.Alternative -> theme.specialKeyPressed
+                    Variant.Accent -> theme.accentKeyPressed
+                    Variant.None -> theme.specialKeyPressed
+                }, scrollbarColor = theme.keyText
             )
         }
     }
@@ -102,10 +109,11 @@ abstract class SidePanelRender(
         scrollOffset: Float,
         pressedIndex: Int,
         stretch: Float = 0f,
+        pressedAlpha: Int = 0,
     ) {
         if (panel.isEmpty) return
         drawPanel(canvas, panel)
-        drawItems(canvas, panel, scrollOffset, pressedIndex, stretch)
+        drawItems(canvas, panel, scrollOffset, pressedIndex, stretch, pressedAlpha)
         drawScrollbar(canvas, panel, scrollOffset)
     }
 
@@ -119,7 +127,17 @@ abstract class SidePanelRender(
         if (!borderStroke) {
             return
         }
-        panelPaint.color = style.panelColor
+        val c = style.panelColor
+        if (Color.alpha(c) < 255) {
+            val bg = theme.background
+            val a = Color.alpha(c)
+            val r = (Color.red(c) * a + Color.red(bg) * (255 - a)) / 255
+            val g = (Color.green(c) * a + Color.green(bg) * (255 - a)) / 255
+            val b = (Color.blue(c) * a + Color.blue(bg) * (255 - a)) / 255
+            panelPaint.color = Color.rgb(r, g, b)
+        } else {
+            panelPaint.color = c
+        }
         val radius = cornerRadius()
         canvas.drawRoundRect(panel, radius, radius, panelPaint)
     }
@@ -130,6 +148,7 @@ abstract class SidePanelRender(
         scrollOffset: Float,
         pressedIndex: Int,
         stretch: Float,
+        pressedAlpha: Int,
     ) {
         val itemHeight = itemHeight(panel.height())
         if (itemHeight <= 0f) return
@@ -160,8 +179,22 @@ abstract class SidePanelRender(
 
             //disabled selection background color
             if (index == pressedIndex) {
-                panelPaint.color = Color.TRANSPARENT
-                canvas.drawRect(panel.left, top, panel.right, bottom, panelPaint)
+                val c = style.pressedItemColor
+                panelPaint.color = Color.rgb(Color.red(c), Color.green(c), Color.blue(c))
+                panelPaint.alpha = pressedAlpha
+                val r = cornerRadius()
+                if ((index == 0 || index == items.size - 1) && r > 0f) {
+                    val radii = floatArrayOf(
+                        if (index == 0) r else 0f, if (index == 0) r else 0f,
+                        if (index == 0) r else 0f, if (index == 0) r else 0f,
+                        if (index == items.size - 1) r else 0f, if (index == items.size - 1) r else 0f,
+                        if (index == items.size - 1) r else 0f, if (index == items.size - 1) r else 0f,
+                    )
+                    canvas.drawPath(Path().apply { addRoundRect(panel.left, top, panel.right, bottom, radii, Path.Direction.CW) }, panelPaint)
+                } else {
+                    canvas.drawRect(panel.left, top, panel.right, bottom, panelPaint)
+                }
+                panelPaint.alpha = 255
             }
             textPaint.color = item.textColor
             textPaint.textSize = dp(item.textSize)

@@ -1,7 +1,7 @@
-package com.ninthsoft.ime.input.keyboard
+package com.ninthsoft.ime.input.keyboard.impl
 
 import android.content.Context
-import android.view.View
+import android.graphics.Color
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
@@ -14,15 +14,15 @@ import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyPreviewPopup
-import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.KeyView
+import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
+import com.ninthsoft.ime.input.keyboard.window.IManagedView
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.above
 import splitties.views.dsl.constraintlayout.below
 import splitties.views.dsl.constraintlayout.bottomOfParent
-import splitties.views.dsl.constraintlayout.centerHorizontally
 import splitties.views.dsl.constraintlayout.centerVertically
 import splitties.views.dsl.constraintlayout.constraintLayout
 import splitties.views.dsl.constraintlayout.lParams
@@ -37,7 +37,7 @@ abstract class BaseKeyboard(
     context: Context,
     protected val colors: KeyboardColors.ColorScheme,
     private val keyLayout: List<List<KeyDef>>,
-) : ConstraintLayout(context) {
+) : ConstraintLayout(context), IManagedView {
     var keyActionListener: KeyActionListener? = null
     var expandKeypressArea = false
     private val previewPopup = KeyPreviewPopup(context)
@@ -72,8 +72,7 @@ abstract class BaseKeyboard(
                 }
             }
         }
-        val spanViews =
-            spanDefs.map { createKeyView(it.def).also { v -> v.id = View.generateViewId() } }
+        val spanViews = spanDefs.map { createKeyView(it.def).also { v -> v.id = generateViewId() } }
         _spanPanelViews = spanViews
 
         keyRows = keyLayout.mapIndexed { rowIndex, row ->
@@ -155,7 +154,7 @@ abstract class BaseKeyboard(
         }
 
         rippleView = KeyboardRippleView(context).apply {
-            id = View.generateViewId()
+            id = generateViewId()
             isClickable = false
             isEnabled = false
             isFocusable = false
@@ -265,11 +264,13 @@ abstract class BaseKeyboard(
                 KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyText
                 KeyDef.Appearance.Variant.Alternative -> colors.specialKeyText
                 KeyDef.Appearance.Variant.Accent -> colors.accentKeyText
+                KeyDef.Appearance.Variant.None -> colors.keyText
             },
             bgColor = when (view.def.variant) {
                 KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyBackground
                 KeyDef.Appearance.Variant.Alternative -> colors.specialKeyBackground
                 KeyDef.Appearance.Variant.Accent -> colors.accentKeyBackground
+                KeyDef.Appearance.Variant.None -> Color.TRANSPARENT
             },
         )
     }
@@ -278,10 +279,13 @@ abstract class BaseKeyboard(
         keyActionListener?.onKeyAction(action)
     }
 
-    open fun onAttach() {}
-    open fun onDetach() {
+    override fun onAttach() {}
+
+    override fun onDetach() {
         previewPopup.dismiss()
     }
+
+    abstract fun name(): String
 
     fun setRippleEnabled(enabled: Boolean) {
         rippleView.rippleEnabled = enabled

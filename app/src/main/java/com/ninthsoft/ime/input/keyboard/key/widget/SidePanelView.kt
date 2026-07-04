@@ -1,5 +1,6 @@
 package org.fcitx.fcitx5.android.input.keyboard.widget
 
+import android.animation.Animator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,7 +16,7 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.keyboard.key.KeyAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
-import com.ninthsoft.ime.input.keyboard.widget.SidePanelRender
+import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import splitties.views.dsl.core.add
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
@@ -80,6 +81,9 @@ abstract class SidePanelView(
         private var downY = 0f
 
         private var pressedIndex = -1
+        private var visualPressedIndex = -1
+        private var pressedAlpha = 0
+        private var pressAnimator: Animator? = null
         private var dragging = false
 
         private var stretch = 0f
@@ -120,7 +124,7 @@ abstract class SidePanelView(
                 height - vMargin.toFloat(),
             )
 
-            render.draw(canvas, panel, scrollOffset, pressedIndex, stretch)
+            render.draw(canvas, panel, scrollOffset, visualPressedIndex, stretch, pressedAlpha)
 
             drawRipple(canvas)
             updateRipple()
@@ -139,7 +143,7 @@ abstract class SidePanelView(
             canvas.save()
             canvas.clipRect(panel.left, top, panel.right, bottom)
 
-//            ripplePaint.color = 0
+            ripplePaint.color = 0
             ripplePaint.alpha = 25   // 👈 永远同色，不渐变
 
             canvas.drawCircle(rippleX, rippleY, rippleRadius, ripplePaint)
@@ -176,6 +180,7 @@ abstract class SidePanelView(
             longPressTriggered = true
         }
 
+        @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -189,8 +194,11 @@ abstract class SidePanelView(
                     downY = event.y
                     lastY = event.y
                     dragging = false
-                    postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                    pressAnimator?.cancel()
+                    visualPressedIndex = -1
+                    pressedAlpha = 0
                     invalidate()
+                    postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                     return true
                 }
 
@@ -201,7 +209,9 @@ abstract class SidePanelView(
 
                     if (!dragging && abs(event.y - downY) > touchSlop) {
                         dragging = true
-                        pressedIndex = -1
+                        visualPressedIndex = -1
+                        pressedAlpha = 0
+                        pressAnimator?.cancel()
                         stretch = 0f
                         if (!scroller.isFinished) scroller.abortAnimation()
                     }
@@ -228,13 +238,26 @@ abstract class SidePanelView(
                         pressedIndex = render.itemIndexAt(panel, event.y, scrollOffset)
                         val itemHeight = render.itemHeight(panel.height())
                         if (pressedIndex >= 0 && abs(event.y - downY) < itemHeight) {
-                            rippleIndex = pressedIndex
-                            rippleX = event.x
-                            rippleY = event.y
-                            rippleRadius = width * 0.2f  // 轻微压入
-                            rippleActive = true
                             click = true
                             index = pressedIndex
+                            visualPressedIndex = index
+                            pressedAlpha = 255
+                            pressAnimator?.cancel()
+                            pressAnimator = ValueAnimator.ofInt(255, 0).apply {
+                                duration = 180
+                                startDelay = 70
+                                addUpdateListener {
+                                    pressedAlpha = animatedValue as Int
+                                    invalidate()
+                                }
+                                addListener(object : Animator.AnimatorListener {
+                                    override fun onAnimationEnd(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
+                                    override fun onAnimationCancel(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
+                                    override fun onAnimationStart(a: Animator) {}
+                                    override fun onAnimationRepeat(a: Animator) {}
+                                })
+                                start()
+                            }
                         }
                         invalidate()
                     }
@@ -245,11 +268,6 @@ abstract class SidePanelView(
 
                     parent.requestDisallowInterceptTouchEvent(false)
                     if (click) {
-                        getLocationOnScreen(rippleLoc)
-                        val sx = rippleLoc[0] + event.x
-                        val sy = rippleLoc[1] + event.y
-                        this@SidePanelView.onRippleRequest?.invoke(sx.toFloat(), sy.toFloat())
-
                         render.items[index].action?.let { onItemAction?.invoke(it) }
                     } else if (springBackIfNeeded()) {
                         invalidate()
@@ -264,7 +282,10 @@ abstract class SidePanelView(
                     recycleVelocityTracker()
                     removeCallbacks(longPressRunnable)
 
+                    pressAnimator?.cancel()
                     pressedIndex = -1
+                    visualPressedIndex = -1
+                    pressedAlpha = 0
                     dragging = false
                     longPressTriggered = false
 
@@ -308,10 +329,12 @@ abstract class SidePanelView(
                     scrollOffset = 0f
                     stretch = rubberBand(-proposed)
                 }
+
                 proposed > maxScroll -> {
                     scrollOffset = maxScroll
                     stretch = -rubberBand(proposed - maxScroll)
                 }
+
                 else -> {
                     scrollOffset = proposed
                     stretch = 0f
