@@ -36,6 +36,7 @@ object KeyboardColors {
         data class PanelColors(
             val background: Int,
             val toolbarText: Int,
+            val toolbarIcon: Int,
             val candidateBackground: Int,
             val candidateText: Int,
             val candidateIndex: Int,
@@ -46,6 +47,7 @@ object KeyboardColors {
                 fun from(c: ColorScheme) = PanelColors(
                     background = c.background,
                     toolbarText = c.keyText,
+                    toolbarIcon = c.specialKeyText,
                     candidateBackground = c.specialKeyBackground,
                     candidateText = c.keyText,
                     candidateIndex = c.altText,

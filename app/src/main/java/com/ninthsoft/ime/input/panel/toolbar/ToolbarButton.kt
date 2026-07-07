@@ -27,13 +27,16 @@ class ImageButton(
     override val action: KawaiiPanel.Action,
     private val rotation: Float = 0f,
     private val mirrorX: Boolean = false,
+    private val iconScale: Float = 1f,
 ) : ToolbarButton() {
     override fun draw(canvas: Canvas, cx: Float, cy: Float, paints: Paints, density: Float) {
         val d = drawable ?: return
-        val iconSize = 20f * density
+        val iw = d.intrinsicWidth.toFloat() * iconScale
+        val ih = d.intrinsicHeight.toFloat() * iconScale
+        d.setTint(paints.toolbarIconColor)
         d.setBounds(
-            (cx - iconSize / 2f).toInt(), (cy - iconSize / 2f).toInt(),
-            (cx + iconSize / 2f).toInt(), (cy + iconSize / 2f).toInt(),
+            (cx - iw / 2f).toInt(), (cy - ih / 2f).toInt(),
+            (cx + iw / 2f).toInt(), (cy + ih / 2f).toInt(),
         )
         if (mirrorX) {
             canvas.withScale(-1f, 1f, cx, cy) {
@@ -53,14 +56,17 @@ class ToggleImageButton(
     override val action: KawaiiPanel.Action,
     private val toggledRotation: Float = 0f,
     var isToggled: Boolean = false,
+    private val iconScale: Float = 1f,
 ) : ToolbarButton() {
     override fun draw(canvas: Canvas, cx: Float, cy: Float, paints: Paints, density: Float) {
         val d = if (isToggled) toggledDrawable else normalDrawable
         if (d == null) return
-        val iconSize = 20f * density
+        val iw = d.intrinsicWidth.toFloat() * iconScale
+        val ih = d.intrinsicHeight.toFloat() * iconScale
+        d.setTint(paints.toolbarIconColor)
         d.setBounds(
-            (cx - iconSize / 2f).toInt(), (cy - iconSize / 2f).toInt(),
-            (cx + iconSize / 2f).toInt(), (cy + iconSize / 2f).toInt(),
+            (cx - iw / 2f).toInt(), (cy - ih / 2f).toInt(),
+            (cx + iw / 2f).toInt(), (cy + ih / 2f).toInt(),
         )
         if (isToggled && toggledRotation != 0f) {
             canvas.withRotation(toggledRotation, cx, cy) { d.draw(this) }

@@ -13,7 +13,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.OverScroller
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
@@ -55,7 +55,7 @@ abstract class SidePanelView(
 
     var onRippleRequest: ((Float, Float) -> Unit)? = null
 
-    fun setOnItemActionListener(listener: (KeyAction) -> Unit) {
+    fun setOnItemActionListener(listener: (KeyboardAction) -> Unit) {
         contentView.onItemAction = {
 //            InputFeedbacks.hapticFeedback(contentView)
 //            InputFeedbacks.soundEffect(InputFeedbacks.SoundEffect.Standard)
@@ -89,7 +89,7 @@ abstract class SidePanelView(
         private var stretch = 0f
         private var stretchAnimator: ValueAnimator? = null
 
-        var onItemAction: ((KeyAction) -> Unit)? = null
+        var onItemAction: ((KeyboardAction) -> Unit)? = null
 
         private val rippleLoc = IntArray(2)
 

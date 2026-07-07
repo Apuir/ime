@@ -1,4 +1,4 @@
-package com.ninthsoft.ime.engine.data
+package com.ninthsoft.ime.engine.event
 
 import android.view.KeyEvent
 import splitties.bitflags.hasFlag
@@ -59,6 +59,15 @@ value class KeyModifiers(
 
     fun toInt() = modifiers.toInt()
 
+    fun toUInt() = modifiers
+
+
+    operator fun plus(modifier: KeyModifier): KeyModifiers =
+        KeyModifiers(modifiers or modifier.modifier)
+
+    operator fun minus(modifier: KeyModifier): KeyModifiers =
+        KeyModifiers(modifiers and modifier.modifier.inv())
+
     companion object {
         val Empty = KeyModifiers(0u)
 
@@ -88,8 +97,8 @@ value class KeyModifiers(
                 if (isCtrlPressed) states += KeyModifier.Control
                 if (isShiftPressed) states += KeyModifier.Shift
                 if (isCapsLockOn) states += KeyModifier.Lock
-//                if (isNumLockOn) states += KeyModifier.Mod2 // NumLock
-//                if (isMetaPressed) states += KeyModifier.Meta
+                if (isNumLockOn) states += KeyModifier.Mod2 // NumLock
+                if (isMetaPressed) states += KeyModifier.Meta
                 if (isRelease) states += KeyModifier.Release
             }
             return KeyModifiers(states)

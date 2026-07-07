@@ -2,9 +2,9 @@ package com.ninthsoft.ime.input.keyboard.window
 
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.ImeInputMethodService
-import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.panel.IPanel
 import com.ninthsoft.ime.input.panel.KawaiiPanel
@@ -27,6 +27,8 @@ class KeyboardWindow(
 
     val panel: IPanel get() = view.panel
 
+    private val messageHandler = MessageHandler(service).also { it.attach(this) }
+
     fun setKeyActionListener(listener: KeyActionListener) {
         view.keyActionListener = listener
     }
@@ -43,10 +45,17 @@ class KeyboardWindow(
         view.setRerankedCandidate(candidate)
     }
 
+    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
+        view.onPossibleCandidatePinYin(pinyins)
+    }
+
     fun updatePreedit(text: String?) {
         view.updatePreedit(text)
     }
 
+    suspend fun handleEngineMessage(message: EngineMessage) {
+        messageHandler.handle(message)
+    }
 
     fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         view.onStartInput(info)

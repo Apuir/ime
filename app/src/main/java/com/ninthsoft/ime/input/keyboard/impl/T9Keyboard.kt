@@ -5,8 +5,7 @@ import android.content.Context
 import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
@@ -44,7 +43,7 @@ class T9Keyboard(
             ),
             behaviors = setOf(
                 KeyDef.Behavior.Press(
-                    KeyAction.PressKeyAction(KeyEvent.KEYCODE_APOSTROPHE, 0)
+                    KeyboardAction.KeyCodeAction(KeyEvent.KEYCODE_APOSTROPHE)
                 )
             ),
         )
@@ -57,7 +56,7 @@ class T9Keyboard(
                 variant = KeyDef.Appearance.Variant.Accent,
                 border = KeyDef.Appearance.Border.Special,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
         )
 
         private fun clearKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
@@ -68,7 +67,7 @@ class T9Keyboard(
                 variant = KeyDef.Appearance.Variant.Alternative,
             ),
             behaviors = setOf(
-                KeyDef.Behavior.Press(KeyAction.ClearAction)
+                KeyDef.Behavior.Press(KeyboardAction.ClearAction)
             ),
         )
 
@@ -79,7 +78,7 @@ class T9Keyboard(
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Alternative,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LangSwitchAction)),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
         )
 
         private fun makeCommaKey(percentWidth: Float): KeyDef = KeyDef(
@@ -90,7 +89,7 @@ class T9Keyboard(
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Alternative,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.PressKeyAction(0, 0))),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(0))),
         )
 
         private fun makeReturnKey(percentWidth: Float): KeyDef = KeyDef(
@@ -101,7 +100,7 @@ class T9Keyboard(
                 variant = KeyDef.Appearance.Variant.Accent,
                 border = KeyDef.Appearance.Border.Special,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
         )
 
 
@@ -127,7 +126,7 @@ class T9Keyboard(
             ),
             listOf(
                 layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
-                layoutSwitchKey("26键", NormalKeyboard.NAME, percentWidth = 0.13f),
+                layoutSwitchKey("26键", QwertyKeyboard.NAME, percentWidth = 0.13f),
                 spaceKey(),
                 makeCommaKey(percentWidth = 0.13f),
                 makeReturnKey(percentWidth = 0.15f),

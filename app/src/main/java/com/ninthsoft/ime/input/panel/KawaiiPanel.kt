@@ -6,6 +6,7 @@ import android.view.View
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.component.CandidateGridView
 import com.ninthsoft.ime.input.panel.component.MenuGridView
@@ -168,6 +169,10 @@ class KawaiiPanel(
 
     override fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
         view.setRerankedCandidate(candidate)
+    }
+
+    override fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
+        candidateGrid.onPossibleCandidatePinYin(pinyins)
     }
 
     override fun refreshTheme() {

@@ -13,10 +13,9 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.annotation.ColorInt
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
-import timber.log.Timber
 import kotlin.math.max
 
 abstract class SidePanelRender(
@@ -59,7 +58,7 @@ abstract class SidePanelRender(
         val textSize: Float,
         val textStyle: Int,
         @ColorInt val textColor: Int,
-        val action: KeyAction?,
+        val action: KeyboardAction?,
     )
 
     private val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

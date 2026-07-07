@@ -1,6 +1,7 @@
 package com.ninthsoft.ime.engine.data
 
-import com.ninthsoft.ime.engine.rime.core.CandidateProto
+import com.ninthsoft.ime.engine.event.KeyEvent
+
 
 sealed class EngineMessage {
     data class Commit(val text: String) : EngineMessage()
@@ -14,7 +15,7 @@ sealed class EngineMessage {
     data class Status(val schemaName: String, val isAsciiMode: Boolean) : EngineMessage()
     data object CompositionEnd : EngineMessage()
 
-    data class Key(val key: KeyEvent) : EngineMessage()
+    data class Key(val key: KeyEvent.CodeEvent) : EngineMessage()
 
     data class InlinePreedit(val preedit: String) : EngineMessage()
 
@@ -22,6 +23,21 @@ sealed class EngineMessage {
 
     data class RerankedCandidate(val best: Candidate) : EngineMessage()
     data object RerankStarted : EngineMessage()
+
+    data class PossibleCandidatePinYin(val possibleCandidatePinYins: Array<CandidatePinYin>) :
+        EngineMessage() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as PossibleCandidatePinYin
+            return possibleCandidatePinYins.contentEquals(other.possibleCandidatePinYins)
+        }
+
+        override fun hashCode(): Int {
+            return possibleCandidatePinYins.contentHashCode()
+        }
+    }
+
     data class CandidateMenu(
         val pageSize: Int = 0,
         val pageNumber: Int = 0,

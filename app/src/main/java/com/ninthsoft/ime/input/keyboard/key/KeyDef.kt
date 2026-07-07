@@ -91,11 +91,11 @@ open class KeyDef(
     }
 
     sealed class Behavior {
-        class Press(val action: KeyAction) : Behavior()
-        class LongPress(val action: KeyAction) : Behavior()
-        class Repeat(val action: KeyAction) : Behavior()
-        class Swipe(val action: KeyAction) : Behavior()
-        class DoubleTap(val action: KeyAction) : Behavior()
+        class Press(val action: KeyboardAction) : Behavior()
+        class LongPress(val action: KeyboardAction) : Behavior()
+        class Repeat(val action: KeyboardAction) : Behavior()
+        class Swipe(val action: KeyboardAction) : Behavior()
+        class DoubleTap(val action: KeyboardAction) : Behavior()
     }
 
     sealed class Popup {
@@ -106,7 +106,7 @@ open class KeyDef(
             class Item(
                 val label: String,
                 @DrawableRes val icon: Int,
-                val action: KeyAction,
+                val action: KeyboardAction,
             )
         }
     }

@@ -2,7 +2,7 @@
 
 package com.ninthsoft.ime.engine.rime.core
 
-import com.ninthsoft.ime.engine.data.KeyModifiers
+import com.ninthsoft.ime.engine.event.KeyModifiers
 
 data class RimeKeyEvent(
     val value: Int,

@@ -3,12 +3,10 @@ package com.ninthsoft.ime.input.keyboard.window
 import android.content.Context
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import androidx.core.view.contains
-import androidx.core.view.isNotEmpty
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
-import com.ninthsoft.ime.input.keyboard.impl.NormalKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
@@ -30,7 +28,7 @@ class KeyboardManager(private val context: Context) {
 
     private fun create(name: String): BaseKeyboard {
         val b: BaseKeyboard = when (name) {
-            NormalKeyboard.NAME -> NormalKeyboard(context, cachedColors)
+            QwertyKeyboard.NAME -> QwertyKeyboard(context, cachedColors)
             T9Keyboard.NAME -> T9Keyboard(context, cachedColors)
             SymbolKeyboard.NAME -> SymbolKeyboard(context, cachedColors)
             else -> error("Unknown keyboard: $name")

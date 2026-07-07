@@ -11,7 +11,6 @@ import com.ninthsoft.ime.data.theme.ThemeManager
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.toolbar.IdleRenderer
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @SuppressLint("UseCompatLoadingForDrawables")
 class KawaiiPanelView(context: Context) : View(context) {
@@ -89,8 +88,8 @@ class KawaiiPanelView(context: Context) : View(context) {
             context.getDrawable(R.drawable.ic_keyboard_menu),
             context.getDrawable(R.drawable.ic_keyboard_arrow_back),
             context.getDrawable(R.drawable.ic_keyboard_clipboard),
-            context.getDrawable(R.drawable.ic_keyboard_redo),
             context.getDrawable(R.drawable.ic_keyboard_undo),
+            context.getDrawable(R.drawable.ic_keyboard_redo),
             context.getDrawable(R.drawable.ic_keyboard_palette),
             context.getDrawable(R.drawable.ic_keyboard_cursor_move),
             context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
@@ -134,10 +133,10 @@ class KawaiiPanelView(context: Context) : View(context) {
 
     private fun startPressAnimation(renderer: IdleRenderer) {
         pressAnimator?.cancel()
-        renderer.pressAlpha = 130
+        renderer.pressAlpha = 120
         renderer.pressRadius = 0f
         pressAnimator = ValueAnimator.ofFloat(0f, renderer.pressRadiusMax).apply {
-            duration = 500
+            duration = 300
             addUpdateListener {
                 renderer.pressRadius = animatedValue as Float
                 invalidate()

@@ -10,9 +10,10 @@ import android.widget.FrameLayout
 import com.ninthsoft.ime.base.util.slideDownExpand
 import com.ninthsoft.ime.base.util.slideUpCollapse
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
@@ -33,7 +34,8 @@ class CandidateGridView(
     var onNextPage: (() -> Unit)? = null,
     var onBackspace: (() -> Unit)? = null,
     var onReturn: (() -> Unit)? = null,
-    var onSidePanelAction: ((KeyAction) -> Unit)? = null,
+    var onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
+    var subscribePossibleCandidatePinYin: Boolean = true,
 ) : FrameLayout(context) {
 
     private class CellPos(val row: Int, val col: Int, val wide: Boolean, val extraWide: Boolean)
@@ -50,6 +52,8 @@ class CandidateGridView(
             variant = KeyDef.Appearance.Variant.None,
         ),
     ).apply { setOnItemActionListener { action -> onSidePanelAction?.invoke(action) } }
+
+    private val sidePanelPunctuationItems: List<KeyDef>
 
     // ── Center: grid canvas ──
     private val gridCanvas = object : View(context) {
@@ -190,12 +194,13 @@ class CandidateGridView(
 
     init {
         setBackgroundColor(colors.panel.background)
-        sidePanelKey.updateItems(listOf(".", "?", "!", "@", "/", "-").map { ch ->
+        sidePanelPunctuationItems = listOf(".", "?", "!", "@", "/", "-").map { ch ->
             KeyDef(
                 appearance = KeyDef.Appearance.Text(displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false),
-                behaviors = setOf(KeyDef.Behavior.Press(KeyAction.CommitAction(ch))),
+                behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
             )
-        })
+        }
+        sidePanelKey.updateItems(sidePanelPunctuationItems)
         btnPanel.addView(ImageKeyView(context, colors, prevPageKey(1f).appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onPrevPage?.invoke() } })
         btnPanel.addView(ImageKeyView(context, colors, nextPageKey(1f).appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onNextPage?.invoke() } })
         btnPanel.addView(ImageKeyView(context, colors, backspaceKey().appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onBackspace?.invoke() } })
@@ -240,5 +245,24 @@ class CandidateGridView(
     fun hide() {
         slideUpCollapse {
             candidates = emptyList()
+        }
+    }
+
+    fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+        if (!subscribePossibleCandidatePinYin) return
+        if (data.isEmpty()) {
+            sidePanelKey.updateItems(sidePanelPunctuationItems)
+        } else {
+            sidePanelKey.updateItems(data.map { pinYin ->
+                KeyDef(
+                    appearance = KeyDef.Appearance.Text(
+                        displayText = pinYin.pinYin,
+                        textSize = 15f,
+                        percentWidth = 0.5f,
+                        margin = false,
+                    ),
+                    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(pinYin.pinYin))),
+                )
+            })
         }
     }}

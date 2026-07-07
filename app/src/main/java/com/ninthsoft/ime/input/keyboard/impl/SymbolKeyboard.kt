@@ -3,9 +3,8 @@ package com.ninthsoft.ime.input.keyboard.impl
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.engine.data.KeyEvent
-import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
@@ -28,7 +27,7 @@ class SymbolKeyboard(
             ),
             behaviors = setOf(
                 KeyDef.Behavior.Press(
-                    KeyAction.PressKeyAction(code = KeyEvent.code(char), modifiers = 0)
+                    KeyboardAction.KeyCodeAction(KeyEvent.CodeEvent.keyCode(char))
                 )
             ),
         )
@@ -40,7 +39,7 @@ class SymbolKeyboard(
                 percentWidth = percentWidth,
                 variant = KeyDef.Appearance.Variant.Alternative,
             ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyAction.CommitAction(char))),
+            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(char))),
         )
 
         val Layout: List<List<KeyDef>> = listOf(
@@ -60,7 +59,7 @@ class SymbolKeyboard(
                 symbolKey("?"), symbolKey("~"), symbolKey(","), backspaceKey(),
             ),
             listOf(
-                layoutSwitchKey("26键", NormalKeyboard.NAME, percentWidth = 0.18f),
+                layoutSwitchKey("26键", QwertyKeyboard.NAME, percentWidth = 0.18f),
                 layoutSwitchKey("9键", T9Keyboard.NAME, percentWidth = 0.18f),
                 spaceKey(),
                 symbolKey(".", 0.18f),

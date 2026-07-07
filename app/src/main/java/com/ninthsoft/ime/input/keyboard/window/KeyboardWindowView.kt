@@ -14,8 +14,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.impl.NormalKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.panel.KawaiiPanel
@@ -173,7 +174,7 @@ class KeyboardWindowView(
         switchKeyboard(
             when (info.inputType and InputType.TYPE_MASK_CLASS) {
                 InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE -> SymbolKeyboard.Companion.NAME
-                else -> NormalKeyboard.NAME
+                else -> QwertyKeyboard.NAME
             },
         )
     }
@@ -193,6 +194,8 @@ class KeyboardWindowView(
     fun setRerankedCandidate(candidate: EngineMessage.Candidate) =
         panel.setRerankedCandidate(candidate)
 
+    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) =
+        panel.onPossibleCandidatePinYin(pinyins)
 
     fun updatePreedit(text: String?) {
         preeditPinner.updateText(text)
@@ -227,7 +230,7 @@ class KeyboardWindowView(
 
     private fun resolveBottomInset(): Int {
         if (ThemeManager.Keyboard.getIgnoreInsets(context)) return 0
-        val insets = ViewCompat.getRootWindowInsets(this) ?: return 0
+        val insets = ViewCompat.getRootWindowInsets(this) ?: return navbarFrameHeight()
         val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
         val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
         var insetsBottom = max(navBars.bottom, mandatory.bottom)

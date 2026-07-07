@@ -1,8 +1,7 @@
-package com.ninthsoft.ime.input
+package com.ninthsoft.ime.input.keyboard.window
 
 import android.inputmethodservice.InputMethodService
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -10,14 +9,14 @@ import timber.log.Timber
 class MessageHandler(
     private val service: InputMethodService,
 ) {
-    private var keyboardWindow: KeyboardWindow? = null
+    private var window: KeyboardWindow? = null
 
-    fun setKeyboardWindow(window: KeyboardWindow?) {
-        keyboardWindow = window
+    fun attach(window: KeyboardWindow) {
+        this.window = window
     }
 
     suspend fun handle(message: EngineMessage) {
-        Timber.d("MessageHandler.handle $message ${keyboardWindow.hashCode()}")
+        Timber.d("KeyboardMessageHandler.handle $message")
         when (message) {
             is EngineMessage.Commit -> {
                 withContext(Dispatchers.Main) {
@@ -27,32 +26,38 @@ class MessageHandler(
 
             is EngineMessage.Composition -> {
                 withContext(Dispatchers.Main) {
-                    keyboardWindow?.updatePreedit(message.preedit)
+                    window?.updatePreedit(message.preedit)
                 }
             }
 
             is EngineMessage.CompositionEnd -> {
                 withContext(Dispatchers.Main) {
                     service.currentInputConnection?.finishComposingText()
-                    keyboardWindow?.updatePreedit(null)
+                    window?.updatePreedit(null)
                 }
             }
 
             is EngineMessage.Candidates -> {
                 withContext(Dispatchers.Main) {
-                    keyboardWindow?.setCandidates(message.list)
+                    window?.setCandidates(message.list)
                 }
             }
 
             is EngineMessage.RerankStarted -> {
                 withContext(Dispatchers.Main) {
-                    keyboardWindow?.panel?.showRerankAnimation()
+                    window?.panel?.showRerankAnimation()
                 }
             }
 
             is EngineMessage.RerankedCandidate -> {
                 withContext(Dispatchers.Main) {
-                    keyboardWindow?.setRerankedCandidate(message.best)
+                    window?.setRerankedCandidate(message.best)
+                }
+            }
+
+            is EngineMessage.PossibleCandidatePinYin -> {
+                withContext(Dispatchers.Main) {
+                    window?.onPossibleCandidatePinYin(message.possibleCandidatePinYins)
                 }
             }
 

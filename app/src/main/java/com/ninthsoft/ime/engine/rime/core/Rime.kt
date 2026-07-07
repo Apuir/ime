@@ -2,7 +2,7 @@
 
 package com.ninthsoft.ime.engine.rime.core
 
-import com.ninthsoft.ime.engine.data.KeyModifiers
+import com.ninthsoft.ime.engine.event.KeyModifiers
 import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.OpenCCDictManager
 import com.ninthsoft.ime.base.util.appContext

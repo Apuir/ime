@@ -16,6 +16,7 @@ class ComposingRenderer(
     val candidates: List<EngineMessage.Candidate>,
     private val expandDrawable: Drawable?,
     var horizontalPaddingDp: Float,
+    var iconScale: Float = 1f,
 ) : IRenderer {
 
     private data class PillRect(val left: Float, val right: Float, val index: Int)
@@ -160,10 +161,12 @@ class ComposingRenderer(
         val cy = pillY + pillH / 2f
         val d = expandDrawable
         if (d != null) {
-            val iconSize = 20f * density
+            d.setTint(paints.toolbarIconColor)
+            val iw = d.intrinsicWidth.toFloat() * iconScale
+            val ih = d.intrinsicHeight.toFloat() * iconScale
             d.setBounds(
-                (cx - iconSize / 2f).toInt(), (cy - iconSize / 2f).toInt(),
-                (cx + iconSize / 2f).toInt(), (cy + iconSize / 2f).toInt(),
+                (cx - iw / 2f).toInt(), (cy - ih / 2f).toInt(),
+                (cx + iw / 2f).toInt(), (cy + ih / 2f).toInt(),
             )
             if (isExpanded) {
                 canvas.withRotation(180f, cx, cy) {

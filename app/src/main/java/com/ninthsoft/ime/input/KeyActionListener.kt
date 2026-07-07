@@ -3,12 +3,10 @@ package com.ninthsoft.ime.input
 import android.annotation.SuppressLint
 import android.inputmethodservice.InputMethodService
 import com.ninthsoft.ime.engine.IEngine
-import com.ninthsoft.ime.engine.data.KeyEvent
-import com.ninthsoft.ime.input.keyboard.impl.BaseKeyboard
-import com.ninthsoft.ime.input.keyboard.impl.NormalKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.engine.event.KeyModifiers
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
-import com.ninthsoft.ime.input.keyboard.key.asKeyEvent
 
 class KeyActionListener(
     private val service: InputMethodService,
@@ -16,40 +14,49 @@ class KeyActionListener(
     private val onSwitchLayout: (String) -> Unit,
 ) : KeyActionListener {
 
-    override fun onKeyAction(action: KeyAction) {
+    override fun onKeyAction(action: KeyboardAction) {
         when (action) {
-            is KeyAction.PressKeyAction -> {
-                engine?.postProcessKey(service, action.asKeyEvent(isVirtual = false))
+            is KeyboardAction.KeySequenceAction -> {
+                engine?.processKey(service, action.asKeyEvent())
             }
 
-            is KeyAction.ClearAction -> {
-                engine?.postClear(service)
+            is KeyboardAction.KeyCodeAction -> {
+                engine?.processKey(service, action.asKeyEvent())
             }
 
-            is KeyAction.CommitAction -> {
+            is KeyboardAction.ClearAction -> {
+                engine?.clear(service)
+            }
+
+            is KeyboardAction.CommitAction -> {
                 service.currentInputConnection?.commitText(action.text, 1)
             }
 
-            is KeyAction.LayoutSwitchAction -> {
+            is KeyboardAction.LayoutSwitchAction -> {
                 onSwitchLayout(action.target)
             }
 
-            is KeyAction.BackspaceAction, KeyAction.ReturnAction, KeyAction.SpaceAction -> {
+            is KeyboardAction.BackspaceAction, KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {
                 val character = when (action) {
-                    KeyAction.BackspaceAction -> "DEL"
-                    KeyAction.ReturnAction -> "ENTER"
-                    KeyAction.SpaceAction -> "SPACE"
+                    KeyboardAction.BackspaceAction -> "DEL"
+                    KeyboardAction.ReturnAction -> "ENTER"
+                    KeyboardAction.SpaceAction -> "SPACE"
                 }
-                engine?.postProcessKey(service, KeyEvent(KeyEvent.code(character), 0, true))
+                engine?.processKey(
+                    service, KeyEvent.CodeEvent(
+                        KeyEvent.CodeEvent.keyCode(character), KeyModifiers.Empty
+                    )
+                )
             }
 
-            is KeyAction.LangSwitchAction -> {
+            is KeyboardAction.LangSwitchAction -> {
                 @SuppressLint("NewApi") service.switchToNextInputMethod(false)
             }
 
-            is KeyAction.ShowInputMethodPickerAction -> {
+            is KeyboardAction.ShowInputMethodPickerAction -> {
                 @SuppressLint("NewApi") service.requestShowSelf(0)
             }
+
             else -> {}
         }
     }

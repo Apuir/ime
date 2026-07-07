@@ -10,7 +10,7 @@ import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
 import com.ninthsoft.ime.input.keyboard.key.ImageTextKeyView
-import com.ninthsoft.ime.input.keyboard.key.KeyAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyPreviewPopup
@@ -51,7 +51,7 @@ abstract class BaseKeyboard(
         (_spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
     }
 
-    fun setSidePanelItemListener(listener: (KeyAction) -> Unit) {
+    fun setSidePanelItemListener(listener: (KeyboardAction) -> Unit) {
         (_spanPanelViews.firstOrNull() as? SidePanelKeyView)?.setOnItemActionListener(listener)
     }
 
@@ -275,7 +275,7 @@ abstract class BaseKeyboard(
         )
     }
 
-    protected open fun onAction(action: KeyAction) {
+    protected open fun onAction(action: KeyboardAction) {
         keyActionListener?.onKeyAction(action)
     }
 

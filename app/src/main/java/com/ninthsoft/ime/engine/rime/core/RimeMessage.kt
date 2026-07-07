@@ -3,8 +3,8 @@
 package com.ninthsoft.ime.engine.rime.core
 
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.engine.data.KeyEvent
-import com.ninthsoft.ime.engine.data.KeyModifiers
+import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.engine.event.KeyModifiers
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateListMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateMenuMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CommitTextMessage
@@ -81,6 +81,26 @@ sealed class RimeMessage<T>(val data: T) {
                 r = 31 * r + candidates.contentHashCode()
                 return r
             }
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as CandidateListMessage
+
+            if (total != other.total) return false
+            if (highlighted != other.highlighted) return false
+            if (!candidates.contentEquals(other.candidates)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = total
+            result = 31 * result + highlighted
+            result = 31 * result + candidates.contentHashCode()
+            return result
         }
     }
 
@@ -182,9 +202,9 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
 
     is KeyMessage -> {
         EngineMessage.Key(
-            KeyEvent(
-                code = data.value.keyCode,
-                modifiers = data.modifiers.toInt(),
+            KeyEvent.CodeEvent(
+                keyCode = data.value.keyCode,
+                modifiers = data.modifiers,
                 isVirtual = data.isVirtual
             )
         )

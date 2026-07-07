@@ -17,27 +17,25 @@ class ImeInputMethodService : InputMethodService() {
     private val engine: IEngine? = EngineFactory.current()
     private var keyboardWindow: KeyboardWindow? = null
 
-    private lateinit var messageHandler: MessageHandler
     private lateinit var keyActionListener: KeyActionListener
 
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
-        messageHandler = MessageHandler(this)
         keyActionListener = KeyActionListener(
             service = this,
             engine = engine,
             onSwitchLayout = { target -> keyboardWindow?.switchLayout(target) },
         )
-        engine?.observe(scope!!) { messageHandler.handle(it) }
+        engine?.observe(scope!!) { keyboardWindow?.handleEngineMessage(it) }
     }
 
     override fun onCreateInputView(): View {
         keyboardWindow = KeyboardWindow(
             service = this,
             onCandidateSelected = { candidate ->
-                engine?.postSelectCandidate(candidate.index)
+                engine?.selectCandidate(candidate.index)
             },
             onRerankedSelected = { text ->
                 currentInputConnection?.commitText(text, 1)
@@ -50,7 +48,6 @@ class ImeInputMethodService : InputMethodService() {
                 }
             },
         ).apply { setKeyActionListener(keyActionListener) }
-        messageHandler.setKeyboardWindow(keyboardWindow)
         return keyboardWindow!!.view
     }
 
@@ -60,7 +57,7 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        engine?.resetState()
+        engine?.resetComposition()
         keyboardWindow?.onFinishInputView(finishingInput)
         super.onFinishInputView(finishingInput)
     }

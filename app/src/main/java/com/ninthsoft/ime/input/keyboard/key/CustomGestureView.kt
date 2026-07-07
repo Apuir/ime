@@ -2,7 +2,8 @@ package com.ninthsoft.ime.input.keyboard.key
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -13,7 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
@@ -57,7 +57,16 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     @Volatile
     private var repeatStarted = false
     var repeatEnabled = false
-    private var repeatJob: Job? = null
+    private val repeatHandler = Handler(Looper.getMainLooper())
+    private val repeatRunnable = Runnable { fireRepeat() }
+
+    private fun fireRepeat() {
+        if (isEnabled) {
+            repeatStarted = true
+            onRepeatListener?.invoke(this@CustomGestureView)
+            repeatHandler.postDelayed(repeatRunnable, RepeatInterval)
+        }
+    }
 
     var swipeEnabled = false
     var swipeRepeatEnabled = false
@@ -113,8 +122,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         }
         if (repeatEnabled) {
             repeatStarted = false
-            repeatJob?.cancel()
-            repeatJob = null
+            repeatHandler.removeCallbacks(repeatRunnable)
         }
         if (swipeEnabled) {
             if (swipeRepeatEnabled) {
@@ -151,18 +159,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                     }
                 }
                 if (repeatEnabled) {
-                    repeatJob?.cancel()
-                    repeatJob = lifecycleScope.launch {
-                        delay(longPressDelay.toLong())
-                        repeatStarted = true
-                        var lastTriggerTime: Long
-                        while (isActive && isEnabled) {
-                            lastTriggerTime = SystemClock.uptimeMillis()
-                            onRepeatListener?.invoke(this@CustomGestureView)
-                            val t = lastTriggerTime + RepeatInterval - SystemClock.uptimeMillis()
-                            if (t > 0) delay(t)
-                        }
-                    }
+                    repeatHandler.removeCallbacks(repeatRunnable)
+                    repeatHandler.postDelayed(repeatRunnable, longPressDelay)
                 }
                 if (swipeEnabled) {
                     swipeLastX = x
@@ -205,8 +203,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                         longPressJob = null
                     }
                     if (repeatEnabled) {
-                        repeatJob?.cancel()
-                        repeatJob = null
+                        repeatHandler.removeCallbacks(repeatRunnable)
                     }
                     if (repeatStarted || !swipeEnabled) {
                         isPressed = false
@@ -272,8 +269,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 longPressJob = null
             }
             if (repeatEnabled && !repeatStarted) {
-                repeatJob?.cancel()
-                repeatJob = null
+                repeatHandler.removeCallbacks(repeatRunnable)
             }
         }
         when (axis) {
@@ -302,6 +298,6 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
     companion object {
         const val longPressDelay = 250L
-        const val RepeatInterval = 50L
+        const val RepeatInterval = 100L
     }
 }

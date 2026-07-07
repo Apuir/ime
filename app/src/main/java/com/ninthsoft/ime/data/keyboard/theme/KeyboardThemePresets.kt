@@ -25,6 +25,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb( 10, 10, 10),
                 toolbarText = Color.rgb(255, 255, 255),
+                toolbarIcon = Color.rgb(170, 170, 170),
                 toolbarPressed = Color.rgb(255, 255, 255),
                 candidateBackground =Color.argb(220,22, 22, 22),
                 candidateText = Color.rgb(255, 255, 255),
@@ -60,6 +61,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(210, 210, 215),
                 toolbarText = Color.rgb(0, 0, 0),
+                toolbarIcon = Color.rgb(80, 80, 85),
                 candidateBackground = Color.rgb(174, 174, 178),
                 candidateText = Color.rgb(0, 0, 0),
                 candidateIndex = Color.rgb(140, 140, 145),
@@ -94,6 +96,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(22, 36, 30),
                 toolbarText = Color.rgb(224, 235, 228),
+                toolbarIcon = Color.rgb(145, 175, 155),
                 candidateBackground = Color.rgb(46, 66, 58),
                 candidateText = Color.rgb(224, 235, 228),
                 candidateIndex = Color.rgb(120, 155, 130),
@@ -128,6 +131,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(24, 36, 48),
                 toolbarText = Color.rgb(225, 235, 245),
+                toolbarIcon = Color.rgb(140, 170, 200),
                 candidateBackground = Color.rgb(52, 68, 82),
                 candidateText = Color.rgb(225, 235, 245),
                 candidateIndex = Color.rgb(120, 150, 180),
@@ -162,6 +166,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(40, 36, 40),
                 toolbarText = Color.rgb(240, 235, 230),
+                toolbarIcon = Color.rgb(185, 170, 160),
                 candidateBackground = Color.rgb(72, 66, 72),
                 candidateText = Color.rgb(240, 235, 230),
                 candidateIndex = Color.rgb(160, 145, 135),
@@ -196,6 +201,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(34, 28, 42),
                 toolbarText = Color.rgb(235, 228, 242),
+                toolbarIcon = Color.rgb(175, 160, 190),
                 candidateBackground = Color.rgb(66, 56, 74),
                 candidateText = Color.rgb(235, 228, 242),
                 candidateIndex = Color.rgb(150, 135, 165),

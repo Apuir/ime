@@ -2,14 +2,10 @@ package com.ninthsoft.ime.ui.screen
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,14 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -78,8 +68,6 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 import com.ninthsoft.ime.ui.theme.ExpressiveShapes
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 private const val PREFS_NAME = "schema_settings"
@@ -94,7 +82,7 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
     val availableSchemas = remember { mutableStateListOf<SchemaItem>() }
     var loaded by remember { mutableStateOf(false) }
 
-    EngineFactory.current()?.postSchemeList { allSchemas ->
+    EngineFactory.current()?.schemeList { allSchemas ->
         val allItems = allSchemas.map { SchemaItem(it.id, it.name) }
         val enabledIds =
             prefs.getString(KEY_ENABLED_IDS, "")?.split(",")?.filter { it.isNotBlank() }

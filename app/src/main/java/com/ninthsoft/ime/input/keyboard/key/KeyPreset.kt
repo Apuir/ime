@@ -1,7 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.engine.data.KeyEvent
+import com.ninthsoft.ime.engine.event.KeyEvent
 
 fun alphabetKey(
     character: String,
@@ -17,11 +17,7 @@ fun alphabetKey(
         mainTextTranslationY = mainTextTranslationY,
         variant = KeyDef.Appearance.Variant.Normal
     ), behaviors = setOf(
-        KeyDef.Behavior.Press(
-            KeyAction.PressKeyAction(
-                code = KeyEvent.code(character = character), modifiers = 0
-            )
-        ),
+        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
     ), popups = arrayOf(
         KeyDef.Popup.Preview(character)
     )
@@ -38,7 +34,7 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(
-            KeyAction.PressKeyAction(code = KeyEvent.code(digit), modifiers = 0)
+            KeyboardAction.KeyCodeAction(KeyEvent.CodeEvent.keyCode(digit))
         )
     ),
 )
@@ -70,9 +66,7 @@ fun capsLockKey(): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
     behaviors = setOf(
-        KeyDef.Behavior.Press(KeyAction.CapsAction(false)),
-        KeyDef.Behavior.LongPress(KeyAction.CapsAction(true)),
-        KeyDef.Behavior.DoubleTap(KeyAction.CapsAction(true)),
+        KeyDef.Behavior.Press(KeyboardAction.CapsAction),
     ),
 )
 
@@ -85,8 +79,8 @@ fun backspaceKey(): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
     behaviors = setOf(
-        KeyDef.Behavior.Press(KeyAction.BackspaceAction),
-        KeyDef.Behavior.Repeat(KeyAction.BackspaceAction),
+        KeyDef.Behavior.Press(KeyboardAction.BackspaceAction),
+        KeyDef.Behavior.Repeat(KeyboardAction.BackspaceAction),
     ),
 )
 
@@ -101,7 +95,7 @@ fun layoutSwitchKey(
         percentWidth = percentWidth,
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LayoutSwitchAction(target))),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(target))),
 )
 
 fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
@@ -113,8 +107,21 @@ fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
         viewId = KeyView.button_space,
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.SpaceAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.SpaceAction)),
 )
+
+
+fun commaKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.ImageText(
+        displayText = ".",
+        textSize = 23f,
+        src = R.drawable.ic_keyboard_emoticon,
+        percentWidth = percentWidth,
+        variant = KeyDef.Appearance.Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(0))),
+)
+
 
 fun languageSwitchKey(percentWidth: Float): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
@@ -123,7 +130,7 @@ fun languageSwitchKey(percentWidth: Float): KeyDef = KeyDef(
         percentWidth = percentWidth,
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.LangSwitchAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
 )
 
 fun returnKey(percentWidth: Float): KeyDef = KeyDef(
@@ -134,7 +141,7 @@ fun returnKey(percentWidth: Float): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Accent,
         border = KeyDef.Appearance.Border.Special,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
 )
 
 fun prevPageKey(percentWidth: Float): KeyDef = KeyDef(
@@ -144,7 +151,7 @@ fun prevPageKey(percentWidth: Float): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
         border = KeyDef.Appearance.Border.On,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
 )
 
 fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
@@ -154,5 +161,5 @@ fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
         variant = KeyDef.Appearance.Variant.Alternative,
         border = KeyDef.Appearance.Border.On,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyAction.ReturnAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
 )

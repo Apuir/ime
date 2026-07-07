@@ -11,21 +11,22 @@ import com.ninthsoft.ime.input.panel.Paints
 class IdleRenderer(
     private val menuDrawable: Drawable? = null,
     private val arrowDrawable: Drawable? = null,
-    private val clipboardDrawable: Drawable? = null,
-    private val undoRightDrawable: Drawable? = null,
-    private val redoRightDrawable: Drawable? = null,
-    private val paletteDrawable: Drawable? = null,
-    private val cursorMoveDrawable: Drawable? = null,
+    clipboardDrawable: Drawable? = null,
+    undoRightDrawable: Drawable? = null,
+    redoRightDrawable: Drawable? = null,
+    paletteDrawable: Drawable? = null,
+    cursorMoveDrawable: Drawable? = null,
     private val expandDrawable: Drawable? = null,
     var horizontalPaddingDp: Float = 0f,
+    var iconScale: Float = 0.94f,
 ) : IRenderer {
 
     private val centerButtons = listOf(
-        ImageButton(redoRightDrawable, KawaiiPanel.Action.RotateLeft),
-        ImageButton(undoRightDrawable, KawaiiPanel.Action.RotateRight),
-        ImageButton(cursorMoveDrawable, KawaiiPanel.Action.CursorMove),
-        ImageButton(clipboardDrawable, KawaiiPanel.Action.Clipboard),
-        ImageButton(paletteDrawable, KawaiiPanel.Action.Palette),
+        ImageButton(undoRightDrawable, KawaiiPanel.Action.RotateLeft, iconScale = iconScale),
+        ImageButton(redoRightDrawable, KawaiiPanel.Action.RotateRight, iconScale = iconScale),
+        ImageButton(cursorMoveDrawable, KawaiiPanel.Action.CursorMove, iconScale = iconScale),
+        ImageButton(clipboardDrawable, KawaiiPanel.Action.Clipboard, iconScale = iconScale),
+        ImageButton(paletteDrawable, KawaiiPanel.Action.Palette, iconScale = iconScale),
     )
 
     var pressAlpha: Int = 0
@@ -62,12 +63,14 @@ class IdleRenderer(
         }
 
         if (menuDrawable != null) {
-            val iconSize = 20f * density
             val d = if (showArrow) arrowDrawable else menuDrawable
             if (d != null) {
+                d.setTint(paints.toolbarIconColor)
+                val iw = d.intrinsicWidth.toFloat() * iconScale
+                val ih = d.intrinsicHeight.toFloat() * iconScale
                 d.setBounds(
-                    (menuCenter - iconSize / 2f).toInt(), (height / 2f - iconSize / 2f).toInt(),
-                    (menuCenter + iconSize / 2f).toInt(), (height / 2f + iconSize / 2f).toInt(),
+                    (menuCenter - iw / 2f).toInt(), (height / 2f - ih / 2f).toInt(),
+                    (menuCenter + iw / 2f).toInt(), (height / 2f + ih / 2f).toInt(),
                 )
                 d.draw(canvas)
             }
@@ -83,10 +86,12 @@ class IdleRenderer(
         val expandLeft = width - hPad - fixedW
         val expandCenter = expandLeft + fixedW / 2f
         if (expandDrawable != null) {
-            val iconSize = 20f * density
+            expandDrawable.setTint(paints.toolbarIconColor)
+            val iw = expandDrawable.intrinsicWidth.toFloat() * iconScale
+            val ih = expandDrawable.intrinsicHeight.toFloat() * iconScale
             expandDrawable.setBounds(
-                (expandCenter - iconSize / 2f).toInt(), (height / 2f - iconSize / 2f).toInt(),
-                (expandCenter + iconSize / 2f).toInt(), (height / 2f + iconSize / 2f).toInt(),
+                (expandCenter - iw / 2f).toInt(), (height / 2f - ih / 2f).toInt(),
+                (expandCenter + iw / 2f).toInt(), (height / 2f + ih / 2f).toInt(),
             )
             if (isExpanded) {
                 canvas.withRotation(180f, expandCenter, height / 2f) { expandDrawable.draw(this) }
@@ -104,12 +109,11 @@ class IdleRenderer(
         val hPad = (horizontalPaddingDp + 4) * density
         val fixedW = 32f * density
 
-        val menuLeft = hPad
-        val menuRight = menuLeft + fixedW
+        val menuRight = hPad + fixedW
         val expandLeft = width - hPad - fixedW
 
-        when {
-            x in expandLeft..width.toFloat() -> {
+        when (x) {
+            in expandLeft..width.toFloat() -> {
                 pressCx = expandLeft + fixedW / 2f
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
@@ -117,8 +121,8 @@ class IdleRenderer(
                 return KawaiiPanel.TouchResult.ToolbarAction(KawaiiPanel.Action.CloseKeyboard)
             }
 
-            x in menuLeft..menuRight -> {
-                pressCx = menuLeft + fixedW / 2f
+            in hPad..menuRight -> {
+                pressCx = hPad + fixedW / 2f
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
                 pressRadius = 0f
@@ -127,12 +131,10 @@ class IdleRenderer(
             }
 
             else -> {
-                val centerAreaLeft = menuRight
-                val centerAreaW = width - centerAreaLeft - hPad - fixedW
+                val centerAreaW = width - menuRight - hPad - fixedW
                 val otherW = centerAreaW / centerButtons.size
-                val index =
-                    ((x - centerAreaLeft) / otherW).toInt().coerceIn(0, centerButtons.size - 1)
-                pressCx = centerAreaLeft + otherW * index + otherW / 2f
+                val index = ((x - menuRight) / otherW).toInt().coerceIn(0, centerButtons.size - 1)
+                pressCx = menuRight + otherW * index + otherW / 2f
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
                 pressRadius = 0f
