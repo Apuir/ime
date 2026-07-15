@@ -12,11 +12,11 @@ interface IEngine {
     fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit)
     fun finalize()
     fun processKey(
-        service: InputMethodService, key: KeyEvent, on: (Boolean) -> Unit = {}
+        service: InputMethodService, key: KeyEvent
     ): Unit?
 
-    fun selectCandidate(index: Int, on: (Boolean) -> Unit = {})
+    fun selectCandidate(index: Int)
     fun schemeList(on: (List<EngineMessage.Schema>) -> Unit)
-    fun clear(service: InputMethodService, on: (Boolean) -> Unit = {})
+    fun clear(service: InputMethodService)
     fun resetComposition()
 }

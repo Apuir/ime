@@ -1,4 +1,4 @@
-package org.fcitx.fcitx5.android.input.keyboard.widget
+package com.ninthsoft.ime.input.keyboard.key.widget
 
 import android.animation.Animator
 import android.animation.ValueAnimator
@@ -16,7 +16,6 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
-import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import splitties.views.dsl.core.add
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent

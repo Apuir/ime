@@ -36,7 +36,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
-import org.fcitx.fcitx5.android.input.keyboard.widget.SidePanelView
+import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
 
 abstract class KeyView(
     ctx: Context,

@@ -1,12 +1,16 @@
 package com.ninthsoft.ime.input.panel.component
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import android.widget.OverScroller
 import com.ninthsoft.ime.base.util.slideDownExpand
 import com.ninthsoft.ime.base.util.slideUpCollapse
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
@@ -16,33 +20,43 @@ import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
-import com.ninthsoft.ime.input.keyboard.key.TextKeyView
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.nextPageKey
 import com.ninthsoft.ime.input.keyboard.key.prevPageKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import kotlin.math.abs
+import kotlin.math.max
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
+import androidx.core.graphics.withSave
+import timber.log.Timber
 
 @SuppressLint("ViewConstructor")
 class CandidateGridView(
     context: Context,
     private val colors: KeyboardColors.ColorScheme,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    var onPrevPage: (() -> Unit)? = null,
-    var onNextPage: (() -> Unit)? = null,
     var onBackspace: (() -> Unit)? = null,
     var onReturn: (() -> Unit)? = null,
     var onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
     var subscribePossibleCandidatePinYin: Boolean = true,
+    var maxVisibleRow: Int = 5,
+    var maxVisibleColumn: Int = 4,   // 保留并真正使用
 ) : FrameLayout(context) {
 
-    private class CellPos(val row: Int, val col: Int, val wide: Boolean, val extraWide: Boolean)
+    // ── 布局数据类 ──
+    private class WordPos(
+        val row: Int, val xStart: Float, val width: Float,        // 分配后的显示宽度
+        val extraWide: Boolean   // 是否超宽独占一行
+    )
 
-    private var candidates: List<EngineMessage.Candidate> = emptyList()
+    private var allCandidates: List<EngineMessage.Candidate> = emptyList()
 
-    // ── Left: side panel ──
+    private val prevBtn =
+        ImageKeyView(context, colors, prevPageKey(1f).appearance as KeyDef.Appearance.Image)
+    private val nextBtn =
+        ImageKeyView(context, colors, nextPageKey(1f).appearance as KeyDef.Appearance.Image)
+
     private val sidePanelKey = SidePanelKeyView(
         context, colors,
         KeyDef.Appearance.SidePannel(
@@ -55,21 +69,55 @@ class CandidateGridView(
 
     private val sidePanelPunctuationItems: List<KeyDef>
 
-    // ── Center: grid canvas ──
+    // ── 画布核心 ──
     private val gridCanvas = object : View(context) {
         private var pressedIndex = -1
         private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val sepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        private val cols = 4
-        private var rowH = 0f
-        private var colW = 0f
 
-        private var positions = emptyList<CellPos>()
+        private var rowH = 0f
+        private var cellPad = 0f
+        private var minWordSpace = 0f
+
+        var positions = emptyList<WordPos>()
+            private set
+
         private val rowScrollX = mutableMapOf<Int, Float>()
         private var downX = 0f
         private var horizontalDrag = -1
+
+        private var visibleRows = 0
+        private val scroller = OverScroller(context)
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private val minFlingVelocity = ViewConfiguration.get(context).scaledMinimumFlingVelocity
+        private val maxFlingVelocity = ViewConfiguration.get(context).scaledMaximumFlingVelocity
+        private var velocityTracker: VelocityTracker? = null
+        private var scrollOffsetY = 0f
+        private var lastY = 0f
+        private var downY = 0f
+        private var dragging = false
+        private var longPressTriggered = false
+        private val longPressRunnable = Runnable { longPressTriggered = true }
+        private var stretch = 0f
+        private var stretchAnimator: ValueAnimator? = null
+        private val overScrollLimit get() = max(height * 0.45f, 1f)
+
+        private val maxScroll
+            get(): Float {
+                val totalRows = positions.maxOfOrNull { it.row }?.plus(1) ?: visibleRows
+                return (totalRows * rowH - height).coerceAtLeast(0f)
+            }
+
+        private fun updatePageButtons() {
+            val atTop = scrollOffsetY <= 0f
+            val atBottom = scrollOffsetY >= maxScroll
+            prevBtn.alpha = if (atTop) 0.3f else 1f
+            prevBtn.isEnabled = !atTop
+            nextBtn.alpha = if (atBottom) 0.3f else 1f
+            nextBtn.isEnabled = !atBottom
+        }
 
         fun updateColors(pc: KeyboardColors.ColorScheme.PanelColors) {
             bgPaint.color = pc.background
@@ -79,66 +127,161 @@ class CandidateGridView(
         }
 
         fun recomputeLayout() {
-            if (colW <= 0f || width <= 0f) { positions = emptyList(); return }
-            val list = this@CandidateGridView.candidates
-            val result = mutableListOf<CellPos>()
-            var row = 0; var col = 0
-            for (c in list) {
-                val tw = textPaint.measureText(c.text); val wide = tw > colW
-                if (wide) {
-                    result.add(CellPos(row, 0, true, tw > width))
-                    row++; col = 0
-                } else {
-                    result.add(CellPos(row, col, false, false)); col++
-                    if (col >= cols) { row++; col = 0 }
-                }
+            if (width <= 0 || allCandidates.isEmpty()) {
+                positions = emptyList()
+                return
             }
-            positions = result; rowScrollX.clear()
+
+            val rowWidth = width.toFloat()
+            // 每个候选词原始宽度 = 文本宽度 + 左右内边距
+            val rawWidths = FloatArray(allCandidates.size) {
+                textPaint.measureText(allCandidates[it].text) + cellPad * 2f
+            }
+
+            val tempPositions = mutableListOf<WordPos>()
+            var i = 0
+            var row = 0
+
+            while (i < allCandidates.size) {
+                val firstW = rawWidths[i]
+                // 超宽词：独自一行，可水平滚动
+                if (firstW > rowWidth) {
+                    Timber.d("zzzz1 %s %f %f", allCandidates[i].text, firstW, rowWidth)
+                    tempPositions.add(WordPos(row, 0f, firstW, true))
+                    i++
+                    row++
+                    continue
+                }
+
+                // 收集一行内尽可能多的词，但不超过 maxVisibleColumn 个
+                val lineIndices = mutableListOf(i)
+                var accumulatedRaw = firstW
+                i++
+                while (i < allCandidates.size && lineIndices.size < maxVisibleColumn) {
+                    val curW = rawWidths[i]
+                    if (accumulatedRaw + minWordSpace + curW <= rowWidth) {
+                        lineIndices.add(i)
+                        accumulatedRaw += curW
+                        Timber.d("zzzz %s %f %f", allCandidates[i].text, curW, rowWidth)
+                        i++
+                    } else {
+                        break
+                    }
+                }
+
+                // 均匀分配剩余空间到每个词块
+                val n = lineIndices.size
+                val extraEach = (rowWidth - accumulatedRaw) / n
+                val avgW = rowWidth / n
+                // 预判膨胀后的总宽是否超标
+                var inflatedTotal = 0f
+                for (idx in lineIndices) {
+                    inflatedTotal += if (rawWidths[idx] < avgW) avgW else rawWidths[idx]
+                }
+                val canInflate = inflatedTotal <= rowWidth
+
+                var x = 0f
+                for (idx in lineIndices) {
+                    var w = rawWidths[idx] + extraEach
+                    if (canInflate && rawWidths[idx] < avgW) {
+                        w = avgW
+                    }
+                    tempPositions.add(WordPos(row, x, w, false))
+                    x += w
+                }
+                row++
+            }
+
+            positions = tempPositions
+            rowScrollX.clear()
         }
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             super.onSizeChanged(w, h, oldw, oldh)
             val d = resources.displayMetrics.density
-            textPaint.textSize = 17f * d; rowH = 40f * d; colW = w.toFloat() / cols
+            textPaint.textSize = 17f * d
+            cellPad = 6f * d
+            minWordSpace = 8f * d   // 词间最小间距，保证分隔线可绘制
             sepPaint.strokeWidth = 1f * d
-            updateColors(colors.panel); recomputeLayout()
+            updateColors(colors.panel)
+            val minRowH = 32f * d
+            visibleRows = (h / minRowH).toInt().coerceIn(1, maxVisibleRow)
+            rowH = h.toFloat() / visibleRows
+            recomputeLayout()
+            resetScroll()
         }
 
         override fun onDraw(canvas: Canvas) {
             if (width <= 0 || height <= 0) return
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-            for (i in candidates.indices) {
-                if (i >= positions.size) break
-                val pos = positions[i]; val c = candidates[i]
-                val y = pos.row * rowH
-                if (y + rowH > height) break
-                val cl = if (pos.wide) 0f else pos.col * colW
-                val cw = if (pos.wide) width.toFloat() else colW
-                if (i == pressedIndex) canvas.drawRect(cl, y, cl + cw, y + rowH, pressPaint)
-                val ty = y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-                if (pos.extraWide) {
-                    val contentW = width - 64f
-                    val sx = (rowScrollX[pos.row] ?: 0f).coerceIn(0f, (textPaint.measureText(c.text) - contentW).coerceAtLeast(0f))
-                    canvas.save(); canvas.clipRect(32f, y, width - 32f, y + rowH)
-                    canvas.drawText(c.text, 32f - sx, ty, textPaint)
-                    canvas.restore()
-                } else {
-                    canvas.drawText(c.text, cl + (cw - textPaint.measureText(c.text)) / 2f, ty, textPaint)
-                }
-                if (!pos.wide && pos.col < cols - 1) {
-                    val sx = cl + colW; val cy = y + rowH / 2f; val lh = textPaint.textSize * 0.8f
-                    canvas.drawLine(sx, cy - lh / 2f, sx, cy + lh / 2f, sepPaint)
+            val rowWidth = width.toFloat()
+            val h = height.toFloat()
+
+            val firstRow = (scrollOffsetY / rowH).toInt().coerceAtLeast(0)
+            val yOff = -(scrollOffsetY - firstRow * rowH) + stretch
+
+            canvas.withSave {
+                clipRect(0f, 0f, rowWidth, h)
+                for (i in positions.indices) {
+                    val pos = positions[i]
+                    if (pos.row < firstRow) continue
+                    val y = (pos.row - firstRow) * rowH + yOff
+                    if (y > h) break
+                    val c = allCandidates[i]
+                    val tw = textPaint.measureText(c.text)
+                    val isPressed = i == pressedIndex
+
+                    if (pos.extraWide) {
+                        val sx = rowScrollX[pos.row] ?: 0f
+                        canvas.withSave {
+                            clipRect(0f, y, rowWidth, y + rowH)
+                            if (isPressed) {
+                                canvas.drawRect(0f, y, rowWidth, y + rowH, pressPaint)
+                            }
+                            drawText(
+                                c.text,
+                                cellPad - sx,
+                                y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f,
+                                textPaint
+                            )
+                        }
+                    } else {
+                        val rectLeft = pos.xStart
+                        val rectRight = pos.xStart + pos.width
+                        if (isPressed) {
+                            canvas.drawRect(rectLeft, y, rectRight, y + rowH, pressPaint)
+                        }
+                        val txtLeft = pos.xStart + (pos.width - tw) / 2f
+                        val textX = txtLeft.coerceAtLeast(rectLeft)
+                        canvas.drawText(
+                            c.text,
+                            textX,
+                            y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f,
+                            textPaint
+                        )
+                    }
+
+                    if (i + 1 < positions.size && !pos.extraWide) {
+                        val nextPos = positions[i + 1]
+                        if (nextPos.row == pos.row) {
+                            val sepX = pos.xStart + pos.width
+                            val cy = y + rowH / 2f
+                            val lh = textPaint.textSize * 0.8f
+                            canvas.drawLine(sepX, cy - lh / 2f, sepX, cy + lh / 2f, sepPaint)
+                        }
+                    }
                 }
             }
         }
 
         private fun hitTest(x: Float, y: Float): Int {
+            val adjustedY = y + scrollOffsetY
             for (i in positions.indices) {
                 val pos = positions[i]
-                val cl = if (pos.wide) 0f else pos.col * colW
-                val cr = if (pos.wide) width.toFloat() else cl + colW
-                val ct = pos.row * rowH; val cb = ct + rowH
-                if (x >= cl && x < cr && y >= ct && y < cb) return i
+                val cy = pos.row * rowH
+                if (adjustedY < cy || adjustedY >= cy + rowH) continue
+                if (pos.extraWide) return i
+                if (x in pos.xStart..(pos.xStart + pos.width)) return i
             }
             return -1
         }
@@ -147,64 +290,260 @@ class CandidateGridView(
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    val idx = hitTest(event.x, event.y)
-                    pressedIndex = idx; downX = event.x; horizontalDrag = -1; invalidate()
                     parent.requestDisallowInterceptTouchEvent(true)
+                    if (!scroller.isFinished) scroller.abortAnimation()
+                    velocityTracker = VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+                    downY = event.y
+                    lastY = event.y
+                    downX = event.x
+                    horizontalDrag = -1
+                    dragging = false
+                    longPressTriggered = false
+                    pressedIndex = hitTest(event.x, event.y)
+                    invalidate()
+                    postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                 }
+
                 MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
+                    val dy = lastY - event.y
+                    val dx = event.x - downX
+
                     if (horizontalDrag >= 0) {
-                        val pos = positions.getOrNull(horizontalDrag) ?: return true
-                        val tw = textPaint.measureText(candidates[horizontalDrag].text)
-                        val maxSx = (tw - (width - 64f)).coerceAtLeast(0f)
-                        val old = rowScrollX[pos.row] ?: 0f
-                        val dx = downX - event.x
-                        rowScrollX[pos.row] = (old + dx).coerceIn(0f, maxSx.coerceAtLeast(0f))
-                        downX = event.x; invalidate()
-                    } else if (pressedIndex >= 0) {
-                        val pos = positions.getOrNull(pressedIndex)
-                        if (pos != null && pos.extraWide && abs(event.x - downX) > 12f) {
-                            horizontalDrag = pressedIndex; pressedIndex = -1; invalidate()
-                        } else {
-                            val n = hitTest(event.x, event.y)
-                            if (n != pressedIndex) { pressedIndex = n; invalidate() }
+                        val pos = positions.getOrNull(horizontalDrag)
+                        if (pos != null && pos.extraWide) {
+                            val tw = textPaint.measureText(allCandidates[horizontalDrag].text)
+                            val maxSx = (tw - (width - cellPad * 2f)).coerceAtLeast(0f)
+                            val old = rowScrollX[pos.row] ?: 0f
+                            rowScrollX[pos.row] = (old + (downX - event.x)).coerceIn(0f, maxSx)
+                            downX = event.x
+                            invalidate()
+                        }
+                        lastY = event.y
+                        return true
+                    }
+
+                    if (!dragging) {
+                        val absDy = abs(event.y - downY)
+                        val absDx = abs(event.x - downX)
+                        if (absDy > touchSlop && absDy >= absDx) {
+                            dragging = true
+                            pressedIndex = -1
+                            stretch = 0f
+                            if (!scroller.isFinished) scroller.abortAnimation()
+                        } else if (absDx > touchSlop && absDx > absDy) {
+                            val pos = positions.getOrNull(pressedIndex)
+                            if (pos != null && pos.extraWide) {
+                                horizontalDrag = pressedIndex
+                                pressedIndex = -1
+                                invalidate()
+                            }
                         }
                     }
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (horizontalDrag < 0) {
-                        val i = pressedIndex; pressedIndex = -1; invalidate()
-                        if (i in candidates.indices) onCandidateSelected?.invoke(candidates[i])
-                    } else {
-                        horizontalDrag = -1
+
+                    if (dragging) {
+                        dragBy(dy)
+                        invalidate()
+                    } else if (horizontalDrag < 0) {
+                        val n = hitTest(event.x, event.y)
+                        if (n != pressedIndex) {
+                            pressedIndex = n
+                            invalidate()
+                        }
                     }
+
+                    lastY = event.y
                 }
-                MotionEvent.ACTION_CANCEL -> { pressedIndex = -1; horizontalDrag = -1; invalidate() }
+
+                MotionEvent.ACTION_UP -> {
+                    velocityTracker?.addMovement(event)
+                    velocityTracker?.computeCurrentVelocity(1000, maxFlingVelocity.toFloat())
+                    val velocityY = velocityTracker?.yVelocity ?: 0f
+                    recycleVelocityTracker()
+                    removeCallbacks(longPressRunnable)
+
+                    if (horizontalDrag >= 0) {
+                        horizontalDrag = -1
+                    } else if (dragging) {
+                        dragging = false
+                        springBackIfNeeded()
+                        if (abs(velocityY) >= minFlingVelocity) fling(-velocityY.toInt())
+                    } else if (!longPressTriggered) {
+                        val i = pressedIndex
+                        pressedIndex = -1
+                        invalidate()
+                        if (i in allCandidates.indices) {
+                            onCandidateSelected?.invoke(allCandidates[i])
+                        }
+                    } else {
+                        pressedIndex = -1
+                        invalidate()
+                    }
+
+                    parent.requestDisallowInterceptTouchEvent(false)
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    recycleVelocityTracker()
+                    removeCallbacks(longPressRunnable)
+                    pressedIndex = -1
+                    horizontalDrag = -1
+                    dragging = false
+                    longPressTriggered = false
+                    springBackIfNeeded()
+                    invalidate()
+                    parent.requestDisallowInterceptTouchEvent(false)
+                }
             }
             return true
         }
+
+        private fun dragBy(deltaY: Float) {
+            val proposed = scrollOffsetY + deltaY
+            when {
+                proposed < 0f -> {
+                    scrollOffsetY = 0f
+                    stretch = rubberBand(-proposed)
+                }
+
+                proposed > maxScroll -> {
+                    scrollOffsetY = maxScroll
+                    stretch = -rubberBand(proposed - maxScroll)
+                }
+
+                else -> {
+                    scrollOffsetY = proposed
+                    stretch = 0f
+                }
+            }
+        }
+
+        private fun rubberBand(d: Float): Float {
+            val limit = overScrollLimit
+            return limit * d / (limit + d)
+        }
+
+        fun clampScroll() {
+            scrollOffsetY = scrollOffsetY.coerceIn(0f, maxScroll)
+            updatePageButtons()
+        }
+
+        private fun springBackIfNeeded(): Boolean {
+            val maxScrollInt = maxScroll.toInt()
+            val currentScroll = scrollOffsetY.toInt()
+
+            if (stretch != 0f) {
+                animateStretchBack()
+                return true
+            }
+            if (currentScroll < 0 || currentScroll > maxScrollInt) {
+                scroller.springBack(0, currentScroll, 0, 0, 0, maxScrollInt)
+                postInvalidateOnAnimation()
+                return true
+            }
+            clampScroll()
+            return false
+        }
+
+        private fun animateStretchBack() {
+            stretchAnimator?.cancel()
+            val start = stretch
+            stretchAnimator = ValueAnimator.ofFloat(start, 0f).apply {
+                duration = 260
+                addUpdateListener {
+                    stretch = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        }
+
+        private fun fling(velocityY: Int) {
+            val maxScrollInt = maxScroll.toInt()
+            scroller.fling(0, scrollOffsetY.toInt(), 0, velocityY, 0, 0, 0, maxScrollInt)
+            postInvalidateOnAnimation()
+        }
+
+        private fun recycleVelocityTracker() {
+            velocityTracker?.recycle()
+            velocityTracker = null
+        }
+
+        override fun computeScroll() {
+            if (dragging) return
+            if (scroller.computeScrollOffset()) {
+                scrollOffsetY = scroller.currY.toFloat()
+                if (scroller.isFinished) {
+                    clampScroll()
+                    updatePageButtons()
+                }
+                invalidate()
+            }
+        }
+
+        fun resetScroll() {
+            if (!scroller.isFinished) scroller.abortAnimation()
+            scrollOffsetY = 0f
+            stretch = 0f
+            updatePageButtons()
+        }
+
+        fun scrollToTop() {
+            scroller.startScroll(0, scrollOffsetY.toInt(), 0, -scrollOffsetY.toInt())
+            postInvalidateOnAnimation()
+            updatePageButtons()
+        }
+
+        fun scrollByPage(direction: Int) {
+            if (!scroller.isFinished) scroller.abortAnimation()
+            val pageHeight = visibleRows * rowH
+            val target = (scrollOffsetY + direction * pageHeight).coerceIn(0f, maxScroll)
+            scroller.startScroll(
+                0, scrollOffsetY.toInt(), 0, target.toInt() - scrollOffsetY.toInt()
+            )
+            postInvalidateOnAnimation()
+            updatePageButtons()
+        }
     }
 
-    // ── Right: buttons ──
-    private val btnPanel = FrameLayout(context).apply { setBackgroundColor(colors.panel.background) }
-
-    private fun makeBtn(text: String, variant: KeyDef.Appearance.Variant, onClick: () -> Unit) = TextKeyView(
-        context, colors,
-        KeyDef.Appearance.Text(displayText = text, textSize = 16f, percentWidth = 1f, variant = variant, margin = false),
-    ).apply { setOnClickListener { onClick() } }
+    // ── 右侧按钮面板 ──
+    private val btnPanel = FrameLayout(context).apply {
+        setBackgroundColor(colors.panel.background)
+        isClickable = true
+    }
 
     init {
+        isClickable = true
         setBackgroundColor(colors.panel.background)
         sidePanelPunctuationItems = listOf(".", "?", "!", "@", "/", "-").map { ch ->
             KeyDef(
-                appearance = KeyDef.Appearance.Text(displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false),
+                appearance = KeyDef.Appearance.Text(
+                    displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false
+                ),
                 behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
             )
         }
         sidePanelKey.updateItems(sidePanelPunctuationItems)
-        btnPanel.addView(ImageKeyView(context, colors, prevPageKey(1f).appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onPrevPage?.invoke() } })
-        btnPanel.addView(ImageKeyView(context, colors, nextPageKey(1f).appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onNextPage?.invoke() } })
-        btnPanel.addView(ImageKeyView(context, colors, backspaceKey().appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onBackspace?.invoke() } })
-        btnPanel.addView(ImageKeyView(context, colors, returnKey(1f).appearance as KeyDef.Appearance.Image).apply { setOnClickListener { onReturn?.invoke() } })
+
+        prevBtn.setOnClickListener { gridCanvas.scrollByPage(-1) }
+        nextBtn.setOnClickListener { gridCanvas.scrollByPage(1) }
+
+        btnPanel.addView(prevBtn)
+        btnPanel.addView(nextBtn)
+        btnPanel.addView(
+            ImageKeyView(
+                context, colors, backspaceKey().appearance as KeyDef.Appearance.Image
+            ).apply {
+                setOnClickListener { onBackspace?.invoke() }
+            })
+        btnPanel.addView(
+            ImageKeyView(
+                context, colors, returnKey(1f).appearance as KeyDef.Appearance.Image
+            ).apply {
+                setOnClickListener { onReturn?.invoke() }
+            })
+
         addView(sidePanelKey, lParams(0, matchParent))
         addView(gridCanvas, lParams(0, matchParent))
         addView(btnPanel, lParams(0, matchParent))
@@ -213,17 +552,22 @@ class CandidateGridView(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val tw = MeasureSpec.getSize(widthMeasureSpec)
         val th = MeasureSpec.getSize(heightMeasureSpec)
-        val sw = (tw * 0.15f).toInt(); val rw = (tw * 0.15f).toInt(); val gw = (tw - sw - rw).coerceAtLeast(0)
+        val sw = (tw * 0.15f).toInt()
+        val rw = (tw * 0.15f).toInt()
+        val gw = (tw - sw - rw).coerceAtLeast(0)
         sidePanelKey.measure(mES(sw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
         gridCanvas.measure(mES(gw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
         btnPanel.measure(mES(rw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
         val bh = th / 4
-        for (i in 0..3) btnPanel.getChildAt(i).measure(mES(rw, MeasureSpec.EXACTLY), mES(bh, MeasureSpec.EXACTLY))
+        for (i in 0..3) btnPanel.getChildAt(i)
+            .measure(mES(rw, MeasureSpec.EXACTLY), mES(bh, MeasureSpec.EXACTLY))
         setMeasuredDimension(tw, th)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val h = b - t; val sw = ((r - l) * 0.15f).toInt(); val rw = ((r - l) * 0.15f).toInt()
+        val h = b - t
+        val sw = ((r - l) * 0.15f).toInt()
+        val rw = ((r - l) * 0.15f).toInt()
         sidePanelKey.layout(0, 0, sw, h)
         gridCanvas.layout(sw, 0, r - l - rw, h)
         btnPanel.layout(r - l - rw, 0, r - l, h)
@@ -233,18 +577,23 @@ class CandidateGridView(
 
     private fun mES(size: Int, mode: Int) = MeasureSpec.makeMeasureSpec(size, mode)
 
-    fun refreshTheme(context: Context) { gridCanvas.updateColors(KeyboardColors.resolve(context).panel); invalidate() }
+    fun refreshTheme(context: Context) {
+        gridCanvas.updateColors(KeyboardColors.resolve(context).panel)
+        invalidate()
+    }
 
     fun show(list: List<EngineMessage.Candidate>) {
-        candidates = list
+        allCandidates = list
         gridCanvas.recomputeLayout()
+        gridCanvas.resetScroll()
         bringToFront()
         slideDownExpand()
     }
 
     fun hide() {
         slideUpCollapse {
-            candidates = emptyList()
+            allCandidates = emptyList()
+            gridCanvas.resetScroll()
         }
     }
 
@@ -259,10 +608,11 @@ class CandidateGridView(
                         displayText = pinYin.pinYin,
                         textSize = 15f,
                         percentWidth = 0.5f,
-                        margin = false,
+                        margin = false
                     ),
                     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(pinYin.pinYin))),
                 )
             })
         }
-    }}
+    }
+}

@@ -1,0 +1,32 @@
+redo engime
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# Date:      Wed Jul 15 20:09:35 2026 +0800
+#
+# On branch main
+# Changes to be committed:
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/IBehaviorHost.kt
+#	deleted:    app/src/main/java/com/ninthsoft/ime/engine/IBehaviorHosted.kt
+#	modified:   app/src/main/java/com/ninthsoft/ime/engine/IEngine.kt
+#	deleted:    app/src/main/java/com/ninthsoft/ime/engine/IJob.kt
+#	modified:   app/src/main/java/com/ninthsoft/ime/engine/RimeEngine.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/Backspace.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/IBehavior.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/InputKey.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/InputString.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/Reset.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/Segmentation.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/behavior/Selection.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/Backspace.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/InputKey.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/InputString.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/Reset.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/RimeBehavior.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/Segmentation.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/behavior/Selection.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/core/IRimeJob.kt
+#	new file:   app/src/main/java/com/ninthsoft/ime/engine/rime/host/BehaviorHost.kt
+#	deleted:    app/src/main/java/com/ninthsoft/ime/engine/rime/hosted/BehaviorHosted.kt
+#

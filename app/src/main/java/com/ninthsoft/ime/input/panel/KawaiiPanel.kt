@@ -104,7 +104,6 @@ class KawaiiPanel(
             when (result) {
                 is TouchResult.ToolbarAction -> onToolbarAction?.invoke(result.action)
                 is TouchResult.SelectCandidate -> {
-                    if (v.isExpanded) v.setExpanded(false)
                     onCandidateSelected?.invoke(result.candidate)
                 }
 

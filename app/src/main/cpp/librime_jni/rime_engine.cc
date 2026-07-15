@@ -30,7 +30,7 @@ extern void rime_require_module_predict();
 namespace {
 
     constexpr int kMaxSchemaIdLen = 2048;
-    constexpr int kBulkCandidateLimit = 16;
+    constexpr int kBulkCandidateLimit = 100;
 
     void requireModules() {
         rime_require_module_lua();
