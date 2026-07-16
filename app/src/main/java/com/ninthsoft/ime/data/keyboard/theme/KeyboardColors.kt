@@ -2,7 +2,7 @@ package com.ninthsoft.ime.data.keyboard.theme
 
 import android.content.Context
 import android.content.res.Configuration
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 
 object KeyboardColors {
 
@@ -72,9 +72,9 @@ object KeyboardColors {
 
     fun resolve(context: Context): ColorScheme {
         val c = themeFor(context).colors
-        val userRadius = ThemeManager.Keyboard.KeyRadius.getDp(context).toFloat()
-        val userHMargin = ThemeManager.Keyboard.Gap.getHorizontalDp(context).toFloat()
-        val userVMargin = ThemeManager.Keyboard.Gap.getVerticalDp(context).toFloat()
+        val userRadius = KeyboardManager.Keyboard.KeyRadius.getDp(context).toFloat()
+        val userHMargin = KeyboardManager.Keyboard.Gap.getHorizontalDp(context).toFloat()
+        val userVMargin = KeyboardManager.Keyboard.Gap.getVerticalDp(context).toFloat()
         return c.copy(
             cornerRadius = userRadius,
             keyHMargin = userHMargin,
@@ -83,15 +83,15 @@ object KeyboardColors {
     }
 
     fun themeFor(context: Context): KeyboardTheme {
-        val followSystem = ThemeManager.Keyboard.getFollowSystem(context)
+        val followSystem = KeyboardManager.Keyboard.getFollowSystem(context)
         if (followSystem) {
             val isDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
                     Configuration.UI_MODE_NIGHT_YES
-            val themeId = if (isDark) ThemeManager.Keyboard.getDarkThemeId(context)
-                else ThemeManager.Keyboard.getLightThemeId(context)
+            val themeId = if (isDark) KeyboardManager.Keyboard.getDarkThemeId(context)
+                else KeyboardManager.Keyboard.getLightThemeId(context)
             return KeyboardTheme.byId(themeId)
         }
-        val themeId = ThemeManager.Keyboard.getThemeId(context)
+        val themeId = KeyboardManager.Keyboard.getThemeId(context)
         return KeyboardTheme.byId(themeId)
     }
 }

@@ -1,18 +1,16 @@
-package com.ninthsoft.ime.data.theme
+package com.ninthsoft.ime.data.manager
 
 import android.content.Context
 import androidx.core.content.edit
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
 
-object ThemeManager {
-    const val PREFS_NAME = "ime_prefs"
-
+object KeyboardManager {
+    const val PREFS_NAME = "keyboard_settings"
     private const val DEFAULT_KEYBOARD_HEIGHT = 24
     private const val DEFAULT_PADDING_DP = 4
 
     object Theme {
         private const val PREFIX = "theme"
-
         const val MODE_SYSTEM = 0
         const val MODE_LIGHT = 1
         const val MODE_DARK = 2
@@ -31,6 +29,9 @@ object ThemeManager {
 
     object Keyboard {
         private const val PREFIX = "keyboard"
+        const val KEY_HEIGHT = "$PREFIX.height"
+        const val KEY_IGNORE_INSETS = "$PREFIX.ignore_insets"
+        const val KEY_THEME = "$PREFIX.theme"
 
         fun getHeightPercent(context: Context): Int {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -102,6 +103,8 @@ object ThemeManager {
 
         object Padding {
             private const val PREFIX = "keyboard.padding"
+            const val KEY_HORIZONTAL = "$PREFIX.horizontal"
+            const val KEY_BOTTOM = "$PREFIX.bottom"
 
             fun getHorizontalDp(context: Context): Int {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -143,6 +146,8 @@ object ThemeManager {
 
         object Gap {
             private const val PREFIX = "keyboard.gap"
+            const val KEY_HORIZONTAL = "$PREFIX.horizontal"
+            const val KEY_VERTICAL = "$PREFIX.vertical"
 
             private const val DEFAULT_HORIZONTAL_DP = 3
             private const val DEFAULT_VERTICAL_DP = 3
@@ -171,23 +176,23 @@ object ThemeManager {
         }
 
         object KeyRadius {
-            private const val PREFIX = "keyboard.key_radius"
+            const val KEY = "keyboard.key_radius"
             private const val DEFAULT_RADIUS_DP = 14
 
             fun getDp(context: Context): Int {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getInt(PREFIX, DEFAULT_RADIUS_DP)
+                    .getInt(KEY, DEFAULT_RADIUS_DP)
             }
 
             fun setDp(context: Context, dp: Int) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                    putInt(PREFIX, dp)
+                    putInt(KEY, dp)
                 }
             }
         }
 
         object RippleEffect {
-            private const val KEY = "keyboard.ripple_effect"
+            const val KEY = "keyboard.ripple_effect"
 
             fun isEnabled(context: Context): Boolean {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -202,7 +207,7 @@ object ThemeManager {
         }
 
         object KeyBorderStroke {
-            private const val KEY = "keyboard.key_border_stroke"
+            const val KEY = "keyboard.key_border_stroke"
 
             fun isEnabled(context: Context): Boolean {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

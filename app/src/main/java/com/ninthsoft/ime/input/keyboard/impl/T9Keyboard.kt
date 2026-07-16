@@ -5,12 +5,14 @@ import android.content.Context
 import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
+import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelNormalItem
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
@@ -19,7 +21,7 @@ import com.ninthsoft.ime.input.keyboard.key.spaceKey
 class T9Keyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-) : BaseKeyboard(context, colors, Layout) {
+) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
 
     init {
         val items = mutableListOf<KeyDef>()
@@ -28,6 +30,29 @@ class T9Keyboard(
         items.add(sidePannelNormalItem("!"))
         items.add(sidePannelNormalItem("@"))
         this.updateSidePanel(items)
+    }
+
+    override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+        if (data.isEmpty()) {
+            super.updateSidePanel(
+                listOf(".", "?", "!", "@").map { ch ->
+                    KeyDef(
+                        appearance = KeyDef.Appearance.Text(
+                            displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false
+                        ),
+                        behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
+                    )
+                })
+            return
+        }
+        super.updateSidePanel(data.map { pinYin ->
+            KeyDef(
+                appearance = KeyDef.Appearance.Text(
+                    displayText = pinYin.pinYin, textSize = 15f, percentWidth = 0.5f, margin = false
+                ),
+                behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(pinYin.pinYin))),
+            )
+        })
     }
 
     companion object {
@@ -126,7 +151,7 @@ class T9Keyboard(
             ),
             listOf(
                 layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
-                layoutSwitchKey("26键", QwertyKeyboard.NAME, percentWidth = 0.13f),
+                schemaSwitchKey(0.13f),
                 spaceKey(),
                 makeCommaKey(percentWidth = 0.13f),
                 makeReturnKey(percentWidth = 0.15f),

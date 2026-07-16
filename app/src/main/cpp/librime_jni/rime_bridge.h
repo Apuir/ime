@@ -16,7 +16,8 @@ namespace rime_jni {
     inline jobject toJavaSchemaItem(JNIEnv *env, const SchemaEntry &entry) {
         return env->NewObject(jni::g_refs->SchemaItem, jni::g_refs->SchemaItemCtor,
                               jni::makeString(env, entry.id),
-                              jni::makeString(env, entry.name));
+                              jni::makeString(env, entry.name),
+                              jni::makeString(env, entry.layout));
     }
 
     inline jobjectArray toJavaSchemaArray(JNIEnv *env,

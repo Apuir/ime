@@ -5,7 +5,7 @@ import android.graphics.Color
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
@@ -37,8 +37,8 @@ abstract class BaseKeyboard(
     context: Context,
     protected val colors: KeyboardColors.ColorScheme,
     private val keyLayout: List<List<KeyDef>>,
-) : ConstraintLayout(context), IManagedView {
-    var keyActionListener: KeyActionListener? = null
+) : ConstraintLayout(context), IKeyboard {
+    override var keyActionListener: KeyActionListener? = null
     var expandKeypressArea = false
     private val previewPopup = KeyPreviewPopup(context)
     protected val keyRows: List<ConstraintLayout>
@@ -46,8 +46,12 @@ abstract class BaseKeyboard(
 
     protected val sidePanelViews: List<KeyView> get() = _spanPanelViews
     private var _spanPanelViews: List<KeyView> = emptyList()
+    private var spaceKeyView: TextKeyView? = null
+    override fun updateSpaceKeyText(text: String) {
+        spaceKeyView?.mainText?.text = text
+    }
 
-    fun updateSidePanel(items: List<KeyDef>) {
+    protected open fun updateSidePanel(items: List<KeyDef>) {
         (_spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
     }
 
@@ -175,16 +179,24 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.SidePannel -> SidePanelKeyView(context, colors, def.appearance)
         }.apply {
-            borderStroke = ThemeManager.Keyboard.KeyBorderStroke.isEnabled(context)
+            if (def.appearance.viewId == KeyView.button_space && this is TextKeyView) {
+                spaceKeyView = this
+            }
+            borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
             onPressedChanged = { key ->
                 if (key.isPressed) {
-                    val keyLoc = IntArray(2)
-                    val boardLoc = IntArray(2)
-                    key.getLocationOnScreen(keyLoc)
-                    this@BaseKeyboard.getLocationOnScreen(boardLoc)
-                    val cx = keyLoc[0] + key.width / 2f - boardLoc[0]
-                    val cy = keyLoc[1] + key.height / 2f - boardLoc[1]
-                    rippleView.startRipple(cx, cy, key)
+                    val isSwitchAction = def.behaviors.any { b ->
+                        b is KeyDef.Behavior.Press && (b.action is KeyboardAction.LayoutSwitchAction || b.action is KeyboardAction.RotateSchema)
+                    }
+                    if (!isSwitchAction) {
+                        val keyLoc = IntArray(2)
+                        val boardLoc = IntArray(2)
+                        key.getLocationOnScreen(keyLoc)
+                        this@BaseKeyboard.getLocationOnScreen(boardLoc)
+                        val cx = keyLoc[0] + key.width / 2f - boardLoc[0]
+                        val cy = keyLoc[1] + key.height / 2f - boardLoc[1]
+                        rippleView.startRipple(cx, cy, key)
+                    }
                 }
             }
             if (this is SidePanelKeyView) {
@@ -285,9 +297,9 @@ abstract class BaseKeyboard(
         previewPopup.dismiss()
     }
 
-    abstract fun name(): String
+    abstract override fun name(): String
 
-    fun setRippleEnabled(enabled: Boolean) {
+    override fun setRippleEnabled(enabled: Boolean) {
         rippleView.rippleEnabled = enabled
         rippleView.visibility = if (enabled) VISIBLE else INVISIBLE
     }

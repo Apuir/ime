@@ -5,7 +5,7 @@ import android.content.Context
 import android.view.View
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.component.CandidateGridView
@@ -24,8 +24,8 @@ class KawaiiPanel(
         data object Clipboard : Action()
         data object ToggleVoice : Action()
         data object Settings : Action()
-        data object RotateLeft : Action()
-        data object RotateRight : Action()
+        data object Undo : Action()
+        data object Redo : Action()
         data object Palette : Action()
         data object CursorMove : Action()
         data object CloseKeyboard : Action()
@@ -150,14 +150,17 @@ class KawaiiPanel(
                 context.getDrawable(R.drawable.ic_keyboard_palette),
                 context.getDrawable(R.drawable.ic_keyboard_cursor_move),
                 context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
-                ThemeManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
+                KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
             )
         } else {
             view.scrollX = 0f
             view.currentRenderer = ComposingRenderer(
                 list, context.getDrawable(R.drawable.ic_keyboard_expand_more),
-                ThemeManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
+                KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
             )
+            if (state is State.Composing) {
+                candidateGrid.updateCandidates(list)
+            }
         }
         view.invalidate()
     }

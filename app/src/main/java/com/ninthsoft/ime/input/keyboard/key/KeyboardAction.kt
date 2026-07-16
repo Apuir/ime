@@ -37,5 +37,9 @@ sealed class KeyboardAction {
 
     data object LangSwitchAction : KeyboardAction()
 
+    data object RotateSchema : KeyboardAction()
+
+    data class SelectSchema(val schemaId: String) : KeyboardAction()
+
     data object ShowInputMethodPickerAction : KeyboardAction()
 }

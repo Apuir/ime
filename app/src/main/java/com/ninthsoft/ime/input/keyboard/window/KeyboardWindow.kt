@@ -33,10 +33,6 @@ class KeyboardWindow(
         view.keyActionListener = listener
     }
 
-    fun switchLayout(name: String) {
-        view.switchKeyboard(name)
-    }
-
     fun setCandidates(list: List<EngineMessage.Candidate>) {
         view.setCandidates(list)
     }
@@ -69,4 +65,10 @@ class KeyboardWindow(
     override fun onAttach() = view.onAttach()
 
     override fun onDetach() = view.onDetach()
+
+    fun onConfigChanged(key: String) = view.onConfigChanged(key)
+
+    fun onSchemaChanged(schemaId: String, name: String, layout: String) {
+        view.updateSchemaLayout(schemaId, name, layout)
+    }
 }

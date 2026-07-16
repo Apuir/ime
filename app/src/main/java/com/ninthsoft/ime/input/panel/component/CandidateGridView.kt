@@ -590,6 +590,13 @@ class CandidateGridView(
         slideDownExpand()
     }
 
+    fun updateCandidates(list: List<EngineMessage.Candidate>) {
+        allCandidates = list
+        gridCanvas.recomputeLayout()
+        gridCanvas.clampScroll()
+        gridCanvas.invalidate()
+    }
+
     fun hide() {
         slideUpCollapse {
             allCandidates = emptyList()

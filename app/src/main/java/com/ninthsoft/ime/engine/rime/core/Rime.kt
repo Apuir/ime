@@ -178,26 +178,28 @@ class Rime : RimeApi, RimeLifecycleOwner {
         val handled = processKey(value, modifiers)
         emitResponse()
         if (!handled) {
-            handleMessage(10, arrayOf(value, modifiers, isVirtual))
+            handleMessage(RimeMessage.MessageType.Key.ordinal, arrayOf(value, modifiers, isVirtual))
         }
         return handled
     }
 
     private fun emitResponse(commit: () -> CommitProto = { getCommit() }) {
-        handleMessage(4, arrayOf(commit()))
+        handleMessage(RimeMessage.MessageType.Commit.ordinal, arrayOf(commit()))
         val context = getContext()
         handlePreedit(context.composition)
         if (getOption("paging_mode")) {
-            handleMessage(7, arrayOf(context.menu))
+            handleMessage(RimeMessage.MessageType.Menu.ordinal, arrayOf(context.menu))
         } else {
-            handleMessage(9, getBulkCandidates())
+            handleMessage(RimeMessage.MessageType.Candidate.ordinal, getBulkCandidates())
         }
-        handleMessage(8, arrayOf(getStatus()))
+        handleMessage(RimeMessage.MessageType.Status.ordinal, arrayOf(getStatus()))
     }
 
     private fun handlePreedit(composition: CompositionProto) {
-        handleMessage(5, arrayOf(composition.preedit ?: ""))
-        handleMessage(6, arrayOf(composition))
+        handleMessage(
+            RimeMessage.MessageType.InlinePreedit.ordinal, arrayOf(composition.preedit ?: "")
+        )
+        handleMessage(RimeMessage.MessageType.Composition.ordinal, arrayOf(composition))
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -245,9 +247,6 @@ class Rime : RimeApi, RimeLifecycleOwner {
         val (schemaId, schemaName) = status
         if (schemaId != schemaCached.schemaId) {
             schemaCached = RimeSchema(schemaId)
-            messageFlow_.tryEmit(
-                RimeMessage.SchemaMessage(SchemaItem(schemaId, schemaName))
-            )
         }
     }
 
@@ -384,8 +383,7 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         fun handleMessage(type: Int, params: Array<Any>) {
-            val t = params.get(0)
-            Timber.d("handleMessage: $type {${t.toString()}}")
+            val t = params[0]
             val message = RimeMessage.nativeCreate(type, params)
             rimeMessageHandlers.forEach { it.invoke(message) }
             messageFlow_.tryEmit(message)

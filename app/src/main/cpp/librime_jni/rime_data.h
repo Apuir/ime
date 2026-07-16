@@ -25,12 +25,14 @@ namespace rime_jni {
     struct SchemaEntry {
         std::string id;
         std::string name;
+        std::string layout;
 
         SchemaEntry() = default;
 
         SchemaEntry(const RimeSchemaListItem &item)
                 : id(item.schema_id ? item.schema_id : ""),
-                  name(item.name ? item.name : "") {}
+                  name(item.name ? item.name : ""),
+                  layout(item.layout ? item.layout : "") {}
 
         static std::vector<SchemaEntry> fromList(const RimeSchemaList &list) {
             std::vector<SchemaEntry> out;

@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.rime.core.SchemaItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
@@ -69,24 +71,23 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 import com.ninthsoft.ime.ui.theme.ExpressiveShapes
 import kotlin.math.roundToInt
-
-private const val PREFS_NAME = "schema_settings"
-private const val KEY_ENABLED_IDS = "enabled_schema_ids"
+import androidx.core.content.edit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchemaSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val prefs =
+        remember { context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE) }
     val enabledSchemas = remember { mutableStateListOf<SchemaItem>() }
     val availableSchemas = remember { mutableStateListOf<SchemaItem>() }
     var loaded by remember { mutableStateOf(false) }
 
-    EngineFactory.current()?.schemeList { allSchemas ->
-        val allItems = allSchemas.map { SchemaItem(it.id, it.name) }
-        val enabledIds =
-            prefs.getString(KEY_ENABLED_IDS, "")?.split(",")?.filter { it.isNotBlank() }
-                ?: emptyList()
+    val allSchemas = EngineFactory.current()?.schemasList() ?: emptyList()
+    if (!loaded && allSchemas.isNotEmpty()) {
+        val allItems = allSchemas.map { SchemaItem(it.id, it.name, it.layout) }
+        val enabledIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
+            ?.filter { it.isNotBlank() } ?: emptyList()
         val byId = allItems.associateBy { it.id }
         val seen = mutableSetOf<String>()
         enabledSchemas.clear()
@@ -141,17 +142,19 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
                 ReorderableSchemaList(enabledSchemas) { schema ->
-                    IconButton(onClick = {
-                        availableSchemas.add(schema)
-                        enabledSchemas.remove(schema)
-                        saveOrder(prefs, enabledSchemas)
-                    }) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp),
-                        )
+                    if (enabledSchemas.size > 1) {
+                        IconButton(onClick = {
+                            availableSchemas.add(schema)
+                            enabledSchemas.remove(schema)
+                            saveOrder(prefs, enabledSchemas)
+                        }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -206,7 +209,8 @@ private fun ReorderableSchemaList(
     trailingIcon: @Composable (SchemaItem) -> Unit,
 ) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val prefs =
+        remember { context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE) }
     var dragIndex by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var itemHeight by remember { mutableFloatStateOf(0f) }
@@ -233,10 +237,35 @@ private fun ReorderableSchemaList(
                     }
                     .onGloballyPositioned {
                         if (itemHeight == 0f) itemHeight = it.size.height.toFloat()
+                    }
+                    .pointerInput(index) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                dragIndex = index
+                                dragOffset = 0f
+                            },
+                            onDragEnd = {
+                                val target =
+                                    (dragIndex + (dragOffset / itemHeight).roundToInt()).coerceIn(
+                                        0, items.size - 1
+                                    )
+                                if (target != dragIndex) {
+                                    val item = items.removeAt(dragIndex)
+                                    items.add(target, item)
+                                    saveOrder(prefs, items)
+                                }
+                                dragIndex = -1
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                            },
+                        )
                     },
             ) {
                 SchemaListItem(
                     schema = schema,
+                    isDefault = index == 0,
                     leadingIcon = {
                         Box(
                             modifier = Modifier
@@ -247,41 +276,12 @@ private fun ReorderableSchemaList(
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .pointerInput(index) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                dragIndex = index
-                                                dragOffset = 0f
-                                            },
-                                            onDragEnd = {
-                                                val target =
-                                                    (dragIndex + (dragOffset / itemHeight).roundToInt())
-                                                        .coerceIn(0, items.size - 1)
-                                                if (target != dragIndex) {
-                                                    val item = items.removeAt(dragIndex)
-                                                    items.add(target, item)
-                                                    saveOrder(prefs, items)
-                                                }
-                                                dragIndex = -1
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                dragOffset += amount.y
-                                            },
-                                        )
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Default.DragHandle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     },
                     trailingIcon = { trailingIcon(schema) },
@@ -294,6 +294,7 @@ private fun ReorderableSchemaList(
 @Composable
 private fun SchemaListItem(
     schema: SchemaItem,
+    isDefault: Boolean = false,
     leadingIcon: @Composable () -> Unit,
     trailingIcon: @Composable () -> Unit,
 ) {
@@ -314,11 +315,31 @@ private fun SchemaListItem(
                 overflow = TextOverflow.Ellipsis,
             )
             if (schema.name.isNotBlank()) {
-                Text(
-                    schema.id,
-                    fontSize = rowSubFontSize,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isDefault) {
+                        TagBadge(
+                            "默认",
+                            MaterialTheme.colorScheme.secondaryContainer,
+                            MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    val (tagText, tagBg, tagFg) = when (schema.layout) {
+                        "T9" -> Triple(
+                            "九宫格",
+                            MaterialTheme.colorScheme.tertiaryContainer,
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+
+                        else -> Triple(
+                            "全键盘",
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    TagBadge(tagText, tagBg, tagFg)
+                }
             }
         }
         trailingIcon()
@@ -326,5 +347,18 @@ private fun SchemaListItem(
 }
 
 private fun saveOrder(prefs: SharedPreferences, schemas: List<SchemaItem>) {
-    prefs.edit().putString(KEY_ENABLED_IDS, schemas.joinToString(",") { it.id }).apply()
+    prefs.edit { putString(SchemaManager.KEY_ENABLED_IDS, schemas.joinToString(",") { it.id }) }
+}
+
+@Composable
+private fun TagBadge(text: String, bg: Color, fg: Color) {
+    Text(
+        text = text,
+        fontSize = rowSubFontSize * 0.9f,
+        lineHeight = rowSubFontSize * 0.9f,
+        color = fg,
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(2.dp))
+            .padding(horizontal = 3.dp, vertical = 1.dp),
+    )
 }

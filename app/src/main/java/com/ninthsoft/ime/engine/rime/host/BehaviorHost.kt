@@ -9,6 +9,7 @@ import com.ninthsoft.ime.engine.behavior.Reset
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.rime.behavior.RimeBehavior
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
+import timber.log.Timber
 
 class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
     val behaviorQueue = ArrayDeque<IBehavior>()

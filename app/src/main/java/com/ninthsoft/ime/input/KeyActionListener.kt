@@ -11,7 +11,6 @@ import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 class KeyActionListener(
     private val service: InputMethodService,
     private val engine: IEngine?,
-    private val onSwitchLayout: (String) -> Unit,
 ) : KeyActionListener {
 
     override fun onKeyAction(action: KeyboardAction) {
@@ -32,10 +31,6 @@ class KeyActionListener(
                 service.currentInputConnection?.commitText(action.text, 1)
             }
 
-            is KeyboardAction.LayoutSwitchAction -> {
-                onSwitchLayout(action.target)
-            }
-
             is KeyboardAction.BackspaceAction, KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {
                 val character = when (action) {
                     KeyboardAction.BackspaceAction -> "DEL"
@@ -51,6 +46,10 @@ class KeyActionListener(
 
             is KeyboardAction.LangSwitchAction -> {
                 @SuppressLint("NewApi") service.switchToNextInputMethod(false)
+            }
+
+            is KeyboardAction.SelectSchema -> {
+                engine?.selectSchema(action.schemaId)
             }
 
             is KeyboardAction.ShowInputMethodPickerAction -> {

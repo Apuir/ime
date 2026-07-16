@@ -14,7 +14,7 @@ BOOST_HASH="67acec02d0d118b5de9eb441f5fb707b3a1cdd884be00ca24b9a73c995511f74"
 DEPS=(
     "$DEPS_DIR/OpenCC|https://github.com/BYVoid/OpenCC.git|master"
     "$DEPS_DIR/snappy|https://github.com/google/snappy.git|main"
-    "$DEPS_DIR/librime|https://github.com/rime/librime.git|master"
+    "$DEPS_DIR/librime|https://github.com/danjian/librime.git|main"
     "$DEPS_DIR/librime-lua|https://github.com/hchunhui/librime-lua.git|master"
     "$DEPS_DIR/librime-lua-deps|https://github.com/hchunhui/librime-lua.git|thirdparty"
     "$DEPS_DIR/librime-octagram|https://github.com/lotem/librime-octagram.git|master"

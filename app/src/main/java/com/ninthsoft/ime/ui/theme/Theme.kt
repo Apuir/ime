@@ -17,8 +17,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import com.ninthsoft.ime.data.theme.ThemeManager.Theme.MODE_DARK
-import com.ninthsoft.ime.data.theme.ThemeManager.Theme.MODE_LIGHT
+import com.ninthsoft.ime.data.manager.KeyboardManager.Theme.MODE_DARK
+import com.ninthsoft.ime.data.manager.KeyboardManager.Theme.MODE_LIGHT
 
 object ExpressiveShapes {
     val extraSmall = RoundedCornerShape(4.dp)

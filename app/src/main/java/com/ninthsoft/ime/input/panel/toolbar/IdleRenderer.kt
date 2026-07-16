@@ -22,8 +22,8 @@ class IdleRenderer(
 ) : IRenderer {
 
     private val centerButtons = listOf(
-        ImageButton(undoRightDrawable, KawaiiPanel.Action.RotateLeft, iconScale = iconScale),
-        ImageButton(redoRightDrawable, KawaiiPanel.Action.RotateRight, iconScale = iconScale),
+        ImageButton(undoRightDrawable, KawaiiPanel.Action.Undo, iconScale = iconScale),
+        ImageButton(redoRightDrawable, KawaiiPanel.Action.Redo, iconScale = iconScale),
         ImageButton(cursorMoveDrawable, KawaiiPanel.Action.CursorMove, iconScale = iconScale),
         ImageButton(clipboardDrawable, KawaiiPanel.Action.Clipboard, iconScale = iconScale),
         ImageButton(paletteDrawable, KawaiiPanel.Action.Palette, iconScale = iconScale),

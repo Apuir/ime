@@ -36,7 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
@@ -51,46 +51,46 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
 
     var keySoundEnabled by remember { mutableStateOf(true) }
     var keyVibrationEnabled by remember {
-        mutableStateOf(ThemeManager.Keyboard.Feedback.getVibrationEnabled(context))
+        mutableStateOf(KeyboardManager.Keyboard.Feedback.getVibrationEnabled(context))
     }
     var keyXGap by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.Gap.getHorizontalDp(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.Gap.getHorizontalDp(context).toFloat())
     }
     var keyYGap by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.Gap.getVerticalDp(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.Gap.getVerticalDp(context).toFloat())
     }
     var keyboardHeight by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.getHeightPercent(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.getHeightPercent(context).toFloat())
     }
     var horizontalPadding by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.Padding.getHorizontalDp(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat())
     }
     var bottomPadding by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.Padding.getBottomDp(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.Padding.getBottomDp(context).toFloat())
     }
     var ignoreInsets by remember {
-        mutableStateOf(ThemeManager.Keyboard.getIgnoreInsets(context))
+        mutableStateOf(KeyboardManager.Keyboard.getIgnoreInsets(context))
     }
     var keyRadius by remember {
-        mutableFloatStateOf(ThemeManager.Keyboard.KeyRadius.getDp(context).toFloat())
+        mutableFloatStateOf(KeyboardManager.Keyboard.KeyRadius.getDp(context).toFloat())
     }
     var rippleEnabled by remember {
-        mutableStateOf(ThemeManager.Keyboard.RippleEffect.isEnabled(context))
+        mutableStateOf(KeyboardManager.Keyboard.RippleEffect.isEnabled(context))
     }
     var keyBorderEnabled by remember {
-        mutableStateOf(ThemeManager.Keyboard.KeyBorderStroke.isEnabled(context))
+        mutableStateOf(KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context))
     }
     var followSystem by remember {
-        mutableStateOf(ThemeManager.Keyboard.getFollowSystem(context))
+        mutableStateOf(KeyboardManager.Keyboard.getFollowSystem(context))
     }
     var selectedThemeId by remember {
-        mutableStateOf(ThemeManager.Keyboard.getThemeId(context))
+        mutableStateOf(KeyboardManager.Keyboard.getThemeId(context))
     }
     var selectedLightThemeId by remember {
-        mutableStateOf(ThemeManager.Keyboard.getLightThemeId(context))
+        mutableStateOf(KeyboardManager.Keyboard.getLightThemeId(context))
     }
     var selectedDarkThemeId by remember {
-        mutableStateOf(ThemeManager.Keyboard.getDarkThemeId(context))
+        mutableStateOf(KeyboardManager.Keyboard.getDarkThemeId(context))
     }
 
     Scaffold(
@@ -136,7 +136,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     checked = followSystem,
                     onCheckedChange = {
                         followSystem = it
-                        ThemeManager.Keyboard.setFollowSystem(context, it)
+                        KeyboardManager.Keyboard.setFollowSystem(context, it)
                     },
                     showDivider = true,
                 )
@@ -160,7 +160,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                                 selected = isSelected,
                                 onClick = {
                                     selectedLightThemeId = theme.id
-                                    ThemeManager.Keyboard.setLightThemeId(context, theme.id)
+                                    KeyboardManager.Keyboard.setLightThemeId(context, theme.id)
                                 },
                             )
                         }
@@ -188,7 +188,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                                 selected = isSelected,
                                 onClick = {
                                     selectedDarkThemeId = theme.id
-                                    ThemeManager.Keyboard.setDarkThemeId(context, theme.id)
+                                    KeyboardManager.Keyboard.setDarkThemeId(context, theme.id)
                                 },
                             )
                         }
@@ -204,7 +204,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                                 selected = isSelected,
                                 onClick = {
                                     selectedThemeId = theme.id
-                                    ThemeManager.Keyboard.setThemeId(context, theme.id)
+                                    KeyboardManager.Keyboard.setThemeId(context, theme.id)
                                 },
                             )
                         }
@@ -223,7 +223,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     checked = keyVibrationEnabled,
                     onCheckedChange = {
                         keyVibrationEnabled = it
-                        ThemeManager.Keyboard.Feedback.setVibrationEnabled(context, it)
+                        KeyboardManager.Keyboard.Feedback.setVibrationEnabled(context, it)
                     },
                 )
                 SwitchRow(
@@ -231,7 +231,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     checked = rippleEnabled,
                     onCheckedChange = {
                         rippleEnabled = it
-                        ThemeManager.Keyboard.RippleEffect.setEnabled(context, it)
+                        KeyboardManager.Keyboard.RippleEffect.setEnabled(context, it)
                     },
                 )
                 SwitchRow(
@@ -239,7 +239,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     checked = keyBorderEnabled,
                     onCheckedChange = {
                         keyBorderEnabled = it
-                        ThemeManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
+                        KeyboardManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
                     },
                 )
                 Spacer(Modifier.height(14.dp))
@@ -250,7 +250,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 0f..32f,
                     onValueChange = {
                         keyRadius = it
-                        ThemeManager.Keyboard.KeyRadius.setDp(context, it.toInt())
+                        KeyboardManager.Keyboard.KeyRadius.setDp(context, it.toInt())
                     },
                 )
                 SliderRow(
@@ -260,7 +260,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 0f..16f,
                     onValueChange = {
                         keyXGap = it
-                        ThemeManager.Keyboard.Gap.setHorizontalDp(context, it.toInt())
+                        KeyboardManager.Keyboard.Gap.setHorizontalDp(context, it.toInt())
                     },
                 )
                 SliderRow(
@@ -270,7 +270,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 0f..16f,
                     onValueChange = {
                         keyYGap = it
-                        ThemeManager.Keyboard.Gap.setVerticalDp(context, it.toInt())
+                        KeyboardManager.Keyboard.Gap.setVerticalDp(context, it.toInt())
                     },
                     showDivider = true,
                 )
@@ -286,7 +286,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 20f..50f,
                     onValueChange = {
                         keyboardHeight = it
-                        ThemeManager.Keyboard.setHeightPercent(context, it.toInt())
+                        KeyboardManager.Keyboard.setHeightPercent(context, it.toInt())
                     },
                 )
                 SliderRow(
@@ -296,7 +296,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 0f..20f,
                     onValueChange = {
                         horizontalPadding = it
-                        ThemeManager.Keyboard.Padding.setHorizontalDp(context, it.toInt())
+                        KeyboardManager.Keyboard.Padding.setHorizontalDp(context, it.toInt())
                     },
                 )
                 SliderRow(
@@ -306,7 +306,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     range = 0f..40f,
                     onValueChange = {
                         bottomPadding = it
-                        ThemeManager.Keyboard.Padding.setBottomDp(context, it.toInt())
+                        KeyboardManager.Keyboard.Padding.setBottomDp(context, it.toInt())
                     },
                 )
                 SwitchRow(
@@ -314,7 +314,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     checked = ignoreInsets,
                     onCheckedChange = {
                         ignoreInsets = it
-                        ThemeManager.Keyboard.setIgnoreInsets(context, it)
+                        KeyboardManager.Keyboard.setIgnoreInsets(context, it)
                     },
                     showDivider = false,
                 )

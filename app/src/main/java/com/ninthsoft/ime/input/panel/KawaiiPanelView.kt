@@ -7,7 +7,7 @@ import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.View
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.toolbar.IdleRenderer
 import kotlin.math.abs
@@ -83,7 +83,7 @@ class KawaiiPanelView(context: Context) : View(context) {
     init {
         paints.updateColors(context)
         paints.applyDensity(screenDensity)
-        val hPad = ThemeManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
+        val hPad = KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
         currentRenderer = IdleRenderer(
             context.getDrawable(R.drawable.ic_keyboard_menu),
             context.getDrawable(R.drawable.ic_keyboard_arrow_back),

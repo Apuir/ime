@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.os.SystemClock
 import android.view.KeyEvent.*
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.data.EngineMessage
@@ -26,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
@@ -33,8 +35,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val jobs = Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED)
     private var behaviorHosted: BehaviorHost? = null
+    private var context: Context? = null
+    private var callback: suspend (EngineMessage) -> Unit = { }
 
     override fun initialize(context: Context) {
+        this.context = context
         scope.launch {
             for (job in jobs) {
                 session.runOnReady(job)
@@ -105,6 +110,53 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         this.flowed(Reset())
     }
 
+    override fun selectSchema(schemaId: String) {
+        sendJob {
+            this@RimeEngine.resetComposition()
+            selectSchema(schemaId)
+        }
+    }
+
+    override fun undo(service: InputMethodService) {
+        sendCombinationKeyEvent(service, KEYCODE_Z, ctrl = true)
+    }
+
+    override fun redo(service: InputMethodService) {
+        sendCombinationKeyEvent(service, KEYCODE_Z, ctrl = true, shift = true)
+    }
+
+    private fun sendCombinationKeyEvent(
+        service: InputMethodService, keyCode: Int, ctrl: Boolean = false, shift: Boolean = false
+    ) {
+        val ic = service.currentInputConnection ?: return
+        val now = SystemClock.uptimeMillis()
+        var meta = 0
+        if (ctrl) meta = meta or META_CTRL_ON or META_CTRL_LEFT_ON
+        if (shift) meta = meta or META_SHIFT_ON or META_SHIFT_LEFT_ON
+        if (ctrl) ic.sendKeyEvent(
+            android.view.KeyEvent(
+                now, now, ACTION_DOWN, KEYCODE_CTRL_LEFT, 0, 0
+            )
+        )
+        if (shift) ic.sendKeyEvent(
+            android.view.KeyEvent(
+                now, now, ACTION_DOWN, KEYCODE_SHIFT_LEFT, 0, 0
+            )
+        )
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, ACTION_DOWN, keyCode, 0, meta))
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, ACTION_UP, keyCode, 0, meta))
+        if (shift) ic.sendKeyEvent(
+            android.view.KeyEvent(
+                now, now, ACTION_UP, KEYCODE_SHIFT_LEFT, 0, 0
+            )
+        )
+        if (ctrl) ic.sendKeyEvent(
+            android.view.KeyEvent(
+                now, now, ACTION_UP, KEYCODE_CTRL_LEFT, 0, 0
+            )
+        )
+    }
+
     override fun flowed(behavior: IBehavior): Boolean {
         return behaviorHosted?.flowed(behavior) == true
     }
@@ -121,32 +173,30 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
+        callback = on
         scope.launch {
             daemon.observeMessages { msg ->
                 if (msg is RimeMessage.InlinePreeditMessage) {
                     if (msg.preedit.isEmpty()) {
-                        behaviorHosted
+                        behaviorHosted?.resetState()
                     }
-                    on(possibleCandidatePinYin())
+                    callback(possibleCandidatePinYin())
                 }
-                on(msg.EngineMessage())
+                callback(msg.EngineMessage())
             }
         }
     }
 
-    override fun schemeList(on: (List<EngineMessage.Schema>) -> Unit) {
-        sendJob {
-            val schemas = availableSchemata()
-            on(schemas.map {
-                EngineMessage.Schema(it.id, it.name)
-            })
+    override fun schemasList(): List<EngineMessage.Schema> = runBlocking {
+        awaitJob(emptyList()) {
+            enabledSchemata().map { EngineMessage.Schema(it.id, it.name, it.layout) }
         }
     }
 
     override fun clear(service: InputMethodService) {
         sendJob {
             if (compositionCached.preedit?.isNotEmpty() ?: false) {
-                this@RimeEngine.resetState()
+                this@RimeEngine.resetComposition()
             } else {
                 service.currentInputConnection?.let {
                     it.finishComposingText()

@@ -2,9 +2,7 @@ package com.ninthsoft.ime.input.keyboard.window
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.SharedPreferences
 import android.content.res.Resources
-import android.text.InputType
 import android.util.TypedValue
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
@@ -13,12 +11,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.SchemaManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
-import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.pinner.PreeditPinner
 import kotlin.math.max
@@ -40,7 +38,7 @@ class KeyboardWindowView(
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
 
-    private val keyboardManager = KeyboardManager(context)
+    private val keyboardManager = KeyboardManager(context, this)
 
     val panel = KawaiiPanel(
         context = context,
@@ -48,6 +46,7 @@ class KeyboardWindowView(
         onRerankedSelected = onRerankedSelected,
         onToolbarAction = onToolbarAction,
     )
+
     private val preeditPinner = PreeditPinner(context)
 
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -55,35 +54,57 @@ class KeyboardWindowView(
     var keyActionListener: KeyActionListener
         get() = keyboardManager.keyActionListener
         set(value) {
-            keyboardManager.keyActionListener = value
+            keyboardManager.keyActionListener = KeyActionListener { action ->
+                transformed(action).let { value.onKeyAction(it) }
+            }
         }
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences(ThemeManager.PREFS_NAME, Context.MODE_PRIVATE)
+    fun transformed(action: KeyboardAction): KeyboardAction {
+        if (action is KeyboardAction.RotateSchema) {
+            val schemeId = keyboardManager.rotateSchema()
+            return KeyboardAction.SelectSchema(schemeId)
+        }
+        if (action is KeyboardAction.LayoutSwitchAction) {
+            keyboardManager.switchTo(action.target)
+        }
+        return action
+    }
 
-    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+
+    fun updateSchemaLayout(schemaId: String, name: String, layout: String) {
+        keyboardManager.updateSchemaLayout(layout)
+        keyboardManager.currentKeyboard()?.updateSpaceKeyText(name)
+    }
+
+
+    fun onConfigChanged(key: String) {
         when (key) {
-            "keyboard.height", "keyboard.padding.horizontal", "keyboard.padding.bottom", "keyboard.ignore_insets" -> post {
+            SchemaManager.KEY_ENABLED_IDS -> keyboardManager.onConfigChanged(key)
+            KeyboardManager.Keyboard.KEY_HEIGHT,
+            KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL,
+            KeyboardManager.Keyboard.Padding.KEY_BOTTOM,
+            KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
                 panel.view.updateHorizontalPadding(
-                    ThemeManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
+                    KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
                 )
                 requestLayout()
             }
 
-            "keyboard.key_radius", "keyboard.theme", "keyboard.gap.horizontal", "keyboard.gap.vertical" -> post { refreshColors() }
-
-            "keyboard.ripple_effect" -> post {
+            KeyboardManager.Keyboard.KeyRadius.KEY,
+            KeyboardManager.Keyboard.KEY_THEME,
+            KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL,
+            KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
+            KeyboardManager.Keyboard.RippleEffect.KEY -> post {
                 keyboardManager.setRippleEnabled(
-                    ThemeManager.Keyboard.RippleEffect.isEnabled(context)
+                    KeyboardManager.Keyboard.RippleEffect.isEnabled(context)
                 )
             }
 
-            "keyboard.key_border_stroke" -> post { refreshColors() }
+            KeyboardManager.Keyboard.KeyBorderStroke.KEY -> post { refreshColors() }
         }
     }
 
     init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
             view.requestLayout()
             insets
@@ -110,14 +131,13 @@ class KeyboardWindowView(
     override fun onDetachedFromWindow() {
         panel.onFinishInputView(true)
         preeditPinner.hide(wm)
-        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         super.onDetachedFromWindow()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
-        val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
-        val bPad = dpToPx(ThemeManager.Keyboard.Padding.getBottomDp(context))
+        val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
+        val bPad = dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context))
         val barH = (PANEL_HEIGHT_DP * density).roundToInt()
         val cHeight = contentHeight()
         val totalWidth = MeasureSpec.getSize(widthMeasureSpec)
@@ -148,7 +168,7 @@ class KeyboardWindowView(
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-        val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
+        val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
         val barH = (PANEL_HEIGHT_DP * resources.displayMetrics.density).roundToInt()
         val cHeight = contentHeight()
         val contentW = right - left - 2 * hPad
@@ -165,18 +185,10 @@ class KeyboardWindowView(
         panel.menuGrid.layout(hPad, barH, hPad + contentW, barH + cHeight)
     }
 
-    fun switchKeyboard(name: String) {
-        panel.view.setExpanded(false)
-        keyboardManager.switchTo(name, this)
-    }
 
     fun onStartInput(info: EditorInfo) {
-        switchKeyboard(
-            when (info.inputType and InputType.TYPE_MASK_CLASS) {
-                InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE -> SymbolKeyboard.Companion.NAME
-                else -> QwertyKeyboard.NAME
-            },
-        )
+        panel.view.setExpanded(false)
+        keyboardManager.startInput(info)
     }
 
     fun refreshColors() {
@@ -185,7 +197,7 @@ class KeyboardWindowView(
         setBackgroundColor(cachedColors.background)
         panel.refreshTheme()
         preeditPinner.refreshTheme(context)
-        keyboardManager.rebuild(cachedColors, this)
+        keyboardManager.rebuild(cachedColors)
     }
 
     fun refreshLayout() = requestLayout()
@@ -194,21 +206,23 @@ class KeyboardWindowView(
     fun setRerankedCandidate(candidate: EngineMessage.Candidate) =
         panel.setRerankedCandidate(candidate)
 
-    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) =
+    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
         panel.onPossibleCandidatePinYin(pinyins)
+        keyboardManager.onPossibleCandidatePinYin(pinyins)
+    }
 
     fun updatePreedit(text: String?) {
         preeditPinner.updateText(text)
         if (text.isNullOrBlank()) {
             preeditPinner.hide(wm)
         } else {
-            val hPad = dpToPx(ThemeManager.Keyboard.Padding.getHorizontalDp(context))
+            val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
             preeditPinner.show(context, wm, panel.view, hPad)
         }
     }
 
     private fun contentHeight(): Int {
-        val percent = ThemeManager.Keyboard.getHeightPercent(context)
+        val percent = KeyboardManager.Keyboard.getHeightPercent(context)
         return (resources.displayMetrics.heightPixels * percent / 100).coerceAtLeast(minimumHeight)
     }
 
@@ -229,7 +243,7 @@ class KeyboardWindowView(
     }
 
     private fun resolveBottomInset(): Int {
-        if (ThemeManager.Keyboard.getIgnoreInsets(context)) return 0
+        if (KeyboardManager.Keyboard.getIgnoreInsets(context)) return 0
         val insets = ViewCompat.getRootWindowInsets(this) ?: return navbarFrameHeight()
         val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
         val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())

@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #include "jni_env.h"
@@ -55,8 +56,21 @@ namespace {
             RimeSchemaList list{};
             std::vector<SchemaEntry> out;
             if (api_->get_selected_schema_list(settings_, &list)) {
-                out = SchemaEntry::fromList(list);
+                std::unordered_set<std::string> selectedIds;
+                for (size_t i = 0; i < list.size; ++i) {
+                    if (list.list[i].schema_id) selectedIds.insert(list.list[i].schema_id);
+                }
                 api_->schema_list_destroy(&list);
+                RimeSchemaList available{};
+                if (api_->get_available_schema_list(settings_, &available)) {
+                    for (size_t i = 0; i < available.size; ++i) {
+                        const auto &item = available.list[i];
+                        if (item.schema_id && selectedIds.count(item.schema_id)) {
+                            out.emplace_back(item);
+                        }
+                    }
+                    api_->schema_list_destroy(&available);
+                }
             }
             return out;
         }

@@ -1,13 +1,18 @@
 package com.ninthsoft.ime.input
 
+import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import com.ninthsoft.ime.data.manager.KeyboardManager
+import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.CloseKeyboard
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Redo
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.SwitchKeyboard
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Undo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,17 +21,27 @@ import kotlinx.coroutines.cancel
 class ImeInputMethodService : InputMethodService() {
     private val engine: IEngine? = EngineFactory.current()
     private var keyboardWindow: KeyboardWindow? = null
-
     private lateinit var keyActionListener: KeyActionListener
-
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val themePrefs: SharedPreferences by lazy {
+        getSharedPreferences(KeyboardManager.PREFS_NAME, MODE_PRIVATE)
+    }
+
+    private val schemaPrefs: SharedPreferences by lazy {
+        getSharedPreferences(SchemaManager.PREFS_NAME, MODE_PRIVATE)
+    }
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        keyboardWindow?.onConfigChanged(key.orEmpty())
+    }
 
     override fun onCreate() {
         super.onCreate()
+        themePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        schemaPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         keyActionListener = KeyActionListener(
             service = this,
             engine = engine,
-            onSwitchLayout = { target -> keyboardWindow?.switchLayout(target) },
         )
         engine?.observe(scope!!) { keyboardWindow?.handleEngineMessage(it) }
     }
@@ -34,16 +49,14 @@ class ImeInputMethodService : InputMethodService() {
     override fun onCreateInputView(): View {
         keyboardWindow = KeyboardWindow(
             service = this,
-            onCandidateSelected = { candidate ->
-                engine?.selectCandidate(candidate.index)
-            },
-            onRerankedSelected = { text ->
-                currentInputConnection?.commitText(text, 1)
-            },
+            onCandidateSelected = { candidate -> engine?.selectCandidate(candidate.index) },
+            onRerankedSelected = { text -> currentInputConnection?.commitText(text, 1) },
             onToolbarAction = { action ->
                 when (action) {
                     CloseKeyboard -> requestHideSelf(0)
                     SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
+                    Undo -> engine?.undo(this)
+                    Redo -> engine?.redo(this)
                     else -> {}
                 }
             },
@@ -68,6 +81,8 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        themePrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        schemaPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         scope?.cancel()
         scope = null
         keyboardWindow = null

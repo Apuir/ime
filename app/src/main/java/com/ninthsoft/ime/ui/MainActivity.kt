@@ -2,8 +2,6 @@ package com.ninthsoft.ime.ui
 
 import android.content.ComponentName
 import android.content.Intent
-import android.hardware.Sensor
-import android.hardware.SensorManager
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
@@ -15,7 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.ninthsoft.ime.data.theme.ThemeManager
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.ImeInputMethodService
 import com.ninthsoft.ime.ui.screen.MainScreen
 import com.ninthsoft.ime.ui.theme.ImeTheme
@@ -37,13 +35,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            var themeMode by remember { mutableIntStateOf(ThemeManager.Theme.getMode(this@MainActivity)) }
+            var themeMode by remember { mutableIntStateOf(KeyboardManager.Theme.getMode(this@MainActivity)) }
 
             ImeTheme(themeMode = themeMode) {
                 MainScreen(
                     currentThemeMode = themeMode,
                     onThemeModeChanged = { mode ->
-                        ThemeManager.Theme.setMode(this@MainActivity, mode)
+                        KeyboardManager.Theme.setMode(this@MainActivity, mode)
                         themeMode = mode
                     },
                     onOpenImeSetup = {

@@ -126,8 +126,17 @@ sealed class RimeMessage<T>(val data: T) {
         @Suppress("UNCHECKED_CAST")
         fun nativeCreate(type: Int, params: Array<Any>): RimeMessage<*> = when (types[type]) {
             MessageType.Schema -> {
-                val (id, name) = (params[0] as String).split('/', limit = 2)
-                SchemaMessage(SchemaItem(id, name))
+                val raw = params[0] as String
+                val parts = raw.split('/', limit = 3)
+                val schemaId = parts[0]
+                val schema = Rime.getSchemaList().firstOrNull { it.id == schemaId }
+                SchemaMessage(
+                    SchemaItem(
+                        id = schemaId,
+                        name = schema?.name ?: parts.getOrElse(1) { "" },
+                        layout = schema?.layout ?: parts.getOrElse(2) { "" },
+                    )
+                )
             }
 
             MessageType.Option -> {
@@ -203,9 +212,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
     is KeyMessage -> {
         EngineMessage.Key(
             KeyEvent.CodeEvent(
-                keyCode = data.value.keyCode,
-                modifiers = data.modifiers,
-                isVirtual = data.isVirtual
+                keyCode = data.value.keyCode, modifiers = data.modifiers, isVirtual = data.isVirtual
             )
         )
     }
@@ -234,7 +241,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
     }
 
     is SchemaMessage -> {
-        EngineMessage.Schema(data.id, data.name)
+        EngineMessage.Schema(data.id, data.name, data.layout)
     }
 
     else -> {

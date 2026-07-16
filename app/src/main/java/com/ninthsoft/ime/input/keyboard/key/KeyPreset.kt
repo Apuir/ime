@@ -34,7 +34,7 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(
-            KeyboardAction.KeyCodeAction(KeyEvent.CodeEvent.keyCode(digit))
+            KeyboardAction.KeySequenceAction(digit)
         )
     ),
 )
@@ -100,7 +100,7 @@ fun layoutSwitchKey(
 
 fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
-        displayText = "拼音",
+        displayText = "",
         textSize = 13f,
         percentWidth = percentWidth,
         border = KeyDef.Appearance.Border.Special,
@@ -123,14 +123,14 @@ fun commaKey(percentWidth: Float): KeyDef = KeyDef(
 )
 
 
-fun languageSwitchKey(percentWidth: Float): KeyDef = KeyDef(
+fun schemaSwitchKey(percentWidth: Float): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
         src = R.drawable.ic_keyboard_language,
         viewId = KeyView.button_lang,
         percentWidth = percentWidth,
         variant = KeyDef.Appearance.Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.RotateSchema)),
 )
 
 fun returnKey(percentWidth: Float): KeyDef = KeyDef(
