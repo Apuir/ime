@@ -9,6 +9,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
@@ -37,6 +38,7 @@ import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
+import timber.log.Timber
 
 abstract class KeyView(
     ctx: Context,
@@ -47,10 +49,9 @@ abstract class KeyView(
     var bordered: Boolean = true
     var borderStroke: Boolean = true
         set(value) {
-            if (field != value) {
-                field = value
-                setupBackgroundWithPress()
-            }
+            Timber.d("KeyView.borderStroke: $field -> $value")
+            field = value
+            setupBackgroundWithPress()
         }
     var radius = colors.cornerRadius.let { dp(it) }
     var hMargin: Int = colors.keyHMargin.let { dp(it).toInt() }
@@ -113,12 +114,12 @@ abstract class KeyView(
             Variant.None -> Color.TRANSPARENT
         }
         val hasShape = (bordered && def.border != Border.Off) || def.border == Border.On
-        val normalBg: android.graphics.drawable.Drawable = if (hasShape) {
+        val normalBg: Drawable = if (hasShape) {
             createShapeBkg(bkgColor)
         } else {
             Color.TRANSPARENT.toDrawable()
         }
-        val pressedBg: android.graphics.drawable.Drawable = if (hasShape) {
+        val pressedBg: Drawable = if (hasShape) {
             createShapeBkg(pressedColor)
         } else {
             InsetDrawable(
@@ -132,29 +133,20 @@ abstract class KeyView(
         appearanceView.background = layered
     }
 
-    private fun createShapeBkg(color: Int): android.graphics.drawable.Drawable {
+    private fun createShapeBkg(color: Int): Drawable {
         val borderOrShadowWidth = dp(1)
-        val strokeColor = when (def.variant) {
+        var strokeColor = when (def.variant) {
             Variant.Alternative -> colors.specialKeyBorderStroke
             Variant.Accent -> colors.accentKeyBorderStroke
             else -> colors.keyBorderStroke
         }
-        return when {
-            borderStroke -> borderedKeyBackgroundDrawable(
-                color, strokeColor,
-                radius, borderOrShadowWidth, hMargin, vMargin,
-            )
-
-            colors.surfaceStyle == SurfaceStyle.Flat -> flatKeyBackgroundDrawable(
-                color, Color.argb(34, 255, 255, 255),
-                radius, borderOrShadowWidth, hMargin, vMargin,
-            )
-
-            else -> shadowedKeyBackgroundDrawable(
-                color, Color.argb(30, 0, 0, 0),
-                radius, borderOrShadowWidth, hMargin, vMargin,
-            )
+        if (!borderStroke) {
+            strokeColor = Color.TRANSPARENT
         }
+        return borderedKeyBackgroundDrawable(
+            color, strokeColor,
+            radius, borderOrShadowWidth, hMargin, vMargin,
+        )
     }
 
     override fun setEnabled(enabled: Boolean) {

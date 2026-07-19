@@ -11,7 +11,6 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import android.widget.OverScroller
-import com.ninthsoft.ime.base.util.slideDownExpand
 import com.ninthsoft.ime.base.util.slideUpCollapse
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -34,7 +33,7 @@ import timber.log.Timber
 @SuppressLint("ViewConstructor")
 class CandidateGridView(
     context: Context,
-    private val colors: KeyboardColors.ColorScheme,
+    colors: KeyboardColors.ColorScheme,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
     var onBackspace: (() -> Unit)? = null,
     var onReturn: (() -> Unit)? = null,
@@ -42,7 +41,7 @@ class CandidateGridView(
     var subscribePossibleCandidatePinYin: Boolean = true,
     var maxVisibleRow: Int = 5,
     var maxVisibleColumn: Int = 4,   // 保留并真正使用
-) : FrameLayout(context) {
+) : ComponentView(context, colors) {
 
     // ── 布局数据类 ──
     private class WordPos(
@@ -64,6 +63,7 @@ class CandidateGridView(
             visableRow = 5,
             margin = false,
             variant = KeyDef.Appearance.Variant.None,
+            border = KeyDef.Appearance.Border.Off
         ),
     ).apply { setOnItemActionListener { action -> onSidePanelAction?.invoke(action) } }
 
@@ -146,7 +146,6 @@ class CandidateGridView(
                 val firstW = rawWidths[i]
                 // 超宽词：独自一行，可水平滚动
                 if (firstW > rowWidth) {
-                    Timber.d("zzzz1 %s %f %f", allCandidates[i].text, firstW, rowWidth)
                     tempPositions.add(WordPos(row, 0f, firstW, true))
                     i++
                     row++
@@ -162,7 +161,6 @@ class CandidateGridView(
                     if (accumulatedRaw + minWordSpace + curW <= rowWidth) {
                         lineIndices.add(i)
                         accumulatedRaw += curW
-                        Timber.d("zzzz %s %f %f", allCandidates[i].text, curW, rowWidth)
                         i++
                     } else {
                         break
@@ -515,11 +513,14 @@ class CandidateGridView(
 
     init {
         isClickable = true
-        setBackgroundColor(colors.panel.background)
         sidePanelPunctuationItems = listOf(".", "?", "!", "@", "/", "-").map { ch ->
             KeyDef(
                 appearance = KeyDef.Appearance.Text(
-                    displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false
+                    displayText = ch,
+                    textSize = 15f,
+                    percentWidth = 0.5f,
+                    margin = false,
+                    variant = KeyDef.Appearance.Variant.Alternative
                 ),
                 behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
             )
@@ -586,8 +587,7 @@ class CandidateGridView(
         allCandidates = list
         gridCanvas.recomputeLayout()
         gridCanvas.resetScroll()
-        bringToFront()
-        slideDownExpand()
+        super.show()
     }
 
     fun updateCandidates(list: List<EngineMessage.Candidate>) {
@@ -597,7 +597,7 @@ class CandidateGridView(
         gridCanvas.invalidate()
     }
 
-    fun hide() {
+    override fun hide() {
         slideUpCollapse {
             allCandidates = emptyList()
             gridCanvas.resetScroll()
@@ -617,7 +617,7 @@ class CandidateGridView(
                         percentWidth = 0.5f,
                         margin = false
                     ),
-                    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(pinYin.pinYin))),
+                    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.SelectCandidatePinYin(pinYin = pinYin))),
                 )
             })
         }

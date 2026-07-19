@@ -93,6 +93,7 @@ class KawaiiPanelView(context: Context) : View(context) {
             context.getDrawable(R.drawable.ic_keyboard_palette),
             context.getDrawable(R.drawable.ic_keyboard_cursor_move),
             context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
+            context.getDrawable(R.drawable.ic_keyboard_trash),
             hPad,
         )
     }
@@ -168,15 +169,24 @@ class KawaiiPanelView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_UP -> {
+                parent.requestDisallowInterceptTouchEvent(false)
                 if (!isScrolling) {
                     val result = currentRenderer.hitTest(
                         event.x, event.y, width, height, scrollX, isExpanded, screenDensity,
                     )
                     if (currentRenderer is IdleRenderer && result != null) {
                         startPressAnimation(currentRenderer as IdleRenderer)
+                        if (result is KawaiiPanel.TouchResult.ToolbarAction && result.action is KawaiiPanel.Action.Palette) {
+                            postDelayed({ onTap?.invoke(result) }, 300L)
+                            return true
+                        }
                     }
                     onTap?.invoke(result)
                 }
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                parent.requestDisallowInterceptTouchEvent(false)
             }
         }
         return true

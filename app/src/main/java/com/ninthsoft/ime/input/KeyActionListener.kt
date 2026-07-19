@@ -56,6 +56,10 @@ class KeyActionListener(
                 @SuppressLint("NewApi") service.requestShowSelf(0)
             }
 
+            is KeyboardAction.SelectCandidatePinYin -> {
+                engine?.selectCandidatePinYin(action.pinYin)
+            }
+
             else -> {}
         }
     }

@@ -5,6 +5,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.KeyEvent.*
 import com.ninthsoft.ime.engine.behavior.IBehavior
+import com.ninthsoft.ime.engine.rime.behavior.Segmentation
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.rime.host.BehaviorHost
@@ -13,6 +14,7 @@ import com.ninthsoft.ime.engine.rime.behavior.Backspace
 import com.ninthsoft.ime.engine.rime.behavior.InputKey
 import com.ninthsoft.ime.engine.rime.behavior.InputString
 import com.ninthsoft.ime.engine.rime.behavior.Reset
+import com.ninthsoft.ime.engine.rime.behavior.SelectPinYin
 import com.ninthsoft.ime.engine.rime.behavior.Selection
 import com.ninthsoft.ime.engine.rime.core.EngineMessage
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
@@ -87,6 +89,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                             return@sendJob
                         }
 
+                        KEYCODE_APOSTROPHE -> {
+                            this@RimeEngine.flowed(Segmentation())
+                            return@sendJob
+                        }
+
                         KEYCODE_ENTER -> {
                             if (getRawInput().isEmpty()) {
                                 service.currentInputConnection.commitText("\n", 1)
@@ -108,6 +115,14 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun resetComposition() {
         this.flowed(Reset())
+    }
+
+    override fun selectCandidatePinYin(pinYin: CandidatePinYin) {
+        this.flowed(SelectPinYin(pinYin))
+    }
+
+    override fun segement() {
+        this.flowed(Segmentation())
     }
 
     override fun selectSchema(schemaId: String) {
@@ -165,10 +180,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         behaviorHosted?.resetState()
     }
 
-    private suspend fun possibleCandidatePinYin(): EngineMessage.PossibleCandidatePinYin {
-        return awaitJob(EngineMessage.PossibleCandidatePinYin(emptyArray())) {
-            val pinYins = behaviorHosted?.possiblePinYin() ?: emptyArray<CandidatePinYin>()
-            EngineMessage.PossibleCandidatePinYin(pinYins)
+    private fun postPossibleCandidatePinYin() {
+        sendJob {
+            val currentInput = getRawInput()
+            val confirmedLen = getInputConfirmedPosition()
+            val pinYins = behaviorHosted?.possiblePinYin(currentInput, confirmedLen)
+                ?: emptyArray<CandidatePinYin>()
+            callback(EngineMessage.PossibleCandidatePinYin(pinYins))
         }
     }
 
@@ -180,7 +198,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     if (msg.preedit.isEmpty()) {
                         behaviorHosted?.resetState()
                     }
-                    callback(possibleCandidatePinYin())
+                    postPossibleCandidatePinYin()
                 }
                 callback(msg.EngineMessage())
             }

@@ -2,21 +2,30 @@ package com.ninthsoft.ime.input.panel
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.view.View
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.component.CandidateGridView
+import com.ninthsoft.ime.input.panel.component.ClipboardView
+import com.ninthsoft.ime.input.panel.component.ConfirmOverlay
 import com.ninthsoft.ime.input.panel.component.MenuGridView
+import com.ninthsoft.ime.input.panel.component.TextEditView
 import com.ninthsoft.ime.input.panel.toolbar.IdleRenderer
+import timber.log.Timber
 
 class KawaiiPanel(
     val context: Context,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
     var onRerankedSelected: ((String) -> Unit)? = null,
     var onToolbarAction: ((Action) -> Unit)? = null,
+    var onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
+    var onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
+    var onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
+    var onClipboardClear: (() -> Unit)? = null,
+    var onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
 ) : IPanel {
 
     sealed class Action {
@@ -29,10 +38,16 @@ class KawaiiPanel(
         data object Palette : Action()
         data object CursorMove : Action()
         data object CloseKeyboard : Action()
+        data object ClearClipboard : Action()
     }
 
     sealed class TouchResult {
-        data class ToolbarAction(val action: Action) : TouchResult()
+        data class ToolbarAction(
+            val action: Action,
+            val tapX: Float = Float.NaN,
+            val tapY: Float = Float.NaN,
+        ) : TouchResult()
+
         data class SelectCandidate(val candidate: EngineMessage.Candidate) : TouchResult()
         data class SelectRerankedCandidate(val text: String) : TouchResult()
         data object ExpandCandidates : TouchResult()
@@ -43,6 +58,8 @@ class KawaiiPanel(
         data object Idle : State()
         data class Composing(val candidates: List<EngineMessage.Candidate>) : State()
         data object Menu : State()
+        data object TextEditing : State()
+        data object Clipboard : State()
     }
 
     private var state: State = State.Idle
@@ -54,15 +71,20 @@ class KawaiiPanel(
         }
 
     private fun exit(state: State) {
+        confirmOverlay.dismiss()
         when (state) {
-            is State.Composing -> {
-                candidateGrid.animate().cancel()
-                candidateGrid.visibility = View.GONE
+            is State.Composing -> candidateGrid.hide()
+            State.Menu -> menuGrid.hide()
+            State.TextEditing -> {
+                textEditingView.hide()
+                (view.currentRenderer as? IdleRenderer)?.textEditingMode = false
+                view.invalidate()
             }
 
-            State.Menu -> {
-                menuGrid.animate().cancel()
-                menuGrid.visibility = View.GONE
+            State.Clipboard -> {
+                clipboardView.hide()
+                (view.currentRenderer as? IdleRenderer)?.clipboardMode = false
+                view.invalidate()
             }
 
             State.Idle -> {}
@@ -73,6 +95,20 @@ class KawaiiPanel(
         when (state) {
             is State.Composing -> candidateGrid.show(state.candidates)
             State.Menu -> menuGrid.show()
+            State.TextEditing -> {
+                Timber.d("enter TextEditing: setting renderer textEditingMode=true")
+                (view.currentRenderer as? IdleRenderer)?.textEditingMode = true
+                view.invalidate()
+                textEditingView.show()
+            }
+
+            State.Clipboard -> {
+                Timber.d("enter Clipboard: setting renderer clipboardMode=true")
+                (view.currentRenderer as? IdleRenderer)?.clipboardMode = true
+                view.invalidate()
+                clipboardView.show(ClipboardRepository.getEntries(context))
+            }
+
             State.Idle -> {}
         }
     }
@@ -86,23 +122,93 @@ class KawaiiPanel(
         onCandidateSelected = { candidate ->
             view.onTap?.invoke(TouchResult.SelectCandidate(candidate))
         },
-    ).apply { visibility = View.GONE }
+        onSidePanelAction = onSidePanelAction,
+    ).apply { }
 
     val menuGrid = MenuGridView(
         context = context,
         colors = resolvedColors,
     ).apply {
-        visibility = View.GONE
         onAction = { action ->
             state = State.Idle
             view.onTap?.invoke(TouchResult.ToolbarAction(action))
         }
     }
 
+    val textEditingView = TextEditView(
+        context = context,
+        colors = resolvedColors,
+    ).apply {
+        onAction = { action -> onTextEditingAction?.invoke(action) }
+    }
+
+    val confirmOverlay = ConfirmOverlay(
+        context = context,
+        colors = resolvedColors,
+    )
+
+    val clipboardView = ClipboardView(
+        context = context,
+        colors = resolvedColors,
+    )
+
+    init {
+        clipboardView.onItemClick = { entry -> onClipboardItemClick?.invoke(entry) }
+        clipboardView.onItemLongClick = { entry, x, y ->
+            Timber.d("clipboard longClick: cardX=$x cardY=$y")
+            confirmOverlay.confirm(
+                message = context.getString(
+                    R.string.clipboard_delete_confirm,
+                    if (entry.text.length > 5) entry.text.take(5) + "..." else entry.text
+                ),
+                onConfirm = { handleClipboardDelete(entry) },
+                cardX = x + 100,
+                cardY = y + 100,
+            )
+        }
+    }
+
+    private fun handleClipboardClear() {
+        onClipboardClear?.invoke()
+        clipboardView.show(ClipboardRepository.getEntries(context))
+    }
+
+    private fun handleClipboardDelete(entry: ClipboardRepository.Entry) {
+        onClipboardItemDelete?.invoke(entry)
+        clipboardView.show(ClipboardRepository.getEntries(context))
+    }
+
+    fun onSelectionUpdate(start: Int, end: Int) {
+        textEditingView.setSelection(start, end)
+    }
+
     override val view: KawaiiPanelView = KawaiiPanelView(context).also { v ->
         v.onTap = { result ->
             when (result) {
-                is TouchResult.ToolbarAction -> onToolbarAction?.invoke(result.action)
+                is TouchResult.ToolbarAction -> {
+                    when (result.action) {
+                        Action.CursorMove -> state = State.TextEditing
+                        Action.Clipboard -> state = State.Clipboard
+                        Action.ClearClipboard -> {
+                            confirmOverlay.confirm(
+                                message = context.getString(R.string.clipboard_clear_confirm_title),
+                                onConfirm = { handleClipboardClear() },
+                                cardX = Float.NaN,
+                                cardY = 0f,
+                            )
+                        }
+
+                        Action.SwitchKeyboard -> {
+                            when (state) {
+                                State.TextEditing, State.Clipboard -> state = State.Idle
+                                else -> onToolbarAction?.invoke(result.action)
+                            }
+                        }
+
+                        else -> onToolbarAction?.invoke(result.action)
+                    }
+                }
+
                 is TouchResult.SelectCandidate -> {
                     onCandidateSelected?.invoke(result.candidate)
                 }
@@ -128,7 +234,17 @@ class KawaiiPanel(
         }
     }
 
+    fun showTextEditing() {
+        view.setExpanded(false)
+        state = State.TextEditing
+    }
+
+    fun hideTextEditing() {
+        if (state == State.TextEditing) state = State.Idle
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
+        confirmOverlay.dismiss()
         state = State.Idle
     }
 
@@ -150,8 +266,12 @@ class KawaiiPanel(
                 context.getDrawable(R.drawable.ic_keyboard_palette),
                 context.getDrawable(R.drawable.ic_keyboard_cursor_move),
                 context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
+                context.getDrawable(R.drawable.ic_keyboard_trash),
                 KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
-            )
+            ).also {
+                it.textEditingMode = (state == State.TextEditing)
+                it.clipboardMode = (state == State.Clipboard)
+            }
         } else {
             view.scrollX = 0f
             view.currentRenderer = ComposingRenderer(

@@ -7,6 +7,7 @@ import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.OpenCCDictManager
 import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.base.util.isStorageAvailable
+import com.ninthsoft.ime.engine.rime.core.Rime.Companion
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -120,6 +121,10 @@ class Rime : RimeApi, RimeLifecycleOwner {
         emitResponse()
     }
 
+    override suspend fun setInput(input: String) = withRimeContext {
+        Companion.setInput(input).also { emitResponse() }
+    }
+
     override suspend fun availableSchemata(): Array<SchemaItem> =
         withRimeContext { getAvailableSchemaList() }
 
@@ -154,6 +159,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
     }
 
     override suspend fun getRawInput(): String = withRimeContext { Companion.getRawInput() }
+
+    override suspend fun getInputConfirmedPosition(): Int =
+        withRimeContext { Companion.getInputConfirmedPosition() }
 
     override suspend fun setRuntimeOption(option: String, value: Boolean) = withRimeContext {
         setOption(option, value)
@@ -352,6 +360,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
         external fun getRawInput(): String
 
         @JvmStatic
+        external fun setInput(keySequence: String): Boolean
+
+        @JvmStatic
         external fun getCaretPos(): Int
 
         @JvmStatic
@@ -380,6 +391,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         external fun getBulkCandidates(): Array<Any>
+
+        @JvmStatic
+        external fun getInputConfirmedPosition(): Int
 
         @JvmStatic
         fun handleMessage(type: Int, params: Array<Any>) {

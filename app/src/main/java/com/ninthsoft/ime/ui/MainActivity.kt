@@ -67,6 +67,14 @@ class MainActivity : ComponentActivity() {
                                 KeyboardSettingsActivity::class.java
                             )
                         )
+                    },
+                    onOpenClipboard = {
+                        startActivity(
+                            Intent(
+                                this@MainActivity,
+                                ClipboardActivity::class.java
+                            )
+                        )
                     }
                 )
             }

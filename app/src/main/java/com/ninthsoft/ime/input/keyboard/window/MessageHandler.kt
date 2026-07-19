@@ -80,7 +80,7 @@ class MessageHandler(
             is EngineMessage.Schema -> {
                 Timber.d("Schema: Schema=${message}")
                 withContext(Dispatchers.Main) {
-                    window?.onSchemaChanged(message.id, message.name, message.layout)
+                    window?.onSchemaChanged(message.id)
                 }
             }
 

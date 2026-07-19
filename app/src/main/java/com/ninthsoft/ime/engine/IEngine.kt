@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import android.inputmethodservice.InputMethodService
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +17,8 @@ interface IEngine {
     fun clear(service: InputMethodService)
     fun resetComposition()
     fun selectSchema(schemaId: String)
+    fun selectCandidatePinYin(pinYin: CandidatePinYin)
+    fun segement(){}
     fun undo(service: InputMethodService)
     fun redo(service: InputMethodService)
 }

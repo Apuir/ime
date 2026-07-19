@@ -242,7 +242,7 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                         KeyboardManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
                     },
                 )
-                Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(14.dp))
                 SliderRow(
                     title = stringResource(R.string.key_corner_radius),
                     value = keyRadius,

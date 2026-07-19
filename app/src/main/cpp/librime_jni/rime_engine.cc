@@ -115,6 +115,14 @@ namespace {
             return api_->simulate_key_sequence(sessionId(), seq.c_str());
         }
 
+        bool setInput(const std::string &input) {
+            return api_->set_input(sessionId(), input.c_str());
+        }
+
+        size_t getInputConfirmedPosition() {
+            return api_->get_input_confirmed_pos(sessionId());
+        }
+
         bool commitComposition() {
             return api_->commit_composition(sessionId());
         }
@@ -422,6 +430,20 @@ JNIEXPORT jstring JNICALL
 Java_com_ninthsoft_ime_engine_rime_core_Rime_getRawInput(JNIEnv *env,
                                                          jclass) {
     return jni::makeString(env, RimeEngine::instance().rawInput());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ninthsoft_ime_engine_rime_core_Rime_setInput(JNIEnv *env,
+                                                      jclass, jstring input) {
+    jni::StringChars raw(env, input);
+    return RimeEngine::instance().setInput(raw.str());
+}
+
+
+JNIEXPORT jint JNICALL
+Java_com_ninthsoft_ime_engine_rime_core_Rime_getInputConfirmedPosition(JNIEnv *env,
+                                                      jclass) {
+    return static_cast<jint>(RimeEngine::instance().getInputConfirmedPosition());
 }
 
 JNIEXPORT jint JNICALL

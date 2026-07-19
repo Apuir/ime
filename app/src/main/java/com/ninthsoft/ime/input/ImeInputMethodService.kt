@@ -1,18 +1,26 @@
 package com.ninthsoft.ime.input
 
+import android.content.Intent
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
+import android.os.SystemClock
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.CloseKeyboard
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Palette
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Redo
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.SwitchKeyboard
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Undo
+import com.ninthsoft.ime.input.panel.component.TextEditView
+import com.ninthsoft.ime.ui.KeyboardSettingsActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +31,9 @@ class ImeInputMethodService : InputMethodService() {
     private var keyboardWindow: KeyboardWindow? = null
     private lateinit var keyActionListener: KeyActionListener
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var lastSelectionStart = 0
+    private var lastSelectionEnd = 0
     private val themePrefs: SharedPreferences by lazy {
         getSharedPreferences(KeyboardManager.PREFS_NAME, MODE_PRIVATE)
     }
@@ -44,6 +55,7 @@ class ImeInputMethodService : InputMethodService() {
             engine = engine,
         )
         engine?.observe(scope!!) { keyboardWindow?.handleEngineMessage(it) }
+        ClipboardRepository.startMonitoring(this)
     }
 
     override fun onCreateInputView(): View {
@@ -57,9 +69,22 @@ class ImeInputMethodService : InputMethodService() {
                     SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
                     Undo -> engine?.undo(this)
                     Redo -> engine?.redo(this)
+
+                    Palette -> startActivity(
+                        Intent(
+                            this, KeyboardSettingsActivity::class.java
+                        ).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+
                     else -> {}
                 }
             },
+            onSidePanelAction = { action -> keyActionListener.onKeyAction(action) },
+            onTextEditingAction = { action -> handleTextEditingAction(action) },
+            onClipboardItemClick = { entry -> currentInputConnection?.commitText(entry.text, 1) },
+            onClipboardClear = { ClipboardRepository.clearAll(this) },
+            onClipboardItemDelete = { entry -> ClipboardRepository.removeEntry(this, entry.text) },
         ).apply { setKeyActionListener(keyActionListener) }
         return keyboardWindow!!.view
     }
@@ -86,6 +111,7 @@ class ImeInputMethodService : InputMethodService() {
         scope?.cancel()
         scope = null
         keyboardWindow = null
+        ClipboardRepository.stopMonitoring(this)
         super.onDestroy()
     }
 
@@ -94,5 +120,102 @@ class ImeInputMethodService : InputMethodService() {
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
         return true
+    }
+
+    private fun sendCombinationKeyEvent(keyCode: Int, shift: Boolean) {
+        val ic = currentInputConnection ?: return
+        val downTime = SystemClock.uptimeMillis()
+        val device = KeyCharacterMap.VIRTUAL_KEYBOARD
+        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
+        val metaShift = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+
+        fun down(code: Int, meta: Int = 0) {
+            ic.sendKeyEvent(
+                KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, code, 0, meta, device, 0, flags)
+            )
+        }
+
+        fun up(code: Int, meta: Int = 0) {
+            ic.sendKeyEvent(
+                KeyEvent(
+                    downTime,
+                    SystemClock.uptimeMillis(),
+                    KeyEvent.ACTION_UP,
+                    code,
+                    0,
+                    meta,
+                    device,
+                    0,
+                    flags
+                )
+            )
+        }
+
+        if (shift) down(KeyEvent.KEYCODE_SHIFT_LEFT)
+        down(keyCode, if (shift) metaShift else 0)
+        up(keyCode, if (shift) metaShift else 0)
+        if (shift) up(KeyEvent.KEYCODE_SHIFT_LEFT)
+    }
+
+    private fun handleTextEditingAction(action: TextEditView.Action) {
+        val ic = currentInputConnection
+        when (action) {
+            is TextEditView.Action.MoveLeft -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_DPAD_LEFT, action.shift
+            )
+
+            is TextEditView.Action.MoveRight -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_DPAD_RIGHT, action.shift
+            )
+
+            is TextEditView.Action.MoveUp -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_DPAD_UP, action.shift
+            )
+
+            is TextEditView.Action.MoveDown -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_DPAD_DOWN, action.shift
+            )
+
+            is TextEditView.Action.MoveHome -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_MOVE_HOME, action.shift
+            )
+
+            is TextEditView.Action.MoveEnd -> sendCombinationKeyEvent(
+                KeyEvent.KEYCODE_MOVE_END, action.shift
+            )
+
+            TextEditView.Action.SelectToggle -> { /* local state toggle handled in view */
+            }
+
+            TextEditView.Action.CancelSelection -> {
+                if (lastSelectionStart != lastSelectionEnd) {
+                    ic?.setSelection(lastSelectionEnd, lastSelectionEnd)
+                }
+            }
+
+            TextEditView.Action.SelectAll -> ic?.performContextMenuAction(android.R.id.selectAll)
+            TextEditView.Action.Cut -> ic?.performContextMenuAction(android.R.id.cut)
+            TextEditView.Action.Copy -> ic?.performContextMenuAction(android.R.id.copy)
+            TextEditView.Action.Paste -> ic?.performContextMenuAction(android.R.id.paste)
+
+            TextEditView.Action.Backspace -> engine?.processKey(
+                this, com.ninthsoft.ime.engine.event.KeyEvent.CodeEvent(
+                    KeyEvent.KEYCODE_DEL, com.ninthsoft.ime.engine.event.KeyModifiers.Empty
+                )
+            )
+        }
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int,
+        newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(
+            oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
+        )
+        lastSelectionStart = newSelStart
+        lastSelectionEnd = newSelEnd
+        keyboardWindow?.onSelectionUpdate(newSelStart, newSelEnd)
     }
 }

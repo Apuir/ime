@@ -4,6 +4,7 @@
  */
 package com.ninthsoft.ime.input.keyboard.key.widget
 
+import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -17,6 +18,7 @@ import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import kotlin.math.max
+import androidx.core.graphics.withSave
 
 abstract class SidePanelRender(
     protected val theme: KeyboardColors.ColorScheme,
@@ -73,8 +75,6 @@ abstract class SidePanelRender(
     }
     private val scrollbarRect = RectF()
 
-    var borderStroke = true
-
     var items: List<Item> = emptyList()
         private set
 
@@ -111,7 +111,6 @@ abstract class SidePanelRender(
         pressedAlpha: Int = 0,
     ) {
         if (panel.isEmpty) return
-        drawPanel(canvas, panel)
         drawItems(canvas, panel, scrollOffset, pressedIndex, stretch, pressedAlpha)
         drawScrollbar(canvas, panel, scrollOffset)
     }
@@ -122,25 +121,7 @@ abstract class SidePanelRender(
 
     protected open fun scrollbarWidth(): Float = dp(style.scrollbarWidthDp)
 
-    private fun drawPanel(canvas: Canvas, panel: RectF) {
-        if (!borderStroke) {
-            return
-        }
-        val c = style.panelColor
-        if (Color.alpha(c) < 255) {
-            val bg = theme.background
-            val a = Color.alpha(c)
-            val r = (Color.red(c) * a + Color.red(bg) * (255 - a)) / 255
-            val g = (Color.green(c) * a + Color.green(bg) * (255 - a)) / 255
-            val b = (Color.blue(c) * a + Color.blue(bg) * (255 - a)) / 255
-            panelPaint.color = Color.rgb(r, g, b)
-        } else {
-            panelPaint.color = c
-        }
-        val radius = cornerRadius()
-        canvas.drawRoundRect(panel, radius, radius, panelPaint)
-    }
-
+    @SuppressLint("UseKtx")
     private fun drawItems(
         canvas: Canvas,
         panel: RectF,
@@ -151,66 +132,74 @@ abstract class SidePanelRender(
     ) {
         val itemHeight = itemHeight(panel.height())
         if (itemHeight <= 0f) return
-        canvas.save()
-
-        // 根据拉伸方向应用不同的变换
-        if (stretch != 0f) {
-            if (stretch > 0) {
-                // 下拉：以顶部为锚点，垂直拉伸
-                val scaleY = 1f + stretch / panel.height()
-                canvas.translate(0f, panel.top)
-                canvas.scale(1f, scaleY)
-                canvas.translate(0f, -panel.top)
-            } else {
-                // 上拉：以底部为锚点，垂直拉伸
-                val scaleY = 1f - stretch / panel.height()
-                canvas.translate(0f, panel.bottom)
-                canvas.scale(1f, scaleY)
-                canvas.translate(0f, -panel.bottom)
-            }
-        }
-        // 保存原始的对齐方式，以便恢复
-        val originalAlign = textPaint.textAlign
-        items.forEachIndexed { index, item ->
-            val top = panel.top + itemHeight * index - scrollOffset
-            val bottom = top + itemHeight
-            if (bottom < panel.top || top > panel.bottom) return@forEachIndexed
-
-            //disabled selection background color
-            if (index == pressedIndex) {
-                val c = style.pressedItemColor
-                panelPaint.color = Color.rgb(Color.red(c), Color.green(c), Color.blue(c))
-                panelPaint.alpha = pressedAlpha
-                val r = cornerRadius()
-                if ((index == 0 || index == items.size - 1) && r > 0f) {
-                    val radii = floatArrayOf(
-                        if (index == 0) r else 0f, if (index == 0) r else 0f,
-                        if (index == 0) r else 0f, if (index == 0) r else 0f,
-                        if (index == items.size - 1) r else 0f, if (index == items.size - 1) r else 0f,
-                        if (index == items.size - 1) r else 0f, if (index == items.size - 1) r else 0f,
-                    )
-                    canvas.drawPath(Path().apply { addRoundRect(panel.left, top, panel.right, bottom, radii, Path.Direction.CW) }, panelPaint)
+        canvas.withSave {
+            // 根据拉伸方向应用不同的变换
+            if (stretch != 0f) {
+                if (stretch > 0) {
+                    // 下拉：以顶部为锚点，垂直拉伸
+                    val scaleY = 1f + stretch / panel.height()
+                    translate(0f, panel.top)
+                    scale(1f, scaleY)
+                    translate(0f, -panel.top)
                 } else {
-                    canvas.drawRect(panel.left, top, panel.right, bottom, panelPaint)
+                    // 上拉：以底部为锚点，垂直拉伸
+                    val scaleY = 1f - stretch / panel.height()
+                    translate(0f, panel.bottom)
+                    scale(1f, scaleY)
+                    translate(0f, -panel.bottom)
                 }
-                panelPaint.alpha = 255
             }
-            textPaint.color = item.textColor
-            textPaint.textSize = dp(item.textSize)
-            textPaint.typeface = Typeface.create(Typeface.DEFAULT, item.textStyle)
-            textPaint.textAlign = Paint.Align.LEFT
-            val bounds = Rect()
-            val text = item.label
-            textPaint.getTextBounds(text, 0, text.length, bounds)
-            val centerX = panel.centerX()
-            val centerY = (top + bottom) * 0.5f
-            val x = centerX - bounds.exactCenterX()
-            val y = centerY - bounds.exactCenterY() + 5
-            canvas.drawText(text, x, y, textPaint)
+            clipRect(panel)
+            // 保存原始的对齐方式，以便恢复
+            val originalAlign = textPaint.textAlign
+            items.forEachIndexed { index, item ->
+                val top = panel.top + itemHeight * index - scrollOffset
+                val bottom = top + itemHeight
+                if (bottom < panel.top || top > panel.bottom) return@forEachIndexed
+
+                //disabled selection background color
+                if (index == pressedIndex) {
+                    val c = style.pressedItemColor
+                    panelPaint.color = Color.rgb(Color.red(c), Color.green(c), Color.blue(c))
+                    panelPaint.alpha = pressedAlpha
+                    val r = cornerRadius()
+                    if ((index == 0 || index == items.size - 1) && r > 0f) {
+                        val radii = floatArrayOf(
+                            if (index == 0) r else 0f,
+                            if (index == 0) r else 0f,
+                            if (index == 0) r else 0f,
+                            if (index == 0) r else 0f,
+                            if (index == items.size - 1) r else 0f,
+                            if (index == items.size - 1) r else 0f,
+                            if (index == items.size - 1) r else 0f,
+                            if (index == items.size - 1) r else 0f,
+                        )
+                        drawPath(Path().apply {
+                            addRoundRect(
+                                panel.left, top, panel.right, bottom, radii, Path.Direction.CW
+                            )
+                        }, panelPaint)
+                    } else {
+                        drawRect(panel.left, top, panel.right, bottom, panelPaint)
+                    }
+                    panelPaint.alpha = 255
+                }
+                textPaint.color = item.textColor
+                textPaint.textSize = dp(item.textSize)
+                textPaint.typeface = Typeface.create(Typeface.DEFAULT, item.textStyle)
+                textPaint.textAlign = Paint.Align.LEFT
+                val bounds = Rect()
+                val text = item.label
+                textPaint.getTextBounds(text, 0, text.length, bounds)
+                val centerX = panel.centerX()
+                val centerY = (top + bottom) * 0.5f
+                val x = centerX - bounds.exactCenterX()
+                val y = centerY - bounds.exactCenterY() + 5
+                drawText(text, x, y, textPaint)
+            }
+            // 恢复原始对齐方式
+            textPaint.textAlign = originalAlign
         }
-        // 恢复原始对齐方式
-        textPaint.textAlign = originalAlign
-        canvas.restore()
     }
 
     private fun drawScrollbar(canvas: Canvas, panel: RectF, scrollOffset: Float) {
@@ -239,8 +228,6 @@ abstract class SidePanelRender(
     }
 
     protected fun dp(value: Float): Float = value * density
-
-    protected fun sp(value: Float): Float = value * density
 
     abstract fun toItem(itemDef: KeyDef): Item?
 }

@@ -8,14 +8,18 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
+import com.ninthsoft.ime.input.keyboard.key.commaKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
+import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelNormalItem
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
+import timber.log.Timber
 
 @SuppressLint("ViewConstructor")
 class T9Keyboard(
@@ -30,6 +34,7 @@ class T9Keyboard(
         items.add(sidePannelNormalItem("!"))
         items.add(sidePannelNormalItem("@"))
         this.updateSidePanel(items)
+        this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
     override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
@@ -38,7 +43,11 @@ class T9Keyboard(
                 listOf(".", "?", "!", "@").map { ch ->
                     KeyDef(
                         appearance = KeyDef.Appearance.Text(
-                            displayText = ch, textSize = 15f, percentWidth = 0.5f, margin = false
+                            displayText = ch,
+                            textSize = 15f,
+                            percentWidth = 0.5f,
+                            margin = false,
+                            variant = Variant.Alternative
                         ),
                         behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
                     )
@@ -46,11 +55,17 @@ class T9Keyboard(
             return
         }
         super.updateSidePanel(data.map { pinYin ->
+            Timber.d("onPossibleCandidatePinYin %s, position: %d", pinYin.pinYin, pinYin.position)
             KeyDef(
                 appearance = KeyDef.Appearance.Text(
-                    displayText = pinYin.pinYin, textSize = 15f, percentWidth = 0.5f, margin = false
+                    displayText = pinYin.pinYin,
+                    textSize = 15f,
+                    percentWidth = 0.5f,
+                    margin = false,
                 ),
-                behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(pinYin.pinYin))),
+                behaviors = setOf(
+                    KeyDef.Behavior.Press(KeyboardAction.SelectCandidatePinYin(pinYin = pinYin))
+                ),
             )
         })
     }
@@ -73,61 +88,27 @@ class T9Keyboard(
             ),
         )
 
-        private fun returnKey(percentWidth: Float): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Image(
-                src = R.drawable.ic_keyboard_return,
-                viewId = KeyView.button_return,
-                percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Accent,
-                border = KeyDef.Appearance.Border.Special,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
-        )
-
         private fun clearKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.Text(
                 displayText = "清空",
                 textSize = 15f,
                 percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Alternative,
+                variant = Variant.Alternative,
             ),
             behaviors = setOf(
                 KeyDef.Behavior.Press(KeyboardAction.ClearAction)
             ),
         )
 
-        private fun langSwitchKey(percentWidth: Float): KeyDef = KeyDef(
+        private fun infiniteKey(percentWidth: Float): KeyDef = KeyDef(
             appearance = KeyDef.Appearance.Image(
-                src = R.drawable.ic_keyboard_language,
+                src = R.drawable.ic_keyboard_infinite,
                 viewId = KeyView.button_lang,
                 percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Alternative,
+                variant = Variant.Alternative,
             ),
             behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
         )
-
-        private fun makeCommaKey(percentWidth: Float): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.ImageText(
-                displayText = ".",
-                textSize = 23f,
-                src = R.drawable.ic_keyboard_emoticon,
-                percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Alternative,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(0))),
-        )
-
-        private fun makeReturnKey(percentWidth: Float): KeyDef = KeyDef(
-            appearance = KeyDef.Appearance.Image(
-                src = R.drawable.ic_keyboard_return,
-                viewId = KeyView.button_return,
-                percentWidth = percentWidth,
-                variant = KeyDef.Appearance.Variant.Accent,
-                border = KeyDef.Appearance.Border.Special,
-            ),
-            behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
-        )
-
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
@@ -147,19 +128,24 @@ class T9Keyboard(
                 mixedAlphabetKey("7", "PQRS"),
                 mixedAlphabetKey("8", "TUV"),
                 mixedAlphabetKey("9", "WXYZ"),
-                langSwitchKey(0.15f),
+                infiniteKey(0.15f),
             ),
             listOf(
                 layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
                 schemaSwitchKey(0.13f),
                 spaceKey(),
-                makeCommaKey(percentWidth = 0.13f),
-                makeReturnKey(percentWidth = 0.15f),
+                commaKey(percentWidth = 0.13f),
+                returnKey(percentWidth = 0.15f),
             ),
         )
     }
 
     override fun name(): String {
         return NAME
+    }
+
+    override fun onDetach() {
+        this.onPossibleCandidatePinYin(emptyArray())
+        super.onDetach()
     }
 }

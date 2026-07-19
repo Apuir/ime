@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.input.keyboard.key
 
+import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.event.KeyModifiers
 
@@ -24,6 +25,8 @@ sealed class KeyboardAction {
     data object ClearAction : KeyboardAction()
 
     data class CommitAction(val text: String) : KeyboardAction()
+
+    data class SelectCandidatePinYin(val pinYin: CandidatePinYin) : KeyboardAction()
 
     data object CapsAction : KeyboardAction()
 

@@ -1,17 +1,13 @@
 package com.ninthsoft.ime.input.panel.component
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
-import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.TextView
-import com.ninthsoft.ime.base.util.slideDownExpand
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import splitties.dimensions.dp
@@ -22,9 +18,9 @@ import splitties.views.dsl.core.wrapContent
 @SuppressLint("ViewConstructor")
 class MenuGridView(
     context: Context,
-    private val colors: KeyboardColors.ColorScheme,
+    colors: KeyboardColors.ColorScheme,
     var onAction: ((KawaiiPanel.Action) -> Unit)? = null,
-) : FrameLayout(context) {
+) : ComponentView(context, colors) {
 
     private data class MenuItem(
         val label: String,
@@ -42,9 +38,6 @@ class MenuGridView(
     )
 
     init {
-        visibility = INVISIBLE
-        setBackgroundColor(colors.panel.background)
-
         val grid = GridLayout(context).apply {
             columnCount = 3
             rowCount = 2
@@ -67,7 +60,7 @@ class MenuGridView(
     }
 
     private fun createItemView(item: MenuItem): View {
-        val itemView = FrameLayout(context).apply {
+        val itemView = android.widget.FrameLayout(context).apply {
             layoutParams = GridLayout.LayoutParams().apply {
                 width = 0
                 height = dp(56)
@@ -78,7 +71,7 @@ class MenuGridView(
         }
 
         val icon = ImageView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(28), dp(28)).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(28), dp(28)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = dp(6)
             }
@@ -88,7 +81,7 @@ class MenuGridView(
         }
 
         val label = TextView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(wrapContent, wrapContent).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(wrapContent, wrapContent).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = dp(32)
             }
@@ -102,34 +95,5 @@ class MenuGridView(
         itemView.addView(icon)
         itemView.addView(label)
         return itemView
-    }
-
-    fun show() {
-        if (visibility != VISIBLE) {
-            bringToFront()
-            slideDownExpand()
-        }
-    }
-
-    fun hide() {
-        if (visibility != VISIBLE) return
-        var cancelled = false
-        animate().scaleY(0f).setDuration(200).setListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                if (cancelled) return
-                visibility = INVISIBLE
-                scaleY = 1f
-            }
-
-            override fun onAnimationCancel(animation: Animator) {
-                cancelled = true
-            }
-        }).start()
-    }
-
-    fun reset() {
-        animate().cancel()
-        visibility = INVISIBLE
-        scaleY = 1f
     }
 }

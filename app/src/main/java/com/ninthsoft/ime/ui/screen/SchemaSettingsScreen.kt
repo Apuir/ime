@@ -66,6 +66,8 @@ import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.rime.core.SchemaItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
@@ -124,14 +126,30 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
         },
     ) { padding ->
         if (!loaded) return@Scaffold
+        var grammarModelEnabled by remember {
+            mutableStateOf(SchemaManager.isGrammarModelEnabled(context))
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Spacer(Modifier.height(4.dp))
+
+            SettingsGroup(title = stringResource(R.string.schema_model)) {
+                SwitchRow(
+                    title = stringResource(R.string.schema_model_grammar),
+                    checked = grammarModelEnabled,
+                    onCheckedChange = {
+                        grammarModelEnabled = it
+                        SchemaManager.setGrammarModelEnabled(context, it)
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
             SectionHeader(stringResource(R.string.enabled_schemas))
             Card(
                 modifier = Modifier.fillMaxWidth(),

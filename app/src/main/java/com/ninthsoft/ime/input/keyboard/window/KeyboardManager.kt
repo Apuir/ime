@@ -19,7 +19,6 @@ import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
-import timber.log.Timber
 
 class KeyboardManager(private val context: Context, val parent: ViewGroup) {
 
@@ -43,11 +42,14 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             currentKeyboard?.keyActionListener = value
         }
 
-    fun currentKeyboard(): IKeyboard? = currentKeyboard
-
-    fun updateSchemaLayout(layout: String) {
-        val schema = schemas.find { it.layout == layout }
+    fun onSchemaChanged(schemaId: String) {
+        val schema = schemas.find { it.id == schemaId }
         currentSchema = schema
+        if (currentKeyboard?.name() !== currentSchema?.layout) {
+            switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
+            return
+        }
+        currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
     }
 
     fun onConfigChanged(key: String) {
@@ -55,9 +57,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
     }
 
     fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
-        val kb = currentKeyboard
-        Timber.d("onPinyin: kb=${kb?.name()}, isSidePanel=${kb is ISidePanelKeyboard}, data=${data.size}")
-        (kb as? ISidePanelKeyboard)?.onPossibleCandidatePinYin(data)
+        (currentKeyboard as? ISidePanelKeyboard)?.onPossibleCandidatePinYin(data)
     }
 
 
@@ -106,6 +106,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         )
         keyboard.onAttach()
         currentKeyboard = keyboard
+        currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
     }
 
     fun switchTo(name: String, index: Int = -1) {

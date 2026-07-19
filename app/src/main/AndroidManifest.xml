@@ -47,6 +47,12 @@
             android:label="@string/schema_settings"
             android:theme="@style/Theme.Ime" />
 
+        <activity
+            android:name=".ui.ClipboardActivity"
+            android:exported="false"
+            android:label="@string/clipboard_manager"
+            android:theme="@style/Theme.Ime" />
+
         <service
             android:name=".input.ImeInputMethodService"
             android:exported="true"

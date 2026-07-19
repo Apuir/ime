@@ -2,7 +2,7 @@ package com.ninthsoft.ime.input.keyboard.window
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.res.Resources
+import android.os.Build
 import android.util.TypedValue
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
@@ -11,6 +11,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -18,8 +19,8 @@ import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.KawaiiPanel
+import com.ninthsoft.ime.input.panel.component.TextEditView
 import com.ninthsoft.ime.input.pinner.PreeditPinner
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -28,13 +29,16 @@ class KeyboardWindowView(
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
     onRerankedSelected: ((String) -> Unit)? = null,
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
+    onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
+    onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
+    onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
+    onClipboardClear: (() -> Unit)? = null,
+    onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
 ) : FrameLayout(context), IManagedView {
 
     companion object {
         const val PANEL_HEIGHT_DP = 44
     }
-
-    private val fallbackNavBarHeight = 48
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
 
@@ -45,6 +49,11 @@ class KeyboardWindowView(
         onCandidateSelected = onCandidateSelected,
         onRerankedSelected = onRerankedSelected,
         onToolbarAction = onToolbarAction,
+        onSidePanelAction = onSidePanelAction,
+        onTextEditingAction = onTextEditingAction,
+        onClipboardItemClick = onClipboardItemClick,
+        onClipboardClear = onClipboardClear,
+        onClipboardItemDelete = onClipboardItemDelete,
     )
 
     private val preeditPinner = PreeditPinner(context)
@@ -71,29 +80,23 @@ class KeyboardWindowView(
     }
 
 
-    fun updateSchemaLayout(schemaId: String, name: String, layout: String) {
-        keyboardManager.updateSchemaLayout(layout)
-        keyboardManager.currentKeyboard()?.updateSpaceKeyText(name)
+    fun onSchemaChanged(schemaId: String) {
+        keyboardManager.onSchemaChanged(schemaId)
     }
 
 
     fun onConfigChanged(key: String) {
         when (key) {
             SchemaManager.KEY_ENABLED_IDS -> keyboardManager.onConfigChanged(key)
-            KeyboardManager.Keyboard.KEY_HEIGHT,
-            KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL,
-            KeyboardManager.Keyboard.Padding.KEY_BOTTOM,
-            KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
+            KeyboardManager.Keyboard.KEY_HEIGHT, KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL, KeyboardManager.Keyboard.Padding.KEY_BOTTOM, KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
                 panel.view.updateHorizontalPadding(
                     KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
                 )
                 requestLayout()
             }
 
-            KeyboardManager.Keyboard.KeyRadius.KEY,
-            KeyboardManager.Keyboard.KEY_THEME,
-            KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL,
-            KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
+            KeyboardManager.Keyboard.KeyRadius.KEY, KeyboardManager.Keyboard.KEY_THEME, KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL, KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
+
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {
                 keyboardManager.setRippleEnabled(
                     KeyboardManager.Keyboard.RippleEffect.isEnabled(context)
@@ -104,11 +107,22 @@ class KeyboardWindowView(
         }
     }
 
+    private var cachedBottomInset = 0
+
     init {
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            view.requestLayout()
+            val bottom = maxOf(
+                insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures()).bottom,
+                insets.getInsets(WindowInsetsCompat.Type.systemGestures()).bottom,
+            )
+            if (bottom != cachedBottomInset) {
+                cachedBottomInset = bottom
+                view.requestLayout()
+            }
             insets
         }
+
         setBackgroundColor(cachedColors.background)
 
         addView(panel.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -117,15 +131,21 @@ class KeyboardWindowView(
             panel.candidateGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
         addView(panel.menuGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(panel.textEditingView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(panel.clipboardView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(panel.confirmOverlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
 
     fun toggleMenu() {
         panel.toggleMenu()
     }
 
+    fun showTextEditing() = panel.showTextEditing()
+
+    fun hideTextEditing() = panel.hideTextEditing()
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        ViewCompat.requestApplyInsets(this)
     }
 
     override fun onDetachedFromWindow() {
@@ -151,7 +171,7 @@ class KeyboardWindowView(
 
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child === panel.view || child === panel.menuGrid || child.isGone) continue
+            if (child === panel.view || child === panel.menuGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.confirmOverlay || child.isGone) continue
             child.measure(
                 MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
@@ -159,6 +179,21 @@ class KeyboardWindowView(
         }
 
         panel.menuGrid.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+        )
+
+        panel.textEditingView.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+        )
+
+        panel.clipboardView.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+        )
+
+        panel.confirmOverlay.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
         )
@@ -177,12 +212,15 @@ class KeyboardWindowView(
 
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child === panel.view || child === panel.candidateGrid || child === panel.menuGrid || child.isGone) continue
+            if (child === panel.view || child === panel.candidateGrid || child === panel.menuGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.confirmOverlay || child.isGone) continue
             child.layout(hPad, barH, hPad + contentW, barH + cHeight)
         }
 
         panel.candidateGrid.layout(hPad, barH, hPad + contentW, barH + cHeight)
         panel.menuGrid.layout(hPad, barH, hPad + contentW, barH + cHeight)
+        panel.textEditingView.layout(hPad, barH, hPad + contentW, barH + cHeight)
+        panel.clipboardView.layout(hPad, barH, hPad + contentW, barH + cHeight)
+        panel.confirmOverlay.layout(hPad, barH, hPad + contentW, barH + cHeight)
     }
 
 
@@ -223,7 +261,19 @@ class KeyboardWindowView(
 
     private fun contentHeight(): Int {
         val percent = KeyboardManager.Keyboard.getHeightPercent(context)
-        return (resources.displayMetrics.heightPixels * percent / 100).coerceAtLeast(minimumHeight)
+        val fullHeight = fullScreenHeight()
+        return (fullHeight * percent / 100).coerceAtLeast(minimumHeight)
+    }
+
+    private fun fullScreenHeight(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return wm.maximumWindowMetrics.bounds.height()
+        }
+        val dm = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION") (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(
+            dm
+        )
+        return dm.heightPixels
     }
 
     private fun dpToPx(dp: Int): Int {
@@ -232,29 +282,27 @@ class KeyboardWindowView(
         ).toInt()
     }
 
-    @SuppressLint("DiscouragedApi")
-    private fun navbarFrameHeight(): Int {
-        val resId = resources.getIdentifier("navigation_bar_frame_height", "dimen", "android")
-        return try {
-            resources.getDimensionPixelSize(resId)
-        } catch (_: Resources.NotFoundException) {
-            (fallbackNavBarHeight * resources.displayMetrics.density).toInt()
-        }
-    }
-
     private fun resolveBottomInset(): Int {
         if (KeyboardManager.Keyboard.getIgnoreInsets(context)) return 0
-        val insets = ViewCompat.getRootWindowInsets(this) ?: return navbarFrameHeight()
-        val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-        val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
-        var insetsBottom = max(navBars.bottom, mandatory.bottom)
-        if (insetsBottom <= 0) {
-            val gesturesBottom = insets.getInsets(WindowInsetsCompat.Type.systemGestures()).bottom
-            if (gesturesBottom > 0) {
-                insetsBottom = max(gesturesBottom, navbarFrameHeight())
-            }
+        if (cachedBottomInset > 0) return cachedBottomInset
+        val computed = computeBottomInset()
+        if (computed > 0) cachedBottomInset = computed
+        return computed
+    }
+
+    @SuppressLint("DiscouragedApi", "InternalInsetResource")
+    private fun computeBottomInset(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val insets = WindowInsetsCompat.toWindowInsetsCompat(
+                wm.maximumWindowMetrics.windowInsets, this
+            )
+            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+            val systemGestures = insets.getInsets(WindowInsetsCompat.Type.systemGestures())
+            return maxOf(navBars.bottom, mandatory.bottom, systemGestures.bottom)
         }
-        return insetsBottom
+        val resId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resId > 0) resources.getDimensionPixelSize(resId) else 0
     }
 
     override fun onAttach() {}
