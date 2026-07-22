@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
 import android.view.Gravity
@@ -42,7 +43,7 @@ import splitties.views.textResource
 class TextEditView(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-    private val buttonBordered: Boolean = true,
+    private val buttonBordered: Boolean = false,
     private val buttonRadius: Float = colors.cornerRadius,
 ) : ComponentView(context, colors) {
 
@@ -392,14 +393,15 @@ class TextEditingButton(
     private fun buildBackground() {
         val activated = hasActivatedState && isActivated
         val bgColor = if (activated) bgActive else bgNormal
-        val strokeColor = if (activated) strokeActive else strokeNormal
+        var strokeColor = if (activated) strokeActive else strokeNormal
         val pColor = if (activated) pressedActive else pressedColor
 
-        val normalBg = if (bordered) {
-            borderedKeyBackgroundDrawable(bgColor, strokeColor, radius, strokeWidth, hInset, vInset)
-        } else {
-            flatKeyBackgroundDrawable(bgColor, strokeColor, radius, strokeWidth, hInset, vInset)
+        if (!bordered) {
+            strokeColor = Color.TRANSPARENT
         }
+
+        val normalBg =
+            borderedKeyBackgroundDrawable(bgColor, strokeColor, radius, strokeWidth, hInset, vInset)
         val pressedBg = if (bordered) {
             borderedKeyBackgroundDrawable(pColor, strokeColor, radius, strokeWidth, hInset, vInset)
         } else {

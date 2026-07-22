@@ -88,6 +88,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             QwertyKeyboard.NAME -> QwertyKeyboard(context, cachedColors)
             T9Keyboard.NAME -> T9Keyboard(context, cachedColors)
             SymbolKeyboard.NAME -> SymbolKeyboard(context, cachedColors)
+            NumberKeyboard.NAME -> NumberKeyboard(context, cachedColors)
             else -> error("Unknown keyboard: $name")
         }
         b.setRippleEnabled(KeyboardManager.Keyboard.RippleEffect.isEnabled(context))

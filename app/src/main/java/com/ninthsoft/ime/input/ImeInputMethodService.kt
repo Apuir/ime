@@ -85,6 +85,7 @@ class ImeInputMethodService : InputMethodService() {
             onClipboardItemClick = { entry -> currentInputConnection?.commitText(entry.text, 1) },
             onClipboardClear = { ClipboardRepository.clearAll(this) },
             onClipboardItemDelete = { entry -> ClipboardRepository.removeEntry(this, entry.text) },
+            onCopyTextCommit = { text -> currentInputConnection?.commitText(text, 1) },
         ).apply { setKeyActionListener(keyActionListener) }
         return keyboardWindow!!.view
     }

@@ -3,12 +3,16 @@ package com.ninthsoft.ime.data.manager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import androidx.core.content.edit
 import timber.log.Timber
 import org.json.JSONArray
 import org.json.JSONObject
 
 object ClipboardRepository {
+
+    var onNewEntry: ((Entry) -> Unit)? = null
+    var onContentChanged: (() -> Unit)? = null
 
     private const val PREFS_NAME = "clipboard_settings"
     private const val KEY_ENTRIES = "entries"
@@ -71,6 +75,7 @@ object ClipboardRepository {
     data class Entry(
         val text: String,
         val timestamp: Long = System.currentTimeMillis(),
+        val cloud: Boolean = false,
     )
 
     fun getEntries(context: Context): List<Entry> {
@@ -80,7 +85,9 @@ object ClipboardRepository {
             val arr = JSONArray(json)
             (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
-                Entry(obj.getString("text"), obj.getLong("timestamp"))
+                Entry(
+                    obj.getString("text"), obj.getLong("timestamp"), obj.optBoolean("cloud", false)
+                )
             }.sortedByDescending { it.timestamp }
         } catch (e: Exception) {
             Timber.e(e, "Failed to load clipboard entries")
@@ -91,6 +98,7 @@ object ClipboardRepository {
     fun addEntry(context: Context, text: String) {
         if (text.isBlank()) return
         val entries = getEntries(context).toMutableList()
+        val existing = entries.firstOrNull { it.text == text }
         entries.removeAll { it.text == text }
         entries.add(Entry(text))
         val max = getMaxEntries(context)
@@ -99,6 +107,7 @@ object ClipboardRepository {
             entries.subList(max, entries.size).clear()
         }
         saveEntries(context, entries)
+        if (existing == null) onNewEntry?.invoke(Entry(text))
     }
 
     fun clearAll(context: Context) {
@@ -119,6 +128,7 @@ object ClipboardRepository {
             val obj = JSONObject()
             obj.put("text", entry.text)
             obj.put("timestamp", entry.timestamp)
+            if (entry.cloud) obj.put("cloud", true)
             arr.put(obj)
         }
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
@@ -127,6 +137,27 @@ object ClipboardRepository {
     }
 
     // ── 系统剪切板监听 ──
+
+    fun checkCurrentClipboard(context: Context) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = cm.primaryClip ?: return
+        if (clip.itemCount == 0) return
+        val text = clip.getItemAt(0).coerceToText(context).toString()
+        if (text.isBlank()) return
+        lastText = text
+
+        val clipTimestamp = if (Build.VERSION.SDK_INT >= 33) {
+            clip.description?.timestamp?.takeIf { it > 0 } ?: -1L
+        } else -1L
+        if (clipTimestamp > 0) lastClipTimestamp = clipTimestamp
+
+        val entries = getEntries(context)
+        if (entries.none { it.text == text }) {
+            lastCopyText = text
+            lastCopyTimestamp = System.currentTimeMillis()
+            addEntry(context, text)
+        }
+    }
 
     fun startMonitoring(context: Context) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -141,7 +172,8 @@ object ClipboardRepository {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         try {
             cm.removePrimaryClipChangedListener(clipListener)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
@@ -151,14 +183,40 @@ object ClipboardRepository {
     @Volatile
     private var lastText: String = ""
 
+    @Volatile
+    private var lastClipTimestamp: Long = -1L
+
+    @Volatile
+    var lastCopyText: String? = null
+        private set
+
+    @Volatile
+    var lastCopyTimestamp: Long = 0L
+        private set
+
     private fun onClipChanged() {
         val appContext = com.ninthsoft.ime.base.util.appContext ?: return
         val cm = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0) return
+
+        val clipTimestamp = if (Build.VERSION.SDK_INT >= 33) {
+            clip.description?.timestamp?.takeIf { it > 0 } ?: -1L
+        } else -1L
+        if (clipTimestamp > 0) {
+            if (clipTimestamp == lastClipTimestamp) return
+            lastClipTimestamp = clipTimestamp
+        }
+
         val text = clip.getItemAt(0).coerceToText(appContext).toString()
-        if (text.isBlank() || text == lastText) return
+        if (text.isBlank()) return
+        if (clipTimestamp <= 0 && text == lastText) return
         lastText = text
+
+        lastCopyText = text
+        lastCopyTimestamp = System.currentTimeMillis()
+
         addEntry(appContext, text)
+        onContentChanged?.invoke()
     }
 }

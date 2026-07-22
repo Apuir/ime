@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -27,7 +28,7 @@ class ClipboardView(
     private val density = resources.displayMetrics.density
 
     private val pillR = 6f * density
-    private val pillPad = 10f * density
+    private val pillPad = 8f * density
     private val gap = 6f * density
     private val hMargin = 10f * density
 
@@ -40,6 +41,8 @@ class ClipboardView(
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val indexPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val cloudDrawable: Drawable? = context.getDrawable(R.drawable.ic_keyboard_clipboard_cloud)
+    private val cloudIconSize = 14f * density
 
     private var pressedIndex = -1
     private var maxScroll = 0f
@@ -101,10 +104,11 @@ class ClipboardView(
         val panel = KeyboardColors.resolve(context).panel
         bgPaint.color = panel.candidateBackground
         textPaint.color = panel.candidateText
-        textPaint.textSize = 16f * density
+        textPaint.textSize = 17f * density
         indexPaint.color = panel.candidateIndex
         indexPaint.textSize = 13f * density
         pressPaint.color = panel.candidateBackground
+        cloudDrawable?.setTint(panel.candidateIndex)
     }
 
     private fun computeEntryLayouts() {
@@ -114,7 +118,7 @@ class ClipboardView(
         }
         val fm = textPaint.fontMetrics
         val lh = fm.descent - fm.ascent
-        val maxTextW = width - hMargin * 2 - pillPad * 2 - indexPaint.measureText("9. ")
+        val maxTextW = width - hMargin * 2 - pillPad * 2 - indexPaint.measureText("9. ") - cloudIconSize - 2f * density
         entryLayouts = entries.map { entry ->
             val lines = breakText(entry.text, maxTextW, 4)
             EntryLayout(height = lh * lines.size + pillPad * 2, lines = lines)
@@ -190,6 +194,17 @@ class ClipboardView(
             val baseline = pillY + pillPad - fm.ascent
 
             canvas.drawText(indexLabel, left + pillPad, baseline, indexPaint)
+
+            if (entry.cloud && cloudDrawable != null) {
+                val iconLeft = left + pillPad + indexW + 2f * density
+                val iconTop = baseline - cloudIconSize
+                cloudDrawable.setBounds(
+                    iconLeft.toInt(), iconTop.toInt(),
+                    (iconLeft + cloudIconSize).toInt(), (iconTop + cloudIconSize).toInt()
+                )
+                cloudDrawable.draw(canvas)
+            }
+
             for ((li, line) in layout.lines.withIndex()) {
                 canvas.drawText(line, textStartX, baseline + lh * li, textPaint)
             }

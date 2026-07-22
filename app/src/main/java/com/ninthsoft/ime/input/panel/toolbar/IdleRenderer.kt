@@ -24,6 +24,7 @@ class IdleRenderer(
 
     var textEditingMode: Boolean = false
     var clipboardMode: Boolean = false
+    var copyText: String? = null
 
     private val centerButtons = listOf(
         ImageButton(undoRightDrawable, KawaiiPanel.Action.Undo, iconScale = iconScale),
@@ -54,7 +55,6 @@ class IdleRenderer(
         val menuCenter = menuLeft + fixedW / 2f
         val centerAreaLeft = menuLeft + fixedW
         val centerAreaW = width - centerAreaLeft - hPad - fixedW
-        val otherW = centerAreaW / centerButtons.size
 
         if (pressRadius > 0f && pressRadiusMax > 0f) {
             val progress = (pressRadius / pressRadiusMax).coerceIn(0f, 1f)
@@ -67,7 +67,7 @@ class IdleRenderer(
         }
 
         if (menuDrawable != null) {
-            val d = if (clipboardMode || textEditingMode || showArrow) arrowDrawable else menuDrawable
+            val d = if (clipboardMode || textEditingMode || copyText != null || showArrow) arrowDrawable else menuDrawable
             if (d != null) {
                 d.setTint(paints.toolbarIconColor)
                 val iw = d.intrinsicWidth.toFloat() * iconScale
@@ -80,18 +80,64 @@ class IdleRenderer(
             }
         }
 
-        for ((i, btn) in centerButtons.withIndex()) {
-            val savedColor = paints.toolbarIconColor
-            val disabled = (clipboardMode || textEditingMode) && i >= 2
-            if (disabled) {
-                paints.toolbarIconColor = (savedColor and 0x00FFFFFF) or 0x62000000.toInt()
+        if (copyText != null) {
+            val t = copyText!!
+            val textPaint = paints.candidateTextPaint
+            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = paints.candidateBgPaint.color
             }
-            btn.draw(
-                canvas, centerAreaLeft + otherW * i + otherW / 2f,
-                height / 2f, paints, density,
-            )
-            if (disabled) {
-                paints.toolbarIconColor = savedColor
+            val pillR = 6f * density
+            val pillH = 34f * density
+            val pillPad = 8f * density
+            val clipLeft = centerAreaLeft + 16f * density
+            val clipRight = width - hPad - fixedW - 16f * density
+            val textCenterY = height / 2f
+            val gap = 8f * density
+            val iconW = (clipboardDrawable?.intrinsicWidth?.toFloat()?.times(iconScale)?.toInt() ?: 0)
+            val iconH = (clipboardDrawable?.intrinsicHeight?.toFloat()?.times(iconScale)?.toInt() ?: 0)
+            val iconAvail = if (clipboardDrawable != null) iconW + gap else 0f
+            val availW = clipRight - clipLeft
+            val ellipsized = if (textPaint.measureText(t) > availW - iconAvail - pillPad * 2) {
+                var s = t
+                while (s.isNotEmpty() && textPaint.measureText(s + "…") > availW - iconAvail - pillPad * 2) {
+                    s = s.dropLast(1)
+                }
+                s + "…"
+            } else t
+            val textW = textPaint.measureText(ellipsized)
+            val totalW = iconAvail + textW
+            val contentLeft = clipLeft + (availW - totalW) / 2f
+            val bgLeft = contentLeft - pillPad
+            val bgRight = contentLeft + totalW + pillPad
+            val bgTop = textCenterY - pillH / 2f
+            val bgBottom = textCenterY + pillH / 2f
+            canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBottom, pillR, pillR, bgPaint)
+            var drawX = contentLeft
+            if (clipboardDrawable != null) {
+                clipboardDrawable.setTint(paints.toolbarIconColor)
+                val iconTop = (textCenterY - iconH / 2f).toInt()
+                clipboardDrawable.setBounds(drawX.toInt(), iconTop, drawX.toInt() + iconW, iconTop + iconH)
+                clipboardDrawable.draw(canvas)
+                drawX += iconW + gap
+            }
+            val textY = textCenterY - (textPaint.descent() + textPaint.ascent()) / 2f
+            canvas.drawText(ellipsized, drawX, textY, textPaint)
+        } else {
+            val otherW = centerAreaW / centerButtons.size
+            for ((i, btn) in centerButtons.withIndex()) {
+                val savedColor = paints.toolbarIconColor
+                val disabled = (clipboardMode || textEditingMode) && i >= 2
+                if (disabled) {
+                    paints.toolbarIconColor = (savedColor and 0x00FFFFFF) or 0x62000000.toInt()
+                }
+                btn.draw(
+                    canvas, centerAreaLeft + otherW * i + otherW / 2f,
+                    height / 2f, paints, density,
+                )
+                if (disabled) {
+                    paints.toolbarIconColor = savedColor
+                }
             }
         }
 
@@ -100,6 +146,7 @@ class IdleRenderer(
         val expandIcon = when {
             clipboardMode -> clearDrawable
             textEditingMode -> clipboardDrawable
+            copyText != null -> expandDrawable
             else -> expandDrawable
         }
         if (expandIcon != null) {
@@ -160,6 +207,7 @@ class IdleRenderer(
             }
 
             else -> {
+                if (copyText != null) return null
                 val centerAreaW = width - menuRight - hPad - fixedW
                 val otherW = centerAreaW / centerButtons.size
                 val index = ((x - menuRight) / otherW).toInt().coerceIn(0, centerButtons.size - 1)
@@ -177,5 +225,5 @@ class IdleRenderer(
         }
     }
 
-    private var showArrow: Boolean = false
+    var showArrow: Boolean = false
 }

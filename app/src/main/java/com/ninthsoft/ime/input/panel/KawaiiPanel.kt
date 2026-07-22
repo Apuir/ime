@@ -26,6 +26,8 @@ class KawaiiPanel(
     var onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
     var onClipboardClear: (() -> Unit)? = null,
     var onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
+    var onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
+    var onCopyTextCommit: ((String) -> Unit)? = null,
 ) : IPanel {
 
     sealed class Action {
@@ -60,6 +62,7 @@ class KawaiiPanel(
         data object Menu : State()
         data object TextEditing : State()
         data object Clipboard : State()
+        data object Copy : State()
     }
 
     private var state: State = State.Idle
@@ -68,7 +71,13 @@ class KawaiiPanel(
             exit(field)
             field = value
             enter(field)
+            if (field == State.Idle) checkPendingCopy()
         }
+
+    private var copyText: String? = null
+    private var clipboardCheckRunnable: Runnable? = null
+    private var lastShownCopyTimestamp: Long = 0L
+    private var lastShownCopyText: String? = null
 
     private fun exit(state: State) {
         confirmOverlay.dismiss()
@@ -84,6 +93,12 @@ class KawaiiPanel(
             State.Clipboard -> {
                 clipboardView.hide()
                 (view.currentRenderer as? IdleRenderer)?.clipboardMode = false
+                view.invalidate()
+            }
+
+            State.Copy -> {
+                (view.currentRenderer as? IdleRenderer)?.copyText = null
+                (view.currentRenderer as? IdleRenderer)?.showArrow = false
                 view.invalidate()
             }
 
@@ -109,6 +124,12 @@ class KawaiiPanel(
                 clipboardView.show(ClipboardRepository.getEntries(context))
             }
 
+            State.Copy -> {
+                val r = view.currentRenderer as? IdleRenderer
+                r?.copyText = copyText
+                view.invalidate()
+            }
+
             State.Idle -> {}
         }
     }
@@ -123,7 +144,19 @@ class KawaiiPanel(
             view.onTap?.invoke(TouchResult.SelectCandidate(candidate))
         },
         onSidePanelAction = onSidePanelAction,
-    ).apply { }
+    ).apply {
+        onWordForget = { candidate, x, y ->
+            confirmOverlay.confirm(
+                message = context.getString(
+                    R.string.candidate_forget_confirm,
+                    if (candidate.text.length > 5) candidate.text.take(5) + "..." else candidate.text
+                ),
+                onConfirm = { handleCandidateForget(candidate) },
+                cardX = x,
+                cardY = y,
+            )
+        }
+    }
 
     val menuGrid = MenuGridView(
         context = context,
@@ -166,6 +199,16 @@ class KawaiiPanel(
                 cardY = y + 100,
             )
         }
+
+        ClipboardRepository.onNewEntry = { entry ->
+            showCopyIfRecent(entry.text)
+        }
+
+        ClipboardRepository.onContentChanged = {
+            if (state == State.Clipboard) {
+                clipboardView.show(ClipboardRepository.getEntries(context))
+            }
+        }
     }
 
     private fun handleClipboardClear() {
@@ -178,8 +221,30 @@ class KawaiiPanel(
         clipboardView.show(ClipboardRepository.getEntries(context))
     }
 
+    private fun handleCandidateForget(candidate: EngineMessage.Candidate) {
+        onCandidateForget?.invoke(candidate)
+    }
+
     fun onSelectionUpdate(start: Int, end: Int) {
         textEditingView.setSelection(start, end)
+    }
+
+    private fun showCopyIfRecent(text: String) {
+        copyText = text
+        val recentTime = ClipboardRepository.lastCopyTimestamp
+        if (recentTime <= lastShownCopyTimestamp || System.currentTimeMillis() - recentTime >= 5 * 60 * 1000L) return
+        if (text == lastShownCopyText) return
+        lastShownCopyTimestamp = recentTime
+        lastShownCopyText = text
+        when (state) {
+            State.Idle -> state = State.Copy
+            is State.Copy -> {
+                (view.currentRenderer as? IdleRenderer)?.copyText = copyText
+                view.invalidate()
+            }
+            State.Clipboard -> clipboardView.show(ClipboardRepository.getEntries(context))
+            else -> {}
+        }
     }
 
     override val view: KawaiiPanelView = KawaiiPanelView(context).also { v ->
@@ -200,7 +265,7 @@ class KawaiiPanel(
 
                         Action.SwitchKeyboard -> {
                             when (state) {
-                                State.TextEditing, State.Clipboard -> state = State.Idle
+                                State.TextEditing, State.Clipboard, State.Copy -> state = State.Idle
                                 else -> onToolbarAction?.invoke(result.action)
                             }
                         }
@@ -216,7 +281,12 @@ class KawaiiPanel(
                 is TouchResult.SelectRerankedCandidate -> onRerankedSelected?.invoke(result.text)
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
                 is TouchResult.CollapseCandidates -> v.setExpanded(false)
-                null -> {}
+                null -> {
+                    if (state == State.Copy && copyText != null) {
+                        onCopyTextCommit?.invoke(copyText ?: "")
+                        state = State.Idle
+                    }
+                }
             }
         }
 
@@ -245,7 +315,41 @@ class KawaiiPanel(
 
     override fun onFinishInputView(finishingInput: Boolean) {
         confirmOverlay.dismiss()
+        view.removeCallbacks(clipboardCheckRunnable)
         state = State.Idle
+    }
+
+    fun onStartInputView() {
+        if (clipboardCheckRunnable == null) {
+            clipboardCheckRunnable = object : Runnable {
+                override fun run() {
+                    ClipboardRepository.checkCurrentClipboard(context)
+                    checkPendingCopy()
+                    view.postDelayed(this, 2000L)
+                }
+            }
+        }
+        ClipboardRepository.checkCurrentClipboard(context)
+        checkPendingCopy()
+        view.postDelayed({
+            ClipboardRepository.checkCurrentClipboard(context)
+            checkPendingCopy()
+        }, 500L)
+        view.removeCallbacks(clipboardCheckRunnable!!)
+        view.postDelayed(clipboardCheckRunnable!!, 2000L)
+    }
+
+    private fun checkPendingCopy() {
+        if (state != State.Idle) return
+        val text = ClipboardRepository.lastCopyText ?: return
+        if (text == lastShownCopyText) return
+        val time = ClipboardRepository.lastCopyTimestamp
+        if (time > lastShownCopyTimestamp && System.currentTimeMillis() - time < 5 * 60 * 1000L) {
+            copyText = text
+            lastShownCopyTimestamp = time
+            lastShownCopyText = text
+            state = State.Copy
+        }
     }
 
     @SuppressLint("UseCompatLoadingForDrawables")
@@ -271,8 +375,10 @@ class KawaiiPanel(
             ).also {
                 it.textEditingMode = (state == State.TextEditing)
                 it.clipboardMode = (state == State.Clipboard)
+                it.copyText = if (state == State.Copy) copyText else null
             }
         } else {
+            if (state == State.Copy) state = State.Idle
             view.scrollX = 0f
             view.currentRenderer = ComposingRenderer(
                 list, context.getDrawable(R.drawable.ic_keyboard_expand_more),

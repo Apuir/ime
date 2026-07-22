@@ -3,9 +3,9 @@ package com.ninthsoft.ime.input.panel.component
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
-import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.animation.OvershootInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.ninthsoft.ime.R
@@ -113,35 +113,56 @@ class ConfirmOverlay(
     ) {
         this.onConfirm = onConfirm
         this.onCancel = onCancel
-        // 动态设置 messageView 的最大宽度（比如限制为当前 Overlay 宽度的 75% 左右），以便长文本自动折行
-        messageView.post {
-            val maxWidth = (measuredWidth - marginH * 2).coerceAtLeast(dp(200))
-            messageView.maxWidth = maxWidth
-        }
         messageView.text = message
-        super.show()
-        card.post {
-            val cx =
-                if (cardX.isNaN()) measuredWidth - card.measuredWidth - marginH else cardX.toInt()
-            val cy =
-                if (cardY.isNaN()) measuredHeight - card.measuredHeight - marginV else cardY.toInt()
-            val maxX = (measuredWidth - card.measuredWidth - marginH).coerceAtLeast(marginH)
-            val maxY = (measuredHeight - card.measuredHeight - marginV).coerceAtLeast(marginV)
-            card.translationX = cx.coerceIn(marginH, maxX).toFloat()
-            card.translationY = cy.coerceIn(marginV, maxY).toFloat()
-            invalidate()
-        }
+
+        bringToFront()
+        card.alpha = 0f
+        card.scaleX = 0f
+        card.scaleY = 0f
+        visibility = VISIBLE
+
+        card.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View?, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+            ) {
+                card.removeOnLayoutChangeListener(this)
+                val maxWidth = (measuredWidth - marginH * 2).coerceAtLeast(dp(200))
+                messageView.maxWidth = maxWidth
+
+                card.pivotX = card.width / 2f
+                card.pivotY = card.height / 2f
+
+                val cx =
+                    if (cardX.isNaN()) measuredWidth - card.measuredWidth - marginH else cardX.toInt()
+                val cy =
+                    if (cardY.isNaN()) measuredHeight - card.measuredHeight - marginV else cardY.toInt()
+                val maxX = (measuredWidth - card.measuredWidth - marginH).coerceAtLeast(marginH)
+                val maxY = (measuredHeight - card.measuredHeight - marginV).coerceAtLeast(marginV)
+                card.translationX = cx.coerceIn(marginH, maxX).toFloat()
+                card.translationY = cy.coerceIn(marginV, maxY).toFloat()
+
+                card.scaleX = 0f
+                card.scaleY = 0f
+                card.alpha = 1f
+                invalidate()
+                card.animate()
+                    .scaleX(1f).scaleY(1f)
+                    .setDuration(200)
+                    .setInterpolator(OvershootInterpolator(2f))
+                    .start()
+            }
+        })
     }
 
     fun dismiss() {
-        hide()
-    }
-
-    override fun hide() {
         if (visibility != VISIBLE) return
+        card.animate().cancel()
         animate().cancel()
-        visibility = View.GONE
-        scaleY = 1f
+        visibility = GONE
+        card.scaleX = 1f
+        card.scaleY = 1f
+        card.alpha = 1f
         card.translationX = 0f
         card.translationY = 0f
     }

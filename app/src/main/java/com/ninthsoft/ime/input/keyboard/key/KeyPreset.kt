@@ -42,6 +42,21 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
     ),
 )
 
+fun commitKey(
+    character: String, percentWidth: Float = 0.23333f
+) = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = character,
+        textSize = 23f,
+        variant = Variant.Normal,
+        percentWidth = percentWidth
+    ), behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
+    ), popups = arrayOf(
+        KeyDef.Popup.Preview(character)
+    )
+)
+
 fun sidePannelKey(percentWidth: Float = 0.15f, rowSpan: Int = 3, visableRow: Int = 4) = KeyDef(
     appearance = KeyDef.Appearance.SidePannel(
         rowSpan = rowSpan,
@@ -57,6 +72,7 @@ fun sidePannelNormalItem(character: String, percentWidth: Float = 0.15f) = KeyDe
         displayText = character,
         textSize = 15f,
         percentWidth = percentWidth,
+        variant = Variant.Alternative
     ),
     behaviors = setOf(),
 )
@@ -165,4 +181,42 @@ fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
         border = Border.On,
     ),
     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
+)
+
+fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.AltText(
+        displayText = "分词",
+        altText = "1",
+        textSize = 16f,
+        percentWidth = percentWidth,
+        mainTextTranslationY = 4,
+        altTextTranslationY = 6
+    ),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(
+            KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_APOSTROPHE)
+        )
+    ),
+)
+
+fun clearKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = "清空",
+        textSize = 15f,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.ClearAction)
+    ),
+)
+
+fun infiniteKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_infinite,
+        viewId = KeyView.button_lang,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
 )

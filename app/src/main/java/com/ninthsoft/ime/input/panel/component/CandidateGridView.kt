@@ -25,8 +25,10 @@ import com.ninthsoft.ime.input.keyboard.key.prevPageKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sin
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
+import androidx.core.graphics.withRotation
 import androidx.core.graphics.withSave
 import timber.log.Timber
 
@@ -50,6 +52,8 @@ class CandidateGridView(
     )
 
     private var allCandidates: List<EngineMessage.Candidate> = emptyList()
+    var onCandidatesReordered: ((List<EngineMessage.Candidate>) -> Unit)? = null
+    var onWordForget: ((EngineMessage.Candidate, Float, Float) -> Unit)? = null
 
     private val prevBtn =
         ImageKeyView(context, colors, prevPageKey(1f).appearance as KeyDef.Appearance.Image)
@@ -97,11 +101,25 @@ class CandidateGridView(
         private var scrollOffsetY = 0f
         private var lastY = 0f
         private var downY = 0f
+        private var downIndex = -1
         private var dragging = false
         private var longPressTriggered = false
-        private val longPressRunnable = Runnable { longPressTriggered = true }
+        private var longPressMoved = false
+        private var longPressIndex = -1
+        private var dragIndex = -1
+        private var dragTargetIndex = -1
+        private var dragFingerX = 0f
+        private var dragFingerY = 0f
+        private val longPressRunnable = Runnable {
+            longPressTriggered = true
+            longPressIndex = if (!dragging && horizontalDrag < 0) downIndex else -1
+            invalidate()
+        }
         private var stretch = 0f
         private var stretchAnimator: ValueAnimator? = null
+        private var shakePhase = 0f
+        private var shakeRunnable: Runnable? = null
+        private var shakeMaxAngle = 2f
         private val overScrollLimit get() = max(height * 0.45f, 1f)
 
         private val maxScroll
@@ -212,6 +230,7 @@ class CandidateGridView(
         override fun onDraw(canvas: Canvas) {
             if (width <= 0 || height <= 0) return
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+
             val rowWidth = width.toFloat()
             val h = height.toFloat()
 
@@ -221,42 +240,67 @@ class CandidateGridView(
             canvas.withSave {
                 clipRect(0f, 0f, rowWidth, h)
                 for (i in positions.indices) {
+                    if (i == dragIndex) continue
+
                     val pos = positions[i]
                     if (pos.row < firstRow) continue
                     val y = (pos.row - firstRow) * rowH + yOff
                     if (y > h) break
                     val c = allCandidates[i]
                     val tw = textPaint.measureText(c.text)
-                    val isPressed = i == pressedIndex
+                    val isTarget = i == dragTargetIndex && dragIndex >= 0
+
+                    val shakeOff = if (dragIndex >= 0 && i != dragIndex) {
+                        kotlin.math.sin(shakePhase + i * 1.9f) * 0.8f * resources.displayMetrics.density
+                    } else 0f
+                    val shakeAngle = if (dragIndex >= 0 && i != dragIndex) {
+                        kotlin.math.sin(shakePhase + i * 1.9f) * shakeMaxAngle
+                    } else 0f
 
                     if (pos.extraWide) {
                         val sx = rowScrollX[pos.row] ?: 0f
                         canvas.withSave {
                             clipRect(0f, y, rowWidth, y + rowH)
-                            if (isPressed) {
-                                canvas.drawRect(0f, y, rowWidth, y + rowH, pressPaint)
+                            if (isTarget) {
+                                val d = resources.displayMetrics.density
+                                canvas.drawRoundRect(
+                                    0f, y, rowWidth, y + rowH, 6f * d, 6f * d, pressPaint
+                                )
                             }
-                            drawText(
-                                c.text,
-                                cellPad - sx,
-                                y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f,
-                                textPaint
-                            )
+                            val textX = cellPad - sx + shakeOff
+                            val textY =
+                                y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+                            if (shakeAngle != 0f) {
+                                val cx = textX + tw / 2f
+                                val cy = textY
+                                canvas.withRotation(shakeAngle, cx, cy) {
+                                    drawText(c.text, textX, textY, textPaint)
+                                }
+                            } else {
+                                drawText(c.text, textX, textY, textPaint)
+                            }
                         }
                     } else {
-                        val rectLeft = pos.xStart
-                        val rectRight = pos.xStart + pos.width
-                        if (isPressed) {
-                            canvas.drawRect(rectLeft, y, rectRight, y + rowH, pressPaint)
+                        val rectLeft = pos.xStart + shakeOff
+                        val rectRight = pos.xStart + pos.width + shakeOff
+                        if (isTarget) {
+                            val d = resources.displayMetrics.density
+                            canvas.drawRoundRect(
+                                rectLeft, y, rectRight, y + rowH, 6f * d, 6f * d, pressPaint
+                            )
                         }
-                        val txtLeft = pos.xStart + (pos.width - tw) / 2f
+                        val txtLeft = pos.xStart + shakeOff + (pos.width - tw) / 2f
                         val textX = txtLeft.coerceAtLeast(rectLeft)
-                        canvas.drawText(
-                            c.text,
-                            textX,
-                            y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f,
-                            textPaint
-                        )
+                        val textY = y + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+                        if (shakeAngle != 0f) {
+                            val cx = textX + tw / 2f
+                            val cy = textY
+                            canvas.withRotation(shakeAngle, cx, cy) {
+                                drawText(c.text, textX, textY, textPaint)
+                            }
+                        } else {
+                            canvas.drawText(c.text, textX, textY, textPaint)
+                        }
                     }
 
                     if (i + 1 < positions.size && !pos.extraWide) {
@@ -269,6 +313,31 @@ class CandidateGridView(
                         }
                     }
                 }
+            }
+
+            if (dragIndex >= 0 && dragIndex in allCandidates.indices) {
+                val c = allCandidates[dragIndex]
+                val dragW = textPaint.measureText(c.text) + cellPad * 2
+                val dragLeft = (dragFingerX - dragW / 2).coerceIn(0f, width - dragW)
+                val dragTop = (dragFingerY - rowH / 2).coerceIn(0f, height - rowH)
+
+                val d = resources.displayMetrics.density
+                val oldColor = bgPaint.color
+                bgPaint.color = sepPaint.color
+                val oldAlpha = bgPaint.alpha
+                bgPaint.alpha = 160
+                canvas.drawRoundRect(
+                    dragLeft, dragTop, dragLeft + dragW, dragTop + rowH, 6f * d, 6f * d, bgPaint
+                )
+                bgPaint.alpha = oldAlpha
+                bgPaint.color = oldColor
+
+                canvas.drawText(
+                    c.text,
+                    dragLeft + cellPad,
+                    dragTop + rowH / 2f - (textPaint.descent() + textPaint.ascent()) / 2f,
+                    textPaint
+                )
             }
         }
 
@@ -290,23 +359,41 @@ class CandidateGridView(
                 MotionEvent.ACTION_DOWN -> {
                     parent.requestDisallowInterceptTouchEvent(true)
                     if (!scroller.isFinished) scroller.abortAnimation()
+
                     velocityTracker = VelocityTracker.obtain()
                     velocityTracker?.addMovement(event)
                     downY = event.y
                     lastY = event.y
                     downX = event.x
+                    downIndex = hitTest(event.x, event.y)
+                    pressedIndex = downIndex
                     horizontalDrag = -1
                     dragging = false
                     longPressTriggered = false
-                    pressedIndex = hitTest(event.x, event.y)
+                    longPressMoved = false
+                    longPressIndex = -1
                     invalidate()
-                    postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                    postDelayed(
+                        longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong()
+                    )
                 }
 
                 MotionEvent.ACTION_MOVE -> {
                     velocityTracker?.addMovement(event)
                     val dy = lastY - event.y
                     val dx = event.x - downX
+                    val absDy = abs(event.y - downY)
+                    val absDx = abs(event.x - downX)
+
+                    if (dragIndex >= 0) {
+                        dragFingerX = event.x
+                        dragFingerY = event.y
+                        val hit = hitTest(event.x, event.y)
+                        dragTargetIndex = if (hit >= 0 && hit != dragIndex) hit else dragIndex
+                        invalidate()
+                        lastY = event.y
+                        return true
+                    }
 
                     if (horizontalDrag >= 0) {
                         val pos = positions.getOrNull(horizontalDrag)
@@ -322,9 +409,23 @@ class CandidateGridView(
                         return true
                     }
 
-                    if (!dragging) {
-                        val absDy = abs(event.y - downY)
-                        val absDx = abs(event.x - downX)
+                    if (longPressTriggered) {
+                        val moved = absDy > touchSlop || absDx > touchSlop
+                        if (moved) longPressMoved = true
+                        if (moved && longPressIndex >= 0) {
+                            dragIndex = longPressIndex
+                            dragTargetIndex = longPressIndex
+                            pressedIndex = -1
+                            longPressTriggered = false
+                            removeCallbacks(longPressRunnable)
+                            startShake()
+                            invalidate()
+                        }
+                        lastY = event.y
+                        return true
+                    }
+
+                    if (!dragging && !longPressTriggered) {
                         if (absDy > touchSlop && absDy >= absDx) {
                             dragging = true
                             pressedIndex = -1
@@ -343,7 +444,7 @@ class CandidateGridView(
                     if (dragging) {
                         dragBy(dy)
                         invalidate()
-                    } else if (horizontalDrag < 0) {
+                    } else if (horizontalDrag < 0 && !longPressTriggered) {
                         val n = hitTest(event.x, event.y)
                         if (n != pressedIndex) {
                             pressedIndex = n
@@ -361,22 +462,59 @@ class CandidateGridView(
                     recycleVelocityTracker()
                     removeCallbacks(longPressRunnable)
 
+                    if (dragIndex >= 0) {
+                        if (dragTargetIndex >= 0 && dragTargetIndex != dragIndex) {
+                            val mutable = allCandidates.toMutableList()
+                            val item = mutable.removeAt(dragIndex)
+                            mutable.add(dragTargetIndex, item)
+                            allCandidates = mutable
+                            recomputeLayout()
+                            this@CandidateGridView.onCandidatesReordered?.invoke(allCandidates)
+                        }
+                        dragIndex = -1
+                        dragTargetIndex = -1
+                        stopShake()
+                        invalidate()
+                        parent.requestDisallowInterceptTouchEvent(false)
+                        return true
+                    }
+
+                    if (longPressTriggered) {
+                        pressedIndex = -1
+                        longPressTriggered = false
+                        if (!longPressMoved && longPressIndex >= 0 && longPressIndex in allCandidates.indices) {
+                            val firstRow = (scrollOffsetY / rowH).toInt().coerceAtLeast(0)
+                            val yOff = -(scrollOffsetY - firstRow * rowH) + stretch
+                            val pos = positions[longPressIndex]
+                            val rowY = (pos.row - firstRow) * rowH + yOff
+                            val rightEdge = if (pos.extraWide) width.toFloat() else pos.xStart + pos.width
+                            val d = resources.displayMetrics.density
+                            val wordVisibleRow = pos.row - firstRow
+                            val above = wordVisibleRow >= visibleRows - 2
+                            this@CandidateGridView.onWordForget?.invoke(
+                                allCandidates[longPressIndex],
+                                (rightEdge - 40f * d).coerceAtLeast(4f * d),
+                                if (above) rowY - 96f * d else rowY + rowH + 4f * d
+                            )
+                        }
+                        invalidate()
+                        parent.requestDisallowInterceptTouchEvent(false)
+                        return true
+                    }
+
                     if (horizontalDrag >= 0) {
                         horizontalDrag = -1
                     } else if (dragging) {
                         dragging = false
                         springBackIfNeeded()
                         if (abs(velocityY) >= minFlingVelocity) fling(-velocityY.toInt())
-                    } else if (!longPressTriggered) {
+                    } else {
                         val i = pressedIndex
                         pressedIndex = -1
                         invalidate()
                         if (i in allCandidates.indices) {
                             onCandidateSelected?.invoke(allCandidates[i])
                         }
-                    } else {
-                        pressedIndex = -1
-                        invalidate()
                     }
 
                     parent.requestDisallowInterceptTouchEvent(false)
@@ -385,16 +523,39 @@ class CandidateGridView(
                 MotionEvent.ACTION_CANCEL -> {
                     recycleVelocityTracker()
                     removeCallbacks(longPressRunnable)
+                    stopShake()
+                    dragIndex = -1
+                    dragTargetIndex = -1
                     pressedIndex = -1
                     horizontalDrag = -1
                     dragging = false
                     longPressTriggered = false
+                    longPressMoved = false
                     springBackIfNeeded()
                     invalidate()
                     parent.requestDisallowInterceptTouchEvent(false)
                 }
             }
             return true
+        }
+
+        private fun startShake() {
+            shakePhase = 0f
+            val view = this
+            shakeRunnable = object : Runnable {
+                override fun run() {
+                    shakePhase = (shakePhase + 0.18f) % (Math.PI.toFloat() * 2f)
+                    invalidate()
+                    view.postOnAnimation(this)
+                }
+            }
+            postOnAnimation(shakeRunnable)
+        }
+
+        private fun stopShake() {
+            shakeRunnable?.let { removeCallbacks(it) }
+            shakeRunnable = null
+            shakePhase = 0f
         }
 
         private fun dragBy(deltaY: Float) {
@@ -617,7 +778,13 @@ class CandidateGridView(
                         percentWidth = 0.5f,
                         margin = false
                     ),
-                    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.SelectCandidatePinYin(pinYin = pinYin))),
+                    behaviors = setOf(
+                        KeyDef.Behavior.Press(
+                            KeyboardAction.SelectCandidatePinYin(
+                                pinYin = pinYin
+                            )
+                        )
+                    ),
                 )
             })
         }

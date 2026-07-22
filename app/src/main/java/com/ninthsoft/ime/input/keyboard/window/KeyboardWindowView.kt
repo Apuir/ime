@@ -34,6 +34,7 @@ class KeyboardWindowView(
     onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
     onClipboardClear: (() -> Unit)? = null,
     onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
+    onCopyTextCommit: ((String) -> Unit)? = null,
 ) : FrameLayout(context), IManagedView {
 
     companion object {
@@ -54,6 +55,7 @@ class KeyboardWindowView(
         onClipboardItemClick = onClipboardItemClick,
         onClipboardClear = onClipboardClear,
         onClipboardItemDelete = onClipboardItemDelete,
+        onCopyTextCommit = onCopyTextCommit,
     )
 
     private val preeditPinner = PreeditPinner(context)
@@ -226,6 +228,7 @@ class KeyboardWindowView(
 
     fun onStartInput(info: EditorInfo) {
         panel.view.setExpanded(false)
+        panel.onStartInputView()
         keyboardManager.startInput(info)
     }
 
