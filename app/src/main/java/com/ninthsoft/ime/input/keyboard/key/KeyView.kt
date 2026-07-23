@@ -38,6 +38,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.doOnLayout
+import androidx.core.view.doOnPreDraw
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
@@ -426,21 +427,35 @@ class ImageTextKeyView(
             bottomToTop = mainText.id
             topToTop = parentId
         }
-        doOnLayout {
-            val translationY = height / 5.2f
-            img.translationY = translationY
+
+        doOnPreDraw {
+            img.translationY = height / 5.2f
             mainText.translationY = height / 7f
-            mainText.post {
-                val text = mainText.text?.toString() ?: return@post
-                if (text.isEmpty()) return@post
-                val rect = Rect()
-                mainText.paint.getTextBounds(
-                    text, 0, text.length, rect
-                )
-                val viewCenter = mainText.width / 2f
-                val glyphCenter = (rect.left + rect.right) / 2f
-                mainText.translationX = viewCenter - glyphCenter
-            }
+            updateTextPosition()
         }
+    }
+
+
+    fun updateText(text: CharSequence?) {
+        mainText.text = text
+        mainText.doOnPreDraw {
+            updateTextPosition()
+        }
+    }
+
+
+    private fun updateTextPosition() {
+        val text = mainText.text?.toString() ?: return
+        if (text.isEmpty()) {
+            mainText.translationX = 0f
+            return
+        }
+        val rect = Rect()
+        mainText.paint.getTextBounds(
+            text, 0, text.length, rect
+        )
+        val viewCenter = mainText.width / 2f
+        val glyphCenter = (rect.left + rect.right) / 2f
+        mainText.translationX = viewCenter - glyphCenter
     }
 }

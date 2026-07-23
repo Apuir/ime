@@ -41,7 +41,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    private val lifecycleScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var lifecycleScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @Volatile
     private var touchMovedOutside = false
@@ -289,6 +289,11 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     override fun setOnLongClickListener(l: OnLongClickListener?) {
         longPressEnabled = l != null
         super.setOnLongClickListener(l)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        lifecycleScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 
     override fun onDetachedFromWindow() {

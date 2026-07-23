@@ -3,6 +3,7 @@ package com.ninthsoft.ime.input.keyboard.impl
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
@@ -26,6 +27,9 @@ class QwertyKeyboard(
 ) : BaseKeyboard(context, colors, buildLayout()) {
 
     enum class CapsState { None, Once, Lock }
+
+    var state: Punctuation = Punctuation.FullWidth
+
 
     companion object {
         const val NAME = "Qwerty"
@@ -67,7 +71,7 @@ class QwertyKeyboard(
                     backspaceKey(),
                 ),
                 listOf(
-                    layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
+                    layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
                     schemaSwitchKey(0.13f),
                     spaceKey(),
                     peroidKey(percentWidth = 0.13f),
@@ -84,6 +88,7 @@ class QwertyKeyboard(
     private var capsKeyView: ImageKeyView? = null
 
     init {
+        this.updatePunctuation(state)
         for (row in keyRows) {
             for (i in 0 until row.childCount) {
                 when (val child = row.getChildAt(i)) {
@@ -161,5 +166,10 @@ class QwertyKeyboard(
                 CapsState.Lock -> R.drawable.ic_keyboard_capslock_lock
             }
         )
+    }
+
+    override fun updatePunctuation(punctuation: Punctuation) {
+        state = punctuation
+        this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
     }
 }

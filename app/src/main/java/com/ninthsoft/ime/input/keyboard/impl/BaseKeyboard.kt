@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Rect
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.Punctuation
@@ -54,7 +55,7 @@ abstract class BaseKeyboard(
     }
 
     override fun updatePeriodKeyText(text: String) {
-        periodKeyView?.mainText?.text = text
+        periodKeyView?.updateText(text)
     }
 
     protected open fun updateSidePanel(items: List<KeyDef>) {

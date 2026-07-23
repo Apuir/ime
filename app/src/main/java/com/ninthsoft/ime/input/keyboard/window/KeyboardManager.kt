@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
+import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
@@ -86,11 +87,10 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
 
     private fun create(name: String): IKeyboard {
         val b = when (name) {
-            QwertyKeyboard.NAME -> QwertyKeyboard(context, cachedColors)
             T9Keyboard.NAME -> T9Keyboard(context, cachedColors)
             SymbolKeyboard.NAME -> SymbolKeyboard(context, cachedColors)
             NumberKeyboard.NAME -> NumberKeyboard(context, cachedColors)
-            else -> error("Unknown keyboard: $name")
+            else -> QwertyKeyboard(context, cachedColors)
         }
         b.setRippleEnabled(KeyboardManager.Keyboard.RippleEffect.isEnabled(context))
         return b
@@ -109,6 +109,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         keyboard.onAttach()
         currentKeyboard = keyboard
         currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
+        currentKeyboard?.updatePunctuation(Punctuation.from(currentSchema?.punctuation.orEmpty()))
     }
 
     fun switchTo(name: String, index: Int = -1) {

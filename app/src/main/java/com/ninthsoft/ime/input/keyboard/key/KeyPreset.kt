@@ -1,6 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 
@@ -137,7 +138,10 @@ fun peroidKey(percentWidth: Float): KeyDef = KeyDef(
         variant = Variant.Alternative,
         viewId = KeyView.button_peroid
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_PERIOD))),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_PERIOD)),
+        KeyDef.Behavior.LongPress(KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME))
+    ),
 )
 
 
