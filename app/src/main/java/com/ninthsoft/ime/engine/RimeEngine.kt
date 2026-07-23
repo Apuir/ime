@@ -22,6 +22,7 @@ import com.ninthsoft.ime.engine.rime.core.RimeApi
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }

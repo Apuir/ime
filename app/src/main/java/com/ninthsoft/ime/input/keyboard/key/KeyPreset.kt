@@ -1,15 +1,17 @@
 package com.ninthsoft.ime.input.keyboard.key
 
+import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
+import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 
 fun alphabetKey(
     character: String,
     punctuation: String,
-    altTextTranslationY: Int = 0,
-    mainTextTranslationY: Int = 0,
+    altTextTranslationY: Int = 2,
+    mainTextTranslationY: Int = -2,
 ) = KeyDef(
     appearance = KeyDef.Appearance.AltText(
         displayText = character,
@@ -20,8 +22,7 @@ fun alphabetKey(
         variant = Variant.Normal
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
-    ), popups = arrayOf(
-        KeyDef.Popup.Preview(character)
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(punctuation))
     )
 )
 
@@ -35,22 +36,20 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
         altTextTranslationY = 4
     ),
     behaviors = setOf(
-        KeyDef.Behavior.Press(
-            KeyboardAction.KeySequenceAction(digit)
-        )
+        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(digit)),
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit))
     ),
 )
 
 fun commitKey(
-    character: String, percentWidth: Float = 0.23333f
+    character: String, percentWidth: Float = 0.23333f,
+    variant: Variant = Variant.Normal,
+    fontSize: Float = 20f,
 ) = KeyDef(
     appearance = KeyDef.Appearance.Text(
-        displayText = character,
-        textSize = 23f,
-        variant = Variant.Normal,
-        percentWidth = percentWidth
+        displayText = character, textSize = fontSize, variant = variant, percentWidth = percentWidth
     ), behaviors = setOf(
-        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
+        KeyDef.Behavior.Press(KeyboardAction.CommitAction(character)),
     ), popups = arrayOf(
         KeyDef.Popup.Preview(character)
     )
@@ -113,7 +112,24 @@ fun layoutSwitchKey(
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(target))),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(target)),
+        KeyDef.Behavior.LongPress(KeyboardAction.KeySequenceAction("/"))
+    ),
+)
+
+
+fun resumeLayoutKey(
+    displayText: String,
+    percentWidth: Float = 0.15f,
+): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = displayText, textSize = 15f,
+        textStyle = android.graphics.Typeface.BOLD,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.BackAction)),
 )
 
 fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
@@ -153,6 +169,16 @@ fun schemaSwitchKey(percentWidth: Float): KeyDef = KeyDef(
         variant = Variant.Alternative,
     ),
     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.RotateSchema)),
+)
+
+fun emoticonSwitchKey(percentWidth: Float): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_emoticon,
+        viewId = KeyView.button_lang,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME))),
 )
 
 fun returnKey(percentWidth: Float): KeyDef = KeyDef(
@@ -198,7 +224,7 @@ fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
     behaviors = setOf(
         KeyDef.Behavior.Press(
             KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_APOSTROPHE)
-        )
+        ), KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("1"))
     ),
 )
 
@@ -214,7 +240,8 @@ fun clearKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
     ),
 )
 
-fun infiniteKey(percentWidth: Float): KeyDef = KeyDef(
+
+fun infiniteKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
         src = R.drawable.ic_keyboard_infinite,
         viewId = KeyView.button_lang,
@@ -222,4 +249,23 @@ fun infiniteKey(percentWidth: Float): KeyDef = KeyDef(
         variant = Variant.Alternative,
     ),
     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
+)
+
+fun miniSpaceKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_space,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.SpaceAction)),
+)
+
+fun atKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Image(
+        src = R.drawable.ic_keyboard_at,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ), behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.CommitAction("@")),
+    )
 )

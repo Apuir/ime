@@ -13,6 +13,7 @@ import com.ninthsoft.ime.engine.rime.core.RimeMessage.InlinePreeditMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.KeyMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.SchemaMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.StatusMessage
+import timber.log.Timber
 
 sealed class RimeMessage<T>(val data: T) {
 
@@ -245,7 +246,12 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         EngineMessage.Schema(data.id, data.name, data.layout, data.punctuation)
     }
 
+    is RimeMessage.OptionMessage -> {
+        EngineMessage.Unknown
+    }
+
     else -> {
+        Timber.d("EngineMessage.Unknown %s", data.toString())
         EngineMessage.Unknown
     }
 }

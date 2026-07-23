@@ -13,6 +13,6 @@ class EngineInitializer : Initializer<IEngine> {
     }
 
     override fun dependencies(): List<Class<out Initializer<*>>> {
-        return listOf(LoggerInitializer::class.java, RankingInitializer::class.java)
+        return listOf(LoggerInitializer::class.java)
     }
 }

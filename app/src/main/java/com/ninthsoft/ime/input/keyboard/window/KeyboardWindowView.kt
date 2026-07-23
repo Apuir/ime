@@ -66,24 +66,30 @@ class KeyboardWindowView(
         get() = keyboardManager.keyActionListener
         set(value) {
             keyboardManager.keyActionListener = KeyActionListener { action ->
-                transformed(action).let { value.onKeyAction(it) }
+                transformed(action)?.let { value.onKeyAction(it) }
             }
         }
 
-    fun transformed(action: KeyboardAction): KeyboardAction {
-        if (action is KeyboardAction.RotateSchema) {
-            val schemeId = keyboardManager.rotateSchema()
-            return KeyboardAction.SelectSchema(schemeId)
-        }
-        if (action is KeyboardAction.LayoutSwitchAction) {
-            keyboardManager.switchTo(action.target)
-        }
-        return action
-    }
+    fun transformed(action: KeyboardAction): KeyboardAction? {
+        val transformed: KeyboardAction? = when (action) {
+            is KeyboardAction.RotateSchema -> {
+                val schemeId = keyboardManager.rotateSchema()
+                return KeyboardAction.SelectSchema(schemeId)
+            }
 
+            is KeyboardAction.LayoutSwitchAction -> {
+                keyboardManager.switchTo(action.target)
+                null
+            }
 
-    fun onSchemaChanged(schemaId: String) {
-        keyboardManager.onSchemaChanged(schemaId)
+            is KeyboardAction.BackAction -> {
+                keyboardManager.resume()
+                null
+            }
+
+            else -> action
+        }
+        return transformed
     }
 
 
@@ -133,9 +139,16 @@ class KeyboardWindowView(
             panel.candidateGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
         addView(panel.menuGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(panel.textEditingView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(panel.clipboardView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(panel.confirmOverlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(
+            panel.textEditingView,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
+        addView(
+            panel.clipboardView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
+        addView(
+            panel.confirmOverlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
     }
 
     fun toggleMenu() {

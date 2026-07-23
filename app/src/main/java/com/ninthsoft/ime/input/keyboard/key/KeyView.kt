@@ -13,15 +13,17 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
-import android.widget.TextView
 import androidx.annotation.FloatRange
-import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.graphics.drawable.toDrawable
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.updateLayoutParams
+import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors.SurfaceStyle
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
+import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
+import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.centerInParent
 import splitties.views.dsl.constraintlayout.constraintLayout
@@ -36,13 +38,6 @@ import splitties.views.imageResource
 import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
-import androidx.core.graphics.drawable.toDrawable
-import androidx.core.view.doOnLayout
-import androidx.core.view.doOnPreDraw
-import com.ninthsoft.ime.R
-import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
-import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
-import timber.log.Timber
 
 abstract class KeyView(
     ctx: Context,
@@ -53,7 +48,6 @@ abstract class KeyView(
     var bordered: Boolean = true
     var borderStroke: Boolean = true
         set(value) {
-            Timber.d("KeyView.borderStroke: $field -> $value")
             field = value
             setupBackgroundWithPress()
         }
@@ -292,10 +286,11 @@ class AltTextKeyView(
     val altText = android.widget.TextView(ctx).apply {
         isClickable = false
         isFocusable = false
-        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10.666667f)
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.altTextSize)
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText
         setTextColor(colors.altText)
+        gravity = android.view.Gravity.CENTER
     }
 
     init {
@@ -308,21 +303,60 @@ class AltTextKeyView(
     private fun applyLayout() {
         mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            topToTop = parentId
-            bottomToBottom = parentId
             startToStart = parentId
             endToEnd = parentId
+            topToTop = parentId
+            bottomToBottom = parentId
             verticalBias = 0.2f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            topToBottom = mainText.id
             startToStart = parentId
             endToEnd = parentId
-            verticalBias = 0.2f
+            topToTop = parentId
+            bottomToBottom = parentId
+            verticalBias = 0.8f
         }
-        def as KeyDef.Appearance.AltText
-        mainText.translationY = dp(def.mainTextTranslationY).toFloat()
-        altText.translationY = dp(def.altTextTranslationY).toFloat()
+
+        doOnPreDraw {
+            val altDef = def as KeyDef.Appearance.AltText
+            mainText.translationY = dp(altDef.mainTextTranslationY).toFloat()
+            altText.translationY = dp(altDef.altTextTranslationY).toFloat()
+            updateMainTextPosition()
+            updateAltTextPosition()
+        }
+    }
+
+    private fun updateMainTextPosition() {
+        val text = mainText.text?.toString() ?: return
+        if (text.isEmpty()) {
+            mainText.translationX = 0f
+            return
+        }
+        val rect = Rect()
+        mainText.paint.getTextBounds(text, 0, text.length, rect)
+        val viewCenter = mainText.width / 2f
+        val glyphCenter = (rect.left + rect.right) / 2f
+        mainText.translationX = viewCenter - glyphCenter
+    }
+
+    private fun updateAltTextPosition() {
+        val text = altText.text?.toString() ?: return
+        if (text.isEmpty()) {
+            altText.translationX = 0f
+            return
+        }
+        val rect = Rect()
+        altText.paint.getTextBounds(text, 0, text.length, rect)
+        val viewCenter = altText.width / 2f
+        val glyphCenter = (rect.left + rect.right) / 2f
+        altText.translationX = viewCenter - glyphCenter
+    }
+
+    fun updateAltText(text: CharSequence?) {
+        altText.text = text
+        altText.doOnPreDraw {
+            updateAltTextPosition()
+        }
     }
 }
 
@@ -420,17 +454,17 @@ class ImageTextKeyView(
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
+            verticalBias = 0.7f
         }
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
-            bottomToTop = mainText.id
             topToTop = parentId
+            bottomToBottom = parentId
+            verticalBias = 0.3f
         }
 
         doOnPreDraw {
-            img.translationY = height / 5.2f
-            mainText.translationY = height / 7f
             updateTextPosition()
         }
     }

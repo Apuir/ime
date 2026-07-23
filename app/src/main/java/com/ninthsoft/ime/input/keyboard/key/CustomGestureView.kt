@@ -69,6 +69,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     }
 
     var swipeEnabled = false
+    var keyboardGestureEnabled = false
     var swipeRepeatEnabled = false
     var swipeThresholdX = 24f
     var swipeThresholdY = 24f
@@ -205,11 +206,11 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                     if (repeatEnabled) {
                         repeatHandler.removeCallbacks(repeatRunnable)
                     }
-                    if (repeatStarted || !swipeEnabled) {
+                    if (repeatStarted || (!swipeEnabled && !keyboardGestureEnabled)) {
                         isPressed = false
                     }
                 }
-                if (!swipeEnabled || longPressTriggered || repeatStarted) return true
+                if ((!swipeEnabled && !keyboardGestureEnabled) || (longPressTriggered && !keyboardGestureEnabled) || repeatStarted) return true
                 val countX = consumeSwipe(x, SwipeAxis.X)
                 val countY = consumeSwipe(y, SwipeAxis.Y)
                 dispatchGestureEvent(GestureType.Move, x, y, countX, countY)

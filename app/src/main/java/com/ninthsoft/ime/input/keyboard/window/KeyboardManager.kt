@@ -44,16 +44,6 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             currentKeyboard?.keyActionListener = value
         }
 
-    fun onSchemaChanged(schemaId: String) {
-        val schema = schemas.find { it.id == schemaId }
-        currentSchema = schema
-        if (currentKeyboard?.name() !== currentSchema?.layout) {
-            switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
-            return
-        }
-        currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
-    }
-
     fun onConfigChanged(key: String) {
         if (key == SchemaManager.KEY_ENABLED_IDS) refreshSchemas()
     }
@@ -66,10 +56,9 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
     fun rotateSchema(): String {
         if (schemas.isEmpty()) return ""
         val index = schemas.indexOf(currentSchema)
-        val next = if (index >= 0) schemas[(index + 1) % schemas.size] else schemas.first()
-        currentSchema = next
-        switchTo(next.layout)
-        return next.id
+        currentSchema = if (index >= 0) schemas[(index + 1) % schemas.size] else schemas.first()
+        switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
+        return currentSchema?.id.orEmpty()
     }
 
     private fun refreshSchemas() {
@@ -79,8 +68,8 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         val schemaList = EngineFactory.current()?.schemasList() ?: emptyList()
         val byId = schemaList.associateBy { it.id }
         schemas = schemaIds.mapNotNull { byId[it] }
-        currentSchema = schemas.firstOrNull()
-        currentSchema?.let { EngineFactory.current()?.selectSchema(it.id) }
+        currentSchema = null
+        rotateSchema().takeIf { it.isNotEmpty() }?.let { EngineFactory.current()?.selectSchema(it) }
     }
 
     fun get(name: String): IKeyboard? = keyboards[name]
@@ -97,26 +86,25 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
     }
 
     private fun attach(name: String, index: Int = -1) {
-        val keyboard = keyboards.getOrPut(name) { create(name) }
-        val view = keyboard as View
+        currentKeyboard = keyboards.getOrPut(name) { create(name) }
+        val view = currentKeyboard as View
         (view.parent as? ViewGroup)?.removeView(view)
-        keyboard.keyActionListener = keyActionListener
+        currentKeyboard?.keyActionListener = keyActionListener
         parent.addView(
             view, if (index >= 0) index else parent.childCount, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
-        keyboard.onAttach()
-        currentKeyboard = keyboard
-        currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
-        currentKeyboard?.updatePunctuation(Punctuation.from(currentSchema?.punctuation.orEmpty()))
+        currentKeyboard?.onAttach()
     }
 
     fun switchTo(name: String, index: Int = -1) {
         if (name !== currentKeyboard?.name()) {
             detachCurrent()
+            attach(name, index)
         }
-        attach(name, index)
+        currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
+        currentKeyboard?.updatePunctuation(Punctuation.from(currentSchema?.punctuation.orEmpty()))
     }
 
     fun detachCurrent() {
@@ -151,5 +139,9 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             else -> currentSchema?.layout ?: QwertyKeyboard.NAME
         }
         switchTo(start)
+    }
+
+    fun resume() {
+        switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
     }
 }

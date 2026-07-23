@@ -3,9 +3,11 @@ package com.ninthsoft.ime.input.keyboard.impl
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.base.util.PunctuationUtil
 import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
@@ -49,25 +51,25 @@ class QwertyKeyboard(
                     alphabetKey("p", "0"),
                 ),
                 listOf(
-                    alphabetKey("a", "@"),
-                    alphabetKey("s", "+"),
-                    alphabetKey("d", "-"),
-                    alphabetKey("f", "*"),
-                    alphabetKey("g", "/", mainTextTranslationY = -2),
-                    alphabetKey("h", "="),
-                    alphabetKey("j", "#"),
-                    alphabetKey("k", "("),
-                    alphabetKey("l", ")"),
+                    alphabetKey("a", "~"),
+                    alphabetKey("s", "!"),
+                    alphabetKey("d", "@"),
+                    alphabetKey("f", "#"),
+                    alphabetKey("g", "$", mainTextTranslationY = -3),
+                    alphabetKey("h", "%"),
+                    alphabetKey("j", "^", altTextTranslationY = 6),
+                    alphabetKey("k", "&"),
+                    alphabetKey("l", "*", altTextTranslationY = 6),
                 ),
                 listOf(
                     capsLockKey(),
-                    alphabetKey("z", ".", altTextTranslationY = -4),
-                    alphabetKey("x", ",", altTextTranslationY = -4),
-                    alphabetKey("c", "!"),
-                    alphabetKey("v", "?"),
-                    alphabetKey("b", ";", altTextTranslationY = -2),
-                    alphabetKey("n", ":"),
-                    alphabetKey("m", "~"),
+                    alphabetKey("z", "(", altTextTranslationY = 0),
+                    alphabetKey("x", ")", altTextTranslationY = 0),
+                    alphabetKey("c", ":"),
+                    alphabetKey("v", ";"),
+                    alphabetKey("b", ",", altTextTranslationY = 0),
+                    alphabetKey("n", "?"),
+                    alphabetKey("m", "/"),
                     backspaceKey(),
                 ),
                 listOf(
@@ -114,6 +116,14 @@ class QwertyKeyboard(
             is KeyboardAction.CapsAction -> {
                 switchCapsState()
                 return
+            }
+
+            is KeyboardAction.CommitAction -> {
+                KeyboardAction.CommitAction(
+                    PunctuationUtil.convert(
+                        action.text, state == Punctuation.FullWidth
+                    )
+                )
             }
 
             is KeyboardAction.KeySequenceAction -> {
@@ -171,5 +181,15 @@ class QwertyKeyboard(
     override fun updatePunctuation(punctuation: Punctuation) {
         state = punctuation
         this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
+        for (kv in letterKeyViews) {
+            if (kv is AltTextKeyView) {
+                val altText = kv.altText.text.toString()
+                val altNewText =
+                    PunctuationUtil.convert(altText, punctuation == Punctuation.FullWidth)
+                if (altText != altNewText) {
+                    kv.updateAltText(altNewText)
+                }
+            }
+        }
     }
 }

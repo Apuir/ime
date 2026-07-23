@@ -54,7 +54,6 @@ class T9Keyboard(
             return
         }
         super.updateSidePanel(data.map { pinYin ->
-            Timber.d("onPossibleCandidatePinYin %s, position: %d", pinYin.pinYin, pinYin.position)
             KeyDef(
                 appearance = KeyDef.Appearance.Text(
                     displayText = pinYin.pinYin,
@@ -90,7 +89,7 @@ class T9Keyboard(
                 mixedAlphabetKey("7", "PQRS"),
                 mixedAlphabetKey("8", "TUV"),
                 mixedAlphabetKey("9", "WXYZ"),
-                infiniteKey(0.15f),
+                infiniteKey(),
             ),
             listOf(
                 layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
@@ -120,6 +119,6 @@ class T9Keyboard(
             state = punctuation
             this.onPossibleCandidatePinYin(emptyArray())
         }
-        this.updatePeriodKeyText(if (state == Punctuation.FullWidth) "。" else ".")
+        this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
     }
 }

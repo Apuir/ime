@@ -85,8 +85,4 @@ class KeyboardWindow(
     override fun onDetach() = view.onDetach()
 
     fun onConfigChanged(key: String) = view.onConfigChanged(key)
-
-    fun onSchemaChanged(schemaId: String) {
-        view.onSchemaChanged(schemaId)
-    }
 }

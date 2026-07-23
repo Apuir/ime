@@ -16,11 +16,13 @@ import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyPreviewPopup
+import com.ninthsoft.ime.input.keyboard.key.KeyboardPopup
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
 import com.ninthsoft.ime.input.keyboard.window.IManagedView
+import kotlin.math.roundToInt
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.above
 import splitties.views.dsl.constraintlayout.below
@@ -43,6 +45,7 @@ abstract class BaseKeyboard(
     override var keyActionListener: KeyActionListener? = null
     var expandKeypressArea = false
     private val previewPopup = KeyPreviewPopup(context)
+    private val keyboardPopup = KeyboardPopup(context)
     protected val keyRows: List<ConstraintLayout>
     val rippleView: KeyboardRippleView
 
@@ -60,6 +63,10 @@ abstract class BaseKeyboard(
 
     protected open fun updateSidePanel(items: List<KeyDef>) {
         (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
+    }
+
+    protected open fun resetSidePanelPosition() {
+        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.resetPosition()
     }
 
     fun setSidePanelItemListener(listener: (KeyboardAction) -> Unit) {
@@ -226,6 +233,54 @@ abstract class BaseKeyboard(
                         onTouchUpListener = { previewPopup.dismiss() }
                     }
 
+                    is KeyDef.Popup.Keyboard -> {
+                        var selectedIndex = 0
+                        var startIndex = 0
+                        var originX = 0f
+                        var initialMove = true
+                        setOnTouchListener { _, event ->
+                            when (event.actionMasked) {
+                                android.view.MotionEvent.ACTION_MOVE -> {
+                                    if (keyboardPopup.isShowing()) {
+                                        if (initialMove) {
+                                            originX = event.x
+                                            startIndex = keyboardPopup.selectedIndex
+                                            initialMove = false
+                                        }
+                                        val dx = event.x - originX
+                                        val step = keyboardPopup.itemStep
+                                        val idx = (startIndex + dx / step).roundToInt()
+                                            .coerceIn(0, keyboardPopup.itemCount - 1)
+                                        if (idx != selectedIndex) {
+                                            selectedIndex = idx
+                                            keyboardPopup.selectIndex(idx)
+                                        }
+                                        return@setOnTouchListener true
+                                    }
+                                }
+
+                                else -> {}
+                            }
+                            false
+                        }
+                        setOnLongClickListener {
+                            showKeyboardPopup(it as KeyView, popup.keys)
+                            selectedIndex = keyboardPopup.selectedIndex
+                            startIndex = selectedIndex
+                            initialMove = true
+                            return@setOnLongClickListener true
+                        }
+                        onTouchUpListener = {
+                            if (keyboardPopup.isShowing()) {
+                                val item = popup.keys.getOrNull(selectedIndex)
+                                if (item != null) {
+                                    onAction(item)
+                                }
+                                keyboardPopup.dismiss()
+                            }
+                        }
+                    }
+
                     else -> {}
                 }
             }
@@ -297,6 +352,27 @@ abstract class BaseKeyboard(
         )
     }
 
+    private fun showKeyboardPopup(view: KeyView, keys: List<KeyboardAction>) {
+        keyboardPopup.show(
+            anchor = view,
+            items = keys,
+            textColor = when (view.def.variant) {
+                KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyText
+                KeyDef.Appearance.Variant.Alternative -> colors.specialKeyText
+                KeyDef.Appearance.Variant.Accent -> colors.accentKeyText
+                KeyDef.Appearance.Variant.None -> colors.keyText
+            },
+            bgColor = colors.keyBackground,
+            keyBgColor = when (view.def.variant) {
+                KeyDef.Appearance.Variant.Normal, KeyDef.Appearance.Variant.AltForeground -> colors.keyBackground
+                KeyDef.Appearance.Variant.Alternative -> colors.specialKeyBackground
+                KeyDef.Appearance.Variant.Accent -> colors.accentKeyBackground
+                KeyDef.Appearance.Variant.None -> Color.TRANSPARENT
+            },
+            keyPressedColor = colors.accentKeyBackground,
+        )
+    }
+
     protected open fun onAction(action: KeyboardAction) {
         keyActionListener?.onKeyAction(action)
     }
@@ -304,7 +380,9 @@ abstract class BaseKeyboard(
     override fun onAttach() {}
 
     override fun onDetach() {
+        resetSidePanelPosition()
         previewPopup.dismiss()
+        keyboardPopup.dismiss()
     }
 
     abstract override fun name(): String

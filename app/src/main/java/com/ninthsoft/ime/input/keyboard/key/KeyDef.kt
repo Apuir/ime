@@ -38,6 +38,7 @@ open class KeyDef(
             val altText: String,
             val altTextTranslationY: Int = 0,
             val mainTextTranslationY: Int = 0,
+            val altTextSize:Float  = 11f,
             textSize: Float,
             textStyle: Int = Typeface.NORMAL,
             percentWidth: Float = 0.1f,
@@ -101,7 +102,7 @@ open class KeyDef(
     sealed class Popup {
         open class Preview(val content: String) : Popup()
         class AltPreview(content: String, val alternative: String) : Preview(content)
-        class Keyboard(val label: String, val keys: List<String> = emptyList()) : Popup()
+        class Keyboard(val label: String, val keys: List<KeyboardAction>) : Popup()
         class Menu(val items: Array<Item>) : Popup() {
             class Item(
                 val label: String,
