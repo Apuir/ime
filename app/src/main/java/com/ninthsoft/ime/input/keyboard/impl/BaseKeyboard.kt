@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
+import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
@@ -44,19 +45,24 @@ abstract class BaseKeyboard(
     protected val keyRows: List<ConstraintLayout>
     val rippleView: KeyboardRippleView
 
-    protected val sidePanelViews: List<KeyView> get() = _spanPanelViews
-    private var _spanPanelViews: List<KeyView> = emptyList()
+    private var spanPanelViews: List<KeyView> = emptyList()
     private var spaceKeyView: TextKeyView? = null
+    private var periodKeyView: ImageTextKeyView? = null
+
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.mainText?.text = text
     }
 
+    override fun updatePeriodKeyText(text: String) {
+        periodKeyView?.mainText?.text = text
+    }
+
     protected open fun updateSidePanel(items: List<KeyDef>) {
-        (_spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
+        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
     }
 
     fun setSidePanelItemListener(listener: (KeyboardAction) -> Unit) {
-        (_spanPanelViews.firstOrNull() as? SidePanelKeyView)?.setOnItemActionListener(listener)
+        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.setOnItemActionListener(listener)
     }
 
     init {
@@ -77,7 +83,7 @@ abstract class BaseKeyboard(
             }
         }
         val spanViews = spanDefs.map { createKeyView(it.def).also { v -> v.id = generateViewId() } }
-        _spanPanelViews = spanViews
+        spanPanelViews = spanViews
 
         keyRows = keyLayout.mapIndexed { rowIndex, row ->
             val parts =
@@ -181,6 +187,9 @@ abstract class BaseKeyboard(
         }.apply {
             if (def.appearance.viewId == KeyView.button_space && this is TextKeyView) {
                 spaceKeyView = this
+            }
+            if (def.appearance.viewId == KeyView.button_peroid && this is ImageTextKeyView) {
+                periodKeyView = this
             }
             borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
             onPressedChanged = { key ->
@@ -303,4 +312,6 @@ abstract class BaseKeyboard(
         rippleView.rippleEnabled = enabled
         rippleView.visibility = if (enabled) VISIBLE else INVISIBLE
     }
+
+    override fun updatePunctuation(punctuation: Punctuation) {}
 }

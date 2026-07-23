@@ -19,7 +19,9 @@ sealed class EngineMessage {
 
     data class InlinePreedit(val preedit: String) : EngineMessage()
 
-    data class Schema(val id: String, val name: String, val layout: String = "") : EngineMessage()
+    data class Schema(
+        val id: String, val name: String, val layout: String = "", val punctuation: String = ""
+    ) : EngineMessage()
 
     data class RerankedCandidate(val best: Candidate) : EngineMessage()
     data object RerankStarted : EngineMessage()

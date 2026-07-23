@@ -1,8 +1,6 @@
 package com.ninthsoft.ime.input.keyboard.key
 
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.engine.event.KeyEvent
-import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 
@@ -130,15 +128,16 @@ fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
 )
 
 
-fun commaKey(percentWidth: Float): KeyDef = KeyDef(
+fun peroidKey(percentWidth: Float): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.ImageText(
         displayText = ".",
-        textSize = 23f,
+        textSize = 18f,
         src = R.drawable.ic_keyboard_emoticon,
         percentWidth = percentWidth,
         variant = Variant.Alternative,
+        viewId = KeyView.button_peroid
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(0))),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_PERIOD))),
 )
 
 

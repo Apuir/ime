@@ -87,7 +87,7 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
 
     val allSchemas = EngineFactory.current()?.schemasList() ?: emptyList()
     if (!loaded && allSchemas.isNotEmpty()) {
-        val allItems = allSchemas.map { SchemaItem(it.id, it.name, it.layout) }
+        val allItems = allSchemas.map { SchemaItem(it.id, it.name, it.layout, it.punctuation) }
         val enabledIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
             ?.filter { it.isNotBlank() } ?: emptyList()
         val byId = allItems.associateBy { it.id }
@@ -343,20 +343,19 @@ private fun SchemaListItem(
                         )
                         Spacer(Modifier.width(4.dp))
                     }
-                    val (tagText, tagBg, tagFg) = when (schema.layout) {
-                        "T9" -> Triple(
-                            "九宫格",
-                            MaterialTheme.colorScheme.tertiaryContainer,
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-
-                        else -> Triple(
-                            "全键盘",
-                            MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
+                    val (tagText, tagBg, tagFg) = Triple(
+                        if (schema.layout == "T9") "九宫格" else "全键盘",
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                     TagBadge(tagText, tagBg, tagFg)
+                    Spacer(Modifier.width(4.dp))
+                    val punctText = if (schema.punctuation == "full-width") "全角符号" else "半角符号"
+                    TagBadge(
+                        punctText,
+                        MaterialTheme.colorScheme.tertiaryContainer,
+                        MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
                 }
             }
         }

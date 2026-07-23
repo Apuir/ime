@@ -13,7 +13,9 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
+import android.widget.TextView
 import androidx.annotation.FloatRange
+import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
@@ -21,7 +23,6 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors.SurfaceStyle
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import splitties.dimensions.dp
-import splitties.views.dsl.constraintlayout.centerHorizontally
 import splitties.views.dsl.constraintlayout.centerInParent
 import splitties.views.dsl.constraintlayout.constraintLayout
 import splitties.views.dsl.constraintlayout.lParams
@@ -36,6 +37,8 @@ import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toDrawable
+import androidx.core.view.doOnLayout
+import com.ninthsoft.ime.R
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelRender
 import com.ninthsoft.ime.input.keyboard.key.widget.SidePanelView
 import timber.log.Timber
@@ -233,13 +236,12 @@ abstract class KeyView(
     }
 
     companion object {
-        var button_space = 0
-        var button_return = 0
-        var button_backspace = 0
-        var button_caps = 0
-        var button_lang = 0
-        var button_voice = 0
-        var button_quickphrase = 0
+        var button_space = R.id.button_space
+        var button_return = R.id.button_return
+        var button_backspace = R.id.button_backspace
+        var button_peroid = R.id.button_period
+        var button_caps = R.id.button_caps
+        var button_lang = R.id.button_lang
     }
 }
 
@@ -257,6 +259,7 @@ open class TextKeyView(
         background = null
         text = def.displayText
         setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        gravity = android.view.Gravity.CENTER
         textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTypeface(typeface, def.textStyle)
         setTextColor(
@@ -408,20 +411,36 @@ class ImageTextKeyView(
 
     init {
         appearanceView.apply {
+            id = if (def.viewId > 0) def.viewId else generateViewId()
             add(img, lParams(dp(13), dp(13)))
         }
-        mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            centerHorizontally()
+            startToStart = parentId
+            endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
         }
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            centerHorizontally()
+            startToStart = parentId
+            endToEnd = parentId
             bottomToTop = mainText.id
             topToTop = parentId
         }
-        img.translationY = dp(12).toFloat()
-        mainText.translationY = dp(4).toFloat()
+        doOnLayout {
+            val translationY = height / 5.2f
+            img.translationY = translationY
+            mainText.translationY = height / 7f
+            mainText.post {
+                val text = mainText.text?.toString() ?: return@post
+                if (text.isEmpty()) return@post
+                val rect = Rect()
+                mainText.paint.getTextBounds(
+                    text, 0, text.length, rect
+                )
+                val viewCenter = mainText.width / 2f
+                val glyphCenter = (rect.left + rect.right) / 2f
+                mainText.translationX = viewCenter - glyphCenter
+            }
+        }
     }
 }

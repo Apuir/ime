@@ -127,7 +127,7 @@ sealed class RimeMessage<T>(val data: T) {
         fun nativeCreate(type: Int, params: Array<Any>): RimeMessage<*> = when (types[type]) {
             MessageType.Schema -> {
                 val raw = params[0] as String
-                val parts = raw.split('/', limit = 3)
+                val parts = raw.split('/', limit = 4)
                 val schemaId = parts[0]
                 val schema = Rime.getSchemaList().firstOrNull { it.id == schemaId }
                 SchemaMessage(
@@ -135,6 +135,7 @@ sealed class RimeMessage<T>(val data: T) {
                         id = schemaId,
                         name = schema?.name ?: parts.getOrElse(1) { "" },
                         layout = schema?.layout ?: parts.getOrElse(2) { "" },
+                        punctuation = schema?.punctuation ?: parts.getOrElse(3) { "" },
                     )
                 )
             }
@@ -241,7 +242,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
     }
 
     is SchemaMessage -> {
-        EngineMessage.Schema(data.id, data.name, data.layout)
+        EngineMessage.Schema(data.id, data.name, data.layout, data.punctuation)
     }
 
     else -> {

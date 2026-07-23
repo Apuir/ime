@@ -19,6 +19,7 @@ import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import timber.log.Timber
 
 class KeyboardManager(private val context: Context, val parent: ViewGroup) {
 

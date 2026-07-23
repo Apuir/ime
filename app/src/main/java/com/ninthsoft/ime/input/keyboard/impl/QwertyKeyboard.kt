@@ -15,7 +15,7 @@ import com.ninthsoft.ime.input.keyboard.key.capsLockKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
-import com.ninthsoft.ime.input.keyboard.key.commaKey
+import com.ninthsoft.ime.input.keyboard.key.peroidKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import timber.log.Timber
 
@@ -70,7 +70,7 @@ class QwertyKeyboard(
                     layoutSwitchKey("?123", SymbolKeyboard.NAME, percentWidth = 0.15f),
                     schemaSwitchKey(0.13f),
                     spaceKey(),
-                    commaKey(percentWidth = 0.13f),
+                    peroidKey(percentWidth = 0.13f),
                     returnKey(percentWidth = 0.15f),
                 ),
             )

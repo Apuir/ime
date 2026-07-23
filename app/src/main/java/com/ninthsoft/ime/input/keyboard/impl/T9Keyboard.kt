@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
@@ -9,7 +10,7 @@ import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.clearKey
-import com.ninthsoft.ime.input.keyboard.key.commaKey
+import com.ninthsoft.ime.input.keyboard.key.peroidKey
 import com.ninthsoft.ime.input.keyboard.key.infiniteKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
@@ -25,15 +26,20 @@ class T9Keyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
+    var fullWidthPunctuations = listOf("。", "，", "！", "？", "：", "~", "@")
+    var halfWidthPunctuations = listOf(".", ",", "!", "?", ":", "~", "@")
+    var punctuations = fullWidthPunctuations
+    var state: Punctuation = Punctuation.FullWidth
 
     init {
+        this.updatePunctuation(state)
         this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
     override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
         if (data.isEmpty()) {
             super.updateSidePanel(
-                listOf(".", "?", "!", "@").map { ch ->
+                punctuations.map { ch ->
                     KeyDef(
                         appearance = KeyDef.Appearance.Text(
                             displayText = ch,
@@ -90,7 +96,7 @@ class T9Keyboard(
                 layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
                 schemaSwitchKey(0.13f),
                 spaceKey(),
-                commaKey(percentWidth = 0.13f),
+                peroidKey(percentWidth = 0.13f),
                 returnKey(percentWidth = 0.15f),
             ),
         )
@@ -103,5 +109,17 @@ class T9Keyboard(
     override fun onAttach() {
         this.onPossibleCandidatePinYin(emptyArray())
         super.onAttach()
+    }
+
+    override fun updatePunctuation(punctuation: Punctuation) {
+        if (punctuation != state) {
+            punctuations = when (punctuation) {
+                is Punctuation.HalfWidth -> halfWidthPunctuations
+                else -> fullWidthPunctuations
+            }
+            state = punctuation
+            this.onPossibleCandidatePinYin(emptyArray())
+        }
+        this.updatePeriodKeyText(if (state == Punctuation.FullWidth) "。" else ".")
     }
 }

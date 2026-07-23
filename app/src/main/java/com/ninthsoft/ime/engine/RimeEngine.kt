@@ -207,7 +207,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun schemasList(): List<EngineMessage.Schema> = runBlocking {
         awaitJob(emptyList()) {
-            enabledSchemata().map { EngineMessage.Schema(it.id, it.name, it.layout) }
+            enabledSchemata().map { EngineMessage.Schema(it.id, it.name, it.layout, it.punctuation) }
         }
     }
 
