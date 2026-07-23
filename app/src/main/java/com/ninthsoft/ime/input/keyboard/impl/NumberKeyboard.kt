@@ -2,7 +2,6 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -14,11 +13,9 @@ import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.commaKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
-import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
-import com.ninthsoft.ime.input.keyboard.key.sidePannelNormalItem
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
 
 @SuppressLint("ViewConstructor")
@@ -28,18 +25,7 @@ class NumberKeyboard(
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
 
     init {
-        val items = mutableListOf<KeyDef>()
-        items.add(sidePannelNormalItem("+"))
-        items.add(sidePannelNormalItem("-"))
-        items.add(sidePannelNormalItem("*"))
-        items.add(sidePannelNormalItem("/"))
-        items.add(sidePannelNormalItem("="))
-        items.add(sidePannelNormalItem("."))
-        items.add(sidePannelNormalItem("~"))
-        items.add(sidePannelNormalItem("..."))
-        items.add(sidePannelNormalItem("!"))
-        items.add(sidePannelNormalItem("?"))
-        this.updateSidePanel(items)
+        this.onPossibleCandidatePinYin(emptyArray())
         this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
@@ -104,6 +90,18 @@ class NumberKeyboard(
     }
 
     override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
-        return
+        super.updateSidePanel(
+            listOf("+", "-", "*", "/", "=", "~", "?", "!").map { ch ->
+                KeyDef(
+                    appearance = KeyDef.Appearance.Text(
+                        displayText = ch,
+                        textSize = 15f,
+                        percentWidth = 0.5f,
+                        margin = false,
+                        variant = Variant.Alternative
+                    ),
+                    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
+                )
+            })
     }
 }

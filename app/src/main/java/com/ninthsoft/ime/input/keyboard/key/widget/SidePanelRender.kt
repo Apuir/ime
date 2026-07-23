@@ -149,7 +149,14 @@ abstract class SidePanelRender(
                     translate(0f, -panel.bottom)
                 }
             }
-            clipRect(panel)
+            val clipRadius = cornerRadius()
+            if (clipRadius > 0f) {
+                clipPath(Path().apply {
+                    addRoundRect(panel, clipRadius, clipRadius, Path.Direction.CW)
+                })
+            } else {
+                clipRect(panel)
+            }
             // 保存原始的对齐方式，以便恢复
             val originalAlign = textPaint.textAlign
             items.forEachIndexed { index, item ->
@@ -162,26 +169,7 @@ abstract class SidePanelRender(
                     val c = style.pressedItemColor
                     panelPaint.color = Color.rgb(Color.red(c), Color.green(c), Color.blue(c))
                     panelPaint.alpha = pressedAlpha
-                    val r = cornerRadius()
-                    if ((index == 0 || index == items.size - 1) && r > 0f) {
-                        val radii = floatArrayOf(
-                            if (index == 0) r else 0f,
-                            if (index == 0) r else 0f,
-                            if (index == 0) r else 0f,
-                            if (index == 0) r else 0f,
-                            if (index == items.size - 1) r else 0f,
-                            if (index == items.size - 1) r else 0f,
-                            if (index == items.size - 1) r else 0f,
-                            if (index == items.size - 1) r else 0f,
-                        )
-                        drawPath(Path().apply {
-                            addRoundRect(
-                                panel.left, top, panel.right, bottom, radii, Path.Direction.CW
-                            )
-                        }, panelPaint)
-                    } else {
-                        drawRect(panel.left, top, panel.right, bottom, panelPaint)
-                    }
+                    drawRect(panel.left, top, panel.right, bottom, panelPaint)
                     panelPaint.alpha = 255
                 }
                 textPaint.color = item.textColor
@@ -222,7 +210,7 @@ abstract class SidePanelRender(
         val width = scrollbarWidth()
         val left = panel.right - scrollbarInset()
         scrollbarRect.set(left, thumbTop, left + width, thumbTop + thumbHeight)
-        scrollbarPaint.color = style.scrollbarColor
+        scrollbarPaint.color = items.firstOrNull()?.textColor ?: style.scrollbarColor
         val radius = width / 2f
         canvas.drawRoundRect(scrollbarRect, radius, radius, scrollbarPaint)
     }

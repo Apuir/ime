@@ -17,7 +17,6 @@ import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.segmentKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
-import com.ninthsoft.ime.input.keyboard.key.sidePannelNormalItem
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
 import timber.log.Timber
 
@@ -28,7 +27,6 @@ class T9Keyboard(
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
 
     init {
-        this.onPossibleCandidatePinYin(emptyArray())
         this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
@@ -102,8 +100,8 @@ class T9Keyboard(
         return NAME
     }
 
-    override fun onDetach() {
+    override fun onAttach() {
         this.onPossibleCandidatePinYin(emptyArray())
-        super.onDetach()
+        super.onAttach()
     }
 }
