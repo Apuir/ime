@@ -47,4 +47,12 @@ sealed class KeyboardAction {
     data class SelectSchema(val schemaId: String) : KeyboardAction()
 
     data object ShowInputMethodPickerAction : KeyboardAction()
+
+    data object VoiceInputAction : KeyboardAction()
+
+    data object StopVoiceInputAction : KeyboardAction()
+
+    data object SendAction: KeyboardAction()
+
+    data object SearchAction: KeyboardAction()
 }

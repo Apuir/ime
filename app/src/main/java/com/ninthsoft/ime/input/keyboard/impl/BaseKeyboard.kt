@@ -1,10 +1,12 @@
 package com.ninthsoft.ime.input.keyboard.impl
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
-import android.graphics.Rect
+import android.view.inputmethod.EditorInfo
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
+import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
@@ -21,7 +23,6 @@ import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
-import com.ninthsoft.ime.input.keyboard.window.IManagedView
 import kotlin.math.roundToInt
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.above
@@ -36,6 +37,7 @@ import splitties.views.dsl.constraintlayout.rightOfParent
 import splitties.views.dsl.constraintlayout.rightToLeftOf
 import splitties.views.dsl.constraintlayout.topOfParent
 import splitties.views.dsl.core.add
+import splitties.views.imageResource
 
 abstract class BaseKeyboard(
     context: Context,
@@ -52,6 +54,7 @@ abstract class BaseKeyboard(
     private var spanPanelViews: List<KeyView> = emptyList()
     private var spaceKeyView: TextKeyView? = null
     private var periodKeyView: ImageTextKeyView? = null
+    private var returnKeyView: ImageKeyView? = null
 
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.mainText?.text = text
@@ -185,6 +188,7 @@ abstract class BaseKeyboard(
         })
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     protected fun createKeyView(def: KeyDef): KeyView {
         return when (def.appearance) {
             is KeyDef.Appearance.AltText -> AltTextKeyView(context, colors, def.appearance)
@@ -193,6 +197,9 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.SidePannel -> SidePanelKeyView(context, colors, def.appearance)
         }.apply {
+            if (def.appearance.viewId == KeyView.button_return && this is ImageKeyView) {
+                returnKeyView = this
+            }
             if (def.appearance.viewId == KeyView.button_space && this is TextKeyView) {
                 spaceKeyView = this
             }
@@ -298,6 +305,11 @@ abstract class BaseKeyboard(
                             onAction(behavior.action)
                             return@setOnLongClickListener true
                         }
+                        if (behavior.action is KeyboardAction.VoiceInputAction) {
+                            onTouchUpListener = {
+                                onAction(KeyboardAction.StopVoiceInputAction)
+                            }
+                        }
                     }
 
                     is KeyDef.Behavior.Repeat -> {
@@ -374,7 +386,15 @@ abstract class BaseKeyboard(
     }
 
     protected open fun onAction(action: KeyboardAction) {
-        keyActionListener?.onKeyAction(action)
+        val transformed = when (action) {
+//            is KeyboardAction.ReturnAction -> {
+//                when (returnKeyView?.img?.drawable) {
+//
+//                }
+//            }
+            else -> action
+        }
+        keyActionListener?.onKeyAction(transformed)
     }
 
     override fun onAttach() {}
@@ -393,4 +413,21 @@ abstract class BaseKeyboard(
     }
 
     override fun updatePunctuation(punctuation: Punctuation) {}
+
+    override fun updateEditorInfo(info: EditorInfo) {
+        val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
+        val inputType = info.inputType
+        val isMultiLine = (inputType and EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+        val isTextClass = (inputType and EditorInfo.TYPE_MASK_CLASS) == EditorInfo.TYPE_CLASS_TEXT
+        val icon = when {
+            action == EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_keyboard_search
+            action == EditorInfo.IME_ACTION_SEND -> R.drawable.ic_keyboard_send
+            isTextClass && isMultiLine -> {
+                R.drawable.ic_keyboard_send
+            }
+
+            else -> R.drawable.ic_keyboard_return
+        }
+        returnKeyView?.img?.imageResource = icon
+    }
 }

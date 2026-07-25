@@ -155,9 +155,15 @@ object SherpaSpeechClient {
         service.scope?.launch {
             val initSuccess = withContext(Dispatchers.IO) { initEngineIfNeeded(service) }
 
+            // 用户在引擎初始化期间可能已松手；放弃本次录音，避免“松开后才打开麦克风”的竞态。
+            if (!isHolding.get()) {
+                clearReferences()
+                return@launch
+            }
+
             if (initSuccess) {
                 val engine = recognizerRef.get()
-                if (isHolding.get() && engine != null) {
+                if (engine != null) {
                     try {
                         synchronized(audioLock) {
                             val newStream = engine.createStream()
@@ -177,21 +183,29 @@ object SherpaSpeechClient {
     }
 
     /**
-     * 松开语音键，结束当前会话并上屏
+     * 松开语音键，结束当前会话并上屏。
+     * 仅置位 isHolding=false 让录音循环优雅退出，复用协程内部的 [withContext(NonCancellable)]
+     * 来确保“最后一帧全量解码 + setComposingText + onDone”不会被取消抢断。
      */
     fun stopHoldSession() {
         if (!isHolding.compareAndSet(true, false)) return
         val job = audioJob
         audioJob = null
-        serviceRef?.get()?.let { s ->
-            s.scope?.launch {
-                job?.cancelAndJoin()
-                s.currentInputConnection?.finishComposingText()
-                clearReferences()
+        val svc = serviceRef?.get()
+        if (svc != null) {
+            svc.scope?.launch {
+                // 等待内部优雅收尾（最终解码 + 上屏 + onDone 全部在 NonCancellable 内完成）
+                job?.join()
+                withContext(NonCancellable) {
+                    svc.currentInputConnection?.finishComposingText()
+                    clearReferences()
+                }
             }
-        } ?: run {
+        } else {
+            // 没有 service 可用，强制取消并清理
             job?.cancel()
             clearReferences()
+            runCatching { SpeechUiBridge.onDone?.invoke() }
         }
     }
 
@@ -203,7 +217,7 @@ object SherpaSpeechClient {
                 service, Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            val intent = Intent(service, MicPermissionActivity::class.java).apply {
+            val intent = Intent(service, SpeechPermissionActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             runCatching { service.startActivity(intent) }
@@ -271,7 +285,7 @@ object SherpaSpeechClient {
                     ByteBuffer.wrap(chunk, 0, n).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
                         .get(shortChunk)
 
-                    val amp = calculateAmplitude(chunk, n)
+                    val amp = calculateAmplitude(shortChunk, sampleCount)
                     val floatChunk = FloatArray(sampleCount)
 
                     val isCurrentFrameSpeech = amp >= NOISE_THRESHOLD
@@ -339,49 +353,54 @@ object SherpaSpeechClient {
                     delay(5)
                 }
 
-                // ─── 优化点 2：松手时全量完美断句与标点追加（锁内部） ───
-                var finalCleanText: String? = null
+                // ─── 优化点 2：松手时全量完美断句与上屏。
+                    // 包在 NonCancellable 内：即使外部 job 已被取消，最终解码、
+                    // setComposingText 与 onDone 也必须完整执行，避免末字丢失/UI 卡住。
+                    val finalCleanText = withContext(NonCancellable) {
+                        var result: String? = null
+                        synchronized(audioLock) {
+                            val engine = recognizerRef.get()
+                            val stream = currentStreamRef.get()
+                            val puncEngine = punctuationRef.get()
 
-                synchronized(audioLock) {
-                    val engine = recognizerRef.get()
-                    val stream = currentStreamRef.get()
-                    val puncEngine = punctuationRef.get()
-
-                    if (engine != null && stream != null && hasRealAudioEntered) {
-                        try {
-                            engine.decode(stream)
-                            val finalResult = engine.getResult(stream)
-                            if (finalResult.text.isNotBlank()) {
-                                val cleanText = cleanSenseVoiceText(finalResult.text)
-                                // 全量文本送入标点模型加工
-                                finalCleanText = if (puncEngine != null && cleanText.isNotBlank()) {
-                                    puncEngine.addPunctuation(cleanText)
-                                } else {
-                                    cleanText
+                            if (engine != null && stream != null && hasRealAudioEntered) {
+                                try {
+                                    engine.decode(stream)
+                                    val finalResult = engine.getResult(stream)
+                                    if (finalResult.text.isNotBlank()) {
+                                        val cleanText = cleanSenseVoiceText(finalResult.text)
+                                        // 全量文本送入标点模型加工
+                                        result = if (puncEngine != null && cleanText.isNotBlank()) {
+                                            puncEngine.addPunctuation(cleanText)
+                                        } else {
+                                            cleanText
+                                        }
+                                    }
+                                } catch (e: Throwable) {
+                                    Timber.e(e, "松手后最终解码失败")
                                 }
                             }
-                        } catch (e: Throwable) {
-                            Timber.e(e, "松手后最终解码失败")
                         }
+                        result
                     }
-                }
 
-                if (!finalCleanText.isNullOrBlank()) {
-                    withContext(Dispatchers.Main) {
-                        serviceRef?.get()?.currentInputConnection?.setComposingText(
-                            finalCleanText, 1
-                        )
+                    withContext(NonCancellable + Dispatchers.Main) {
+                        if (!finalCleanText.isNullOrBlank()) {
+                            serviceRef?.get()?.currentInputConnection?.setComposingText(
+                                finalCleanText, 1
+                            )
+                        }
+                        runCatching { SpeechUiBridge.onDone?.invoke() }
                     }
-                }
 
             } catch (t: Throwable) {
                 if (t is CancellationException) {
-                    withContext(Dispatchers.Main) {
+                    withContext(NonCancellable + Dispatchers.Main) {
                         runCatching { SpeechUiBridge.onDone?.invoke() }
                     }
                 } else {
                     Timber.e(t, "录音及核心推理链异常")
-                    withContext(Dispatchers.Main) {
+                    withContext(NonCancellable + Dispatchers.Main) {
                         serviceRef?.get()?.let { toast(it, "录音异常") }
                         runCatching { SpeechUiBridge.onDone?.invoke() }
                     }
@@ -433,12 +452,10 @@ object SherpaSpeechClient {
         serviceRef = null
     }
 
-    private fun calculateAmplitude(buffer: ByteArray, size: Int): Float {
+    private fun calculateAmplitude(samples: ShortArray, count: Int): Float {
         var max = 0
-        for (i in 0 until size step 2) {
-            if (i + 1 >= size) break
-            val sample = (buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xFF)
-            val absSample = abs(sample)
+        for (i in 0 until count) {
+            val absSample = abs(samples[i].toInt())
             if (absSample > max) max = absSample
         }
         return max.toFloat() / 32768f

@@ -307,14 +307,14 @@ class AltTextKeyView(
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.2f
+            verticalBias = 0.25f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.8f
+            verticalBias = 0.85f
         }
 
         doOnPreDraw {

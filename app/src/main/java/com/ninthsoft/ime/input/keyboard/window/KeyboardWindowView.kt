@@ -21,6 +21,10 @@ import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.panel.component.TextEditView
 import com.ninthsoft.ime.input.pinner.PreeditPinner
+import com.ninthsoft.ime.input.speech.SpeechOverlayView
+import com.ninthsoft.ime.base.speech.SherpaSpeechClient
+import com.ninthsoft.ime.base.speech.SpeechUiBridge
+import com.ninthsoft.ime.input.ImeInputMethodService
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -62,6 +66,10 @@ class KeyboardWindowView(
 
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+    private val voiceOverlay = SpeechOverlayView(context)
+
+    private var isVoiceRecording = false
+
     var keyActionListener: KeyActionListener
         get() = keyboardManager.keyActionListener
         set(value) {
@@ -84,6 +92,20 @@ class KeyboardWindowView(
 
             is KeyboardAction.BackAction -> {
                 keyboardManager.resume()
+                null
+            }
+
+            is KeyboardAction.StopVoiceInputAction -> {
+                stopVoiceInput()
+                null
+            }
+
+            is KeyboardAction.VoiceInputAction -> {
+                if (isVoiceRecording) {
+                    stopVoiceInput()
+                } else {
+                    startVoiceInput()
+                }
                 null
             }
 
@@ -130,6 +152,10 @@ class KeyboardWindowView(
             }
             insets
         }
+
+        voiceOverlay.applyColors(
+            cachedColors.background, cachedColors.accentKeyBackground, cachedColors.accentKeyText
+        )
 
         setBackgroundColor(cachedColors.background)
 
@@ -252,6 +278,9 @@ class KeyboardWindowView(
         panel.refreshTheme()
         preeditPinner.refreshTheme(context)
         keyboardManager.rebuild(cachedColors)
+        voiceOverlay.applyColors(
+            cachedColors.background, cachedColors.accentKeyBackground, cachedColors.accentKeyText
+        )
     }
 
     fun refreshLayout() = requestLayout()
@@ -323,5 +352,44 @@ class KeyboardWindowView(
 
     override fun onAttach() {}
 
-    override fun onDetach() = keyboardManager.detachCurrent()
+    override fun onDetach() {
+        if (isVoiceRecording) {
+            stopVoiceInput()
+        }
+        keyboardManager.detachCurrent()
+    }
+
+    private fun startVoiceInput() {
+        if (isVoiceRecording) return
+        isVoiceRecording = true
+        voiceOverlay.applyColors(
+            cachedColors.background, cachedColors.keyText, cachedColors.keyText
+        )
+        if (voiceOverlay.parent == null) {
+            addView(voiceOverlay)
+        }
+        voiceOverlay.show()
+        voiceOverlay.bringToFront()
+
+        SpeechUiBridge.clear()
+        SpeechUiBridge.onRecordingStarted = {
+            // recording started
+        }
+        SpeechUiBridge.onAmplitude = { amp ->
+            voiceOverlay.updateAmplitude(amp)
+        }
+        SpeechUiBridge.onDone = {
+            isVoiceRecording = false
+            voiceOverlay.hide()
+        }
+
+        SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
+    }
+
+    private fun stopVoiceInput() {
+        if (!isVoiceRecording) return
+        isVoiceRecording = false
+        SherpaSpeechClient.stopHoldSession()
+        voiceOverlay.hide()
+    }
 }

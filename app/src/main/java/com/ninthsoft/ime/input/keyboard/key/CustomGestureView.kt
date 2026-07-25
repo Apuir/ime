@@ -210,7 +210,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                         isPressed = false
                     }
                 }
-                if ((!swipeEnabled && !keyboardGestureEnabled) || (longPressTriggered && !keyboardGestureEnabled) || repeatStarted) return true
+                if ((!swipeEnabled && !keyboardGestureEnabled) || (longPressTriggered && !keyboardGestureEnabled && !swipeEnabled) || repeatStarted) return true
                 val countX = consumeSwipe(x, SwipeAxis.X)
                 val countY = consumeSwipe(y, SwipeAxis.Y)
                 dispatchGestureEvent(GestureType.Move, x, y, countX, countY)
