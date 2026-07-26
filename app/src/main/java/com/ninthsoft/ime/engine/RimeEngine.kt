@@ -22,7 +22,6 @@ import com.ninthsoft.ime.engine.rime.core.RimeApi
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
-import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +30,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import timber.log.Timber
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
@@ -209,7 +207,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun schemasList(): List<EngineMessage.Schema> = runBlocking {
         awaitJob(emptyList()) {
-            enabledSchemata().map { EngineMessage.Schema(it.id, it.name, it.layout, it.punctuation) }
+            enabledSchemata().map {
+                EngineMessage.Schema(
+                    it.id, it.name, it.layout, it.punctuation
+                )
+            }
         }
     }
 

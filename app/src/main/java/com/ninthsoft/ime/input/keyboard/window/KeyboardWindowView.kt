@@ -392,4 +392,8 @@ class KeyboardWindowView(
         SherpaSpeechClient.stopHoldSession()
         voiceOverlay.hide()
     }
+
+    fun onInputChanged(info: EditorInfo?, text: String): Any {
+        return keyboardManager.onInputChanged(info, text)
+    }
 }

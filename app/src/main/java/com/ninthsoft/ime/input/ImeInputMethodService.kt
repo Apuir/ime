@@ -92,6 +92,7 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         keyboardWindow?.onStartInputView(info, restarting)
+        notifyInputChanged()
         super.onStartInputView(info, restarting)
     }
 
@@ -218,5 +219,12 @@ class ImeInputMethodService : InputMethodService() {
         lastSelectionStart = newSelStart
         lastSelectionEnd = newSelEnd
         keyboardWindow?.onSelectionUpdate(newSelStart, newSelEnd)
+        notifyInputChanged()
+    }
+
+    fun notifyInputChanged() {
+        var text = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString() ?: ""
+        text += currentInputConnection.getTextAfterCursor(1, 0)?.toString() ?: ""
+        keyboardWindow?.onInputChanged(text)
     }
 }

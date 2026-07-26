@@ -38,6 +38,7 @@ import splitties.views.dsl.constraintlayout.rightToLeftOf
 import splitties.views.dsl.constraintlayout.topOfParent
 import splitties.views.dsl.core.add
 import splitties.views.imageResource
+import timber.log.Timber
 
 abstract class BaseKeyboard(
     context: Context,
@@ -55,6 +56,7 @@ abstract class BaseKeyboard(
     private var spaceKeyView: TextKeyView? = null
     private var periodKeyView: ImageTextKeyView? = null
     private var returnKeyView: ImageKeyView? = null
+    private var returnKeyIcon: Int = 0
 
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.mainText?.text = text
@@ -387,11 +389,24 @@ abstract class BaseKeyboard(
 
     protected open fun onAction(action: KeyboardAction) {
         val transformed = when (action) {
-//            is KeyboardAction.ReturnAction -> {
-//                when (returnKeyView?.img?.drawable) {
-//
-//                }
-//            }
+            is KeyboardAction.ReturnAction -> {
+                when (returnKeyIcon) {
+                    R.drawable.ic_keyboard_send -> {
+                        KeyboardAction.MultiReturnAction("SEND")
+                    }
+
+                    R.drawable.ic_keyboard_search -> {
+                        KeyboardAction.MultiReturnAction("SEARCH")
+                    }
+
+                    R.drawable.ic_keyboard_arrow_right -> {
+                        KeyboardAction.MultiReturnAction("GO")
+                    }
+
+                    else -> action
+                }
+            }
+
             else -> action
         }
         keyActionListener?.onKeyAction(transformed)
@@ -412,22 +427,20 @@ abstract class BaseKeyboard(
         rippleView.visibility = if (enabled) VISIBLE else INVISIBLE
     }
 
-    override fun updatePunctuation(punctuation: Punctuation) {}
 
-    override fun updateEditorInfo(info: EditorInfo) {
+    override fun updateEditorInfo(info: EditorInfo, empty: Boolean) {
         val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
-        val inputType = info.inputType
-        val isMultiLine = (inputType and EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE) != 0
-        val isTextClass = (inputType and EditorInfo.TYPE_MASK_CLASS) == EditorInfo.TYPE_CLASS_TEXT
-        val icon = when {
-            action == EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_keyboard_search
-            action == EditorInfo.IME_ACTION_SEND -> R.drawable.ic_keyboard_send
-            isTextClass && isMultiLine -> {
-                R.drawable.ic_keyboard_send
-            }
-
+        returnKeyIcon = when (action) {
+            EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_keyboard_search
+            EditorInfo.IME_ACTION_SEND -> R.drawable.ic_keyboard_send
+            EditorInfo.IME_ACTION_GO -> R.drawable.ic_keyboard_arrow_right
             else -> R.drawable.ic_keyboard_return
         }
-        returnKeyView?.img?.imageResource = icon
+        if (empty) {
+            returnKeyIcon = R.drawable.ic_keyboard_return
+        }
+        returnKeyView?.img?.imageResource = returnKeyIcon
     }
+
+    override fun updatePunctuation(punctuation: Punctuation) {}
 }

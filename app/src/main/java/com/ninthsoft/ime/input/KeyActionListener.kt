@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input
 
 import android.annotation.SuppressLint
 import android.inputmethodservice.InputMethodService
+import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.engine.IEngine
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.event.KeyModifiers
@@ -59,6 +60,20 @@ class KeyActionListener(
             is KeyboardAction.SelectCandidatePinYin -> {
                 engine?.selectCandidatePinYin(action.pinYin)
             }
+
+            is KeyboardAction.MultiReturnAction -> {
+                val ic = service.currentInputConnection ?: return
+
+                ic.performEditorAction(
+                    when (action.text) {
+                        "GO" -> EditorInfo.IME_ACTION_GO
+                        "SEND" -> EditorInfo.IME_ACTION_SEND
+                        "SEARCH" -> EditorInfo.IME_ACTION_SEARCH
+                        else -> EditorInfo.IME_ACTION_NONE
+                    }
+                )
+            }
+
 
             else -> {}
         }

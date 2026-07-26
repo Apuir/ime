@@ -11,6 +11,6 @@ interface IKeyboard : IManagedView {
     fun updateSpaceKeyText(text: String)
     fun updatePeriodKeyText(text: String)
     fun updatePunctuation(punctuation: Punctuation)
-    fun updateEditorInfo(info: EditorInfo)
+    fun updateEditorInfo(info: EditorInfo, empty: Boolean)
     fun setRippleEnabled(enabled: Boolean)
 }

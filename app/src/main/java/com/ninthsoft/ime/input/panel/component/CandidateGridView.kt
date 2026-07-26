@@ -15,14 +15,9 @@ import com.ninthsoft.ime.base.util.slideUpCollapse
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
-import com.ninthsoft.ime.input.keyboard.key.backspaceKey
-import com.ninthsoft.ime.input.keyboard.key.nextPageKey
-import com.ninthsoft.ime.input.keyboard.key.prevPageKey
-import com.ninthsoft.ime.input.keyboard.key.returnKey
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
@@ -37,12 +32,10 @@ class CandidateGridView(
     context: Context,
     colors: KeyboardColors.ColorScheme,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    var onBackspace: (() -> Unit)? = null,
-    var onReturn: (() -> Unit)? = null,
     var onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
     var subscribePossibleCandidatePinYin: Boolean = true,
     var maxVisibleRow: Int = 5,
-    var maxVisibleColumn: Int = 4,   // 保留并真正使用
+    var maxVisibleColumn: Int = 5,   // 保留并真正使用
 ) : ComponentView(context, colors) {
 
     // ── 布局数据类 ──
@@ -54,11 +47,6 @@ class CandidateGridView(
     private var allCandidates: List<EngineMessage.Candidate> = emptyList()
     var onCandidatesReordered: ((List<EngineMessage.Candidate>) -> Unit)? = null
     var onWordForget: ((EngineMessage.Candidate, Float, Float) -> Unit)? = null
-
-    private val prevBtn =
-        ImageKeyView(context, colors, prevPageKey(1f).appearance as KeyDef.Appearance.Image)
-    private val nextBtn =
-        ImageKeyView(context, colors, nextPageKey(1f).appearance as KeyDef.Appearance.Image)
 
     private val sidePanelKey = SidePanelKeyView(
         context, colors,
@@ -127,15 +115,6 @@ class CandidateGridView(
                 val totalRows = positions.maxOfOrNull { it.row }?.plus(1) ?: visibleRows
                 return (totalRows * rowH - height).coerceAtLeast(0f)
             }
-
-        private fun updatePageButtons() {
-            val atTop = scrollOffsetY <= 0f
-            val atBottom = scrollOffsetY >= maxScroll
-            prevBtn.alpha = if (atTop) 0.3f else 1f
-            prevBtn.isEnabled = !atTop
-            nextBtn.alpha = if (atBottom) 0.3f else 1f
-            nextBtn.isEnabled = !atBottom
-        }
 
         fun updateColors(pc: KeyboardColors.ColorScheme.PanelColors) {
             bgPaint.color = pc.background
@@ -585,7 +564,6 @@ class CandidateGridView(
 
         fun clampScroll() {
             scrollOffsetY = scrollOffsetY.coerceIn(0f, maxScroll)
-            updatePageButtons()
         }
 
         private fun springBackIfNeeded(): Boolean {
@@ -635,7 +613,6 @@ class CandidateGridView(
                 scrollOffsetY = scroller.currY.toFloat()
                 if (scroller.isFinished) {
                     clampScroll()
-                    updatePageButtons()
                 }
                 invalidate()
             }
@@ -645,32 +622,11 @@ class CandidateGridView(
             if (!scroller.isFinished) scroller.abortAnimation()
             scrollOffsetY = 0f
             stretch = 0f
-            updatePageButtons()
         }
 
-        fun scrollToTop() {
-            scroller.startScroll(0, scrollOffsetY.toInt(), 0, -scrollOffsetY.toInt())
-            postInvalidateOnAnimation()
-            updatePageButtons()
-        }
-
-        fun scrollByPage(direction: Int) {
-            if (!scroller.isFinished) scroller.abortAnimation()
-            val pageHeight = visibleRows * rowH
-            val target = (scrollOffsetY + direction * pageHeight).coerceIn(0f, maxScroll)
-            scroller.startScroll(
-                0, scrollOffsetY.toInt(), 0, target.toInt() - scrollOffsetY.toInt()
-            )
-            postInvalidateOnAnimation()
-            updatePageButtons()
-        }
     }
 
-    // ── 右侧按钮面板 ──
-    private val btnPanel = FrameLayout(context).apply {
-        setBackgroundColor(colors.panel.background)
-        isClickable = true
-    }
+    // ── init ──
 
     init {
         isClickable = true
@@ -688,53 +644,25 @@ class CandidateGridView(
         }
         sidePanelKey.updateItems(sidePanelPunctuationItems)
 
-        prevBtn.setOnClickListener { gridCanvas.scrollByPage(-1) }
-        nextBtn.setOnClickListener { gridCanvas.scrollByPage(1) }
-
-        btnPanel.addView(prevBtn)
-        btnPanel.addView(nextBtn)
-        btnPanel.addView(
-            ImageKeyView(
-                context, colors, backspaceKey().appearance as KeyDef.Appearance.Image
-            ).apply {
-                setOnClickListener { onBackspace?.invoke() }
-            })
-        btnPanel.addView(
-            ImageKeyView(
-                context, colors, returnKey(1f).appearance as KeyDef.Appearance.Image
-            ).apply {
-                setOnClickListener { onReturn?.invoke() }
-            })
-
         addView(sidePanelKey, lParams(0, matchParent))
         addView(gridCanvas, lParams(0, matchParent))
-        addView(btnPanel, lParams(0, matchParent))
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val tw = MeasureSpec.getSize(widthMeasureSpec)
         val th = MeasureSpec.getSize(heightMeasureSpec)
         val sw = (tw * 0.15f).toInt()
-        val rw = (tw * 0.15f).toInt()
-        val gw = (tw - sw - rw).coerceAtLeast(0)
+        val gw = tw - sw
         sidePanelKey.measure(mES(sw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
         gridCanvas.measure(mES(gw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
-        btnPanel.measure(mES(rw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
-        val bh = th / 4
-        for (i in 0..3) btnPanel.getChildAt(i)
-            .measure(mES(rw, MeasureSpec.EXACTLY), mES(bh, MeasureSpec.EXACTLY))
         setMeasuredDimension(tw, th)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val h = b - t
         val sw = ((r - l) * 0.15f).toInt()
-        val rw = ((r - l) * 0.15f).toInt()
         sidePanelKey.layout(0, 0, sw, h)
-        gridCanvas.layout(sw, 0, r - l - rw, h)
-        btnPanel.layout(r - l - rw, 0, r - l, h)
-        val bh = h / 4
-        for (i in 0..3) btnPanel.getChildAt(i).layout(0, i * bh, rw, (i + 1) * bh)
+        gridCanvas.layout(sw, 0, r - l, h)
     }
 
     private fun mES(size: Int, mode: Int) = MeasureSpec.makeMeasureSpec(size, mode)

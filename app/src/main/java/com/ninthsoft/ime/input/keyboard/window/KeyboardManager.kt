@@ -105,9 +105,6 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         }
         currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
         currentKeyboard?.updatePunctuation(Punctuation.from(currentSchema?.punctuation.orEmpty()))
-        if (info != null) {
-            currentKeyboard?.updateEditorInfo(info)
-        }
     }
 
     fun detachCurrent() {
@@ -141,10 +138,16 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE -> NumberKeyboard.NAME
             else -> currentSchema?.layout ?: QwertyKeyboard.NAME
         }
-        switchTo(start, info = info)
+        switchTo(start)
     }
 
     fun resume() {
         switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
+    }
+
+    fun onInputChanged(info: EditorInfo?, text: String) {
+        if (info != null) {
+            currentKeyboard?.updateEditorInfo(info, text.isEmpty())
+        }
     }
 }

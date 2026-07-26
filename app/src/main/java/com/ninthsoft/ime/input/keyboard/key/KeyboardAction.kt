@@ -52,7 +52,5 @@ sealed class KeyboardAction {
 
     data object StopVoiceInputAction : KeyboardAction()
 
-    data object SendAction: KeyboardAction()
-
-    data object SearchAction: KeyboardAction()
+    data class MultiReturnAction(val text: String) : KeyboardAction()
 }

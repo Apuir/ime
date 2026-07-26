@@ -24,6 +24,8 @@ class KeyboardWindow(
     onCopyTextCommit: ((String) -> Unit)? = null,
 ) : IManagedView {
 
+    var currentEditorInfo: EditorInfo? = null
+
     val view: KeyboardWindowView = KeyboardWindowView(
         context = service,
         onCandidateSelected = onCandidateSelected,
@@ -72,6 +74,7 @@ class KeyboardWindow(
     }
 
     fun onStartInputView(info: EditorInfo, restarting: Boolean) {
+        currentEditorInfo = info
         view.onStartInput(info)
         view.refreshLayout()
     }
@@ -85,4 +88,6 @@ class KeyboardWindow(
     override fun onDetach() = view.onDetach()
 
     fun onConfigChanged(key: String) = view.onConfigChanged(key)
+
+    fun onInputChanged(text: String) = view.onInputChanged(currentEditorInfo, text)
 }
