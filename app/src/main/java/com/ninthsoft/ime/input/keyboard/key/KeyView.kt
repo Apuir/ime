@@ -362,8 +362,9 @@ class AltTextKeyView(
 
 @SuppressLint("ViewConstructor")
 class SidePanelKeyView(
-    ctx: Context, colors: KeyboardColors.ColorScheme, def: KeyDef.Appearance.SidePannel
-) : SidePanelView(ctx, colors, def) {
+    ctx: Context, colors: KeyboardColors.ColorScheme, def: KeyDef.Appearance.SidePannel,
+    keepSelection: Boolean = false,
+) : SidePanelView(ctx, colors, def, keepSelection) {
     override val render: SidePanelRender = object : SidePanelRender(
         colors,
         resources.displayMetrics.density,

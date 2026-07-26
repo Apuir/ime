@@ -109,9 +109,10 @@ abstract class SidePanelRender(
         pressedIndex: Int,
         stretch: Float = 0f,
         pressedAlpha: Int = 0,
+        selectedIndex: Int = -1,
     ) {
         if (panel.isEmpty) return
-        drawItems(canvas, panel, scrollOffset, pressedIndex, stretch, pressedAlpha)
+        drawItems(canvas, panel, scrollOffset, pressedIndex, stretch, pressedAlpha, selectedIndex)
         drawScrollbar(canvas, panel, scrollOffset)
     }
 
@@ -129,6 +130,7 @@ abstract class SidePanelRender(
         pressedIndex: Int,
         stretch: Float,
         pressedAlpha: Int,
+        selectedIndex: Int = -1,
     ) {
         val itemHeight = itemHeight(panel.height())
         if (itemHeight <= 0f) return
@@ -165,10 +167,12 @@ abstract class SidePanelRender(
                 if (bottom < panel.top || top > panel.bottom) return@forEachIndexed
 
                 //disabled selection background color
-                if (index == pressedIndex) {
+                val isSelected = index == selectedIndex
+                val isPressed = index == pressedIndex
+                if (isSelected || isPressed) {
                     val c = style.pressedItemColor
                     panelPaint.color = Color.rgb(Color.red(c), Color.green(c), Color.blue(c))
-                    panelPaint.alpha = pressedAlpha
+                    panelPaint.alpha = if (isSelected) 255 else pressedAlpha
                     drawRect(panel.left, top, panel.right, bottom, panelPaint)
                     panelPaint.alpha = 255
                 }

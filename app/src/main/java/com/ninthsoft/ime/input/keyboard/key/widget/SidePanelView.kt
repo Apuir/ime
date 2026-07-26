@@ -27,11 +27,20 @@ abstract class SidePanelView(
     ctx: Context,
     theme: KeyboardColors.ColorScheme,
     def: KeyDef.Appearance,
+    private val keepSelection: Boolean = false,
 ) : KeyView(ctx, theme, def) {
 
     protected abstract val render: SidePanelRender
 
     private val contentView = SidePanelCanvasView(ctx)
+
+    var selectedIndex: Int = -1
+        private set
+
+    fun selectIndex(index: Int) {
+        selectedIndex = index
+        contentView.applySelection(index)
+    }
 
     init {
         appearanceView.add(contentView, lParams(matchParent, matchParent))
@@ -90,6 +99,15 @@ abstract class SidePanelView(
 
         var onItemAction: ((KeyboardAction) -> Unit)? = null
 
+        fun applySelection(index: Int) {
+            pressAnimator?.removeAllListeners()
+            pressAnimator?.cancel()
+            pressAnimator = null
+            visualPressedIndex = index
+            pressedAlpha = 255
+            invalidate()
+        }
+
         private val rippleLoc = IntArray(2)
 
         // =====================================================
@@ -123,7 +141,7 @@ abstract class SidePanelView(
                 height - vMargin.toFloat(),
             )
 
-            render.draw(canvas, panel, scrollOffset, visualPressedIndex, stretch, pressedAlpha)
+            render.draw(canvas, panel, scrollOffset, visualPressedIndex, stretch, pressedAlpha, selectedIndex)
 
             drawRipple(canvas)
             updateRipple()
@@ -239,23 +257,29 @@ abstract class SidePanelView(
                         if (pressedIndex >= 0 && abs(event.y - downY) < itemHeight) {
                             click = true
                             index = pressedIndex
-                            visualPressedIndex = index
-                            pressedAlpha = 255
-                            pressAnimator?.cancel()
-                            pressAnimator = ValueAnimator.ofInt(255, 0).apply {
-                                duration = 180
-                                startDelay = 70
-                                addUpdateListener {
-                                    pressedAlpha = animatedValue as Int
-                                    invalidate()
+                            if (keepSelection) {
+                                selectedIndex = index
+                                visualPressedIndex = selectedIndex
+                                pressedAlpha = 255
+                            } else {
+                                visualPressedIndex = index
+                                pressedAlpha = 255
+                                pressAnimator?.cancel()
+                                pressAnimator = ValueAnimator.ofInt(255, 0).apply {
+                                    duration = 180
+                                    startDelay = 70
+                                    addUpdateListener {
+                                        pressedAlpha = animatedValue as Int
+                                        invalidate()
+                                    }
+                                    addListener(object : Animator.AnimatorListener {
+                                        override fun onAnimationEnd(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
+                                        override fun onAnimationCancel(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
+                                        override fun onAnimationStart(a: Animator) {}
+                                        override fun onAnimationRepeat(a: Animator) {}
+                                    })
+                                    start()
                                 }
-                                addListener(object : Animator.AnimatorListener {
-                                    override fun onAnimationEnd(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
-                                    override fun onAnimationCancel(a: Animator) { visualPressedIndex = -1; pressedAlpha = 0 }
-                                    override fun onAnimationStart(a: Animator) {}
-                                    override fun onAnimationRepeat(a: Animator) {}
-                                })
-                                start()
                             }
                         }
                         invalidate()
