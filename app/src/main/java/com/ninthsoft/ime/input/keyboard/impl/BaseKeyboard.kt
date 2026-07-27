@@ -308,8 +308,11 @@ abstract class BaseKeyboard(
                             return@setOnLongClickListener true
                         }
                         if (behavior.action is KeyboardAction.VoiceInputAction) {
+                            onTouchMoveListener = { rawX, rawY ->
+                                onAction(KeyboardAction.VoiceDragPosition(rawX, rawY))
+                            }
                             onTouchUpListener = {
-                                onAction(KeyboardAction.StopVoiceInputAction)
+                                onAction(KeyboardAction.VoiceDragUp)
                             }
                         }
                     }

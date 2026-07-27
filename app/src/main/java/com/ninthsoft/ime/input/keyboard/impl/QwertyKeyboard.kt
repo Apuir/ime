@@ -30,8 +30,9 @@ class QwertyKeyboard(
 
     enum class CapsState { None, Once, Lock }
 
-    var state: Punctuation = Punctuation.FullWidth
+    var punctuationState: Punctuation = Punctuation.FullWidth
 
+    var asciiPunctuationState: Punctuation = punctuationState
 
     companion object {
         const val NAME = "Qwerty"
@@ -85,12 +86,14 @@ class QwertyKeyboard(
 
     }
 
+    private var spaceRawText: String = ""
+    private var asciiMode = false
     private var capsState = CapsState.None
     private val letterKeyViews = mutableListOf<TextKeyView>()
     private var capsKeyView: ImageKeyView? = null
 
     init {
-        this.updatePunctuation(state)
+        this.updatePunctuation(punctuationState)
         for (row in keyRows) {
             for (i in 0 until row.childCount) {
                 when (val child = row.getChildAt(i)) {
@@ -118,21 +121,43 @@ class QwertyKeyboard(
                 return
             }
 
+            is KeyboardAction.AscIIAction -> {
+                asciiMode = !asciiMode
+                asciiPunctuationState = punctuationState
+                var spaceText = spaceRawText
+                if (asciiMode) {
+                    spaceText += " (AscII)"
+                }
+
+                updateSpaceKeyText(spaceText)
+                switchCapsState(CapsState.None)
+                return
+            }
+
             is KeyboardAction.CommitAction -> {
                 KeyboardAction.CommitAction(
                     PunctuationUtil.convert(
-                        action.text, state == Punctuation.FullWidth
+                        action.text, punctuationState == Punctuation.FullWidth
                     )
                 )
             }
 
             is KeyboardAction.KeySequenceAction -> {
-                if (capsState != CapsState.None && KeyEvent.SequenceEvent.isLowerAlphabet(action.sequence)) {
-                    if (capsState == CapsState.Once) {
-                        switchCapsState(CapsState.None)
+                val transformed =
+                    if (capsState != CapsState.None && KeyEvent.SequenceEvent.isLowerAlphabet(action.sequence)) {
+                        if (capsState == CapsState.Once) {
+                            switchCapsState(CapsState.None)
+                        }
+                        KeyboardAction.KeySequenceAction(action.sequence.uppercase())
+                    } else {
+                        action
                     }
-                    KeyboardAction.KeySequenceAction(action.sequence.uppercase())
-                } else action
+                // 如果 asciiMode 触发，应该使用转换后（transformed）的数据
+                if (asciiMode) {
+                    KeyboardAction.CommitAction(transformed.sequence)
+                } else {
+                    transformed
+                }
             }
 
             else -> action
@@ -142,6 +167,7 @@ class QwertyKeyboard(
 
     override fun onAttach() {
         capsState = CapsState.None
+        asciiMode = false
         updateKeyTextForState(capsState)
     }
 
@@ -160,6 +186,7 @@ class QwertyKeyboard(
             CapsState.Lock -> CapsState.None
         }
         updateKeyTextForState(capsState)
+        updatePunctuation(if (asciiMode) Punctuation.HalfWidth else asciiPunctuationState)
     }
 
 
@@ -171,15 +198,22 @@ class QwertyKeyboard(
         }
         capsKeyView?.img?.setImageResource(
             when (state) {
-                CapsState.None -> R.drawable.ic_keyboard_capslock_none
-                CapsState.Once -> R.drawable.ic_keyboard_capslock_once
-                CapsState.Lock -> R.drawable.ic_keyboard_capslock_lock
+                CapsState.None -> if (!asciiMode) R.drawable.ic_keyboard_capslock_none else R.drawable.ic_keyboard_capslock_none_ascii
+                CapsState.Once -> if (!asciiMode) R.drawable.ic_keyboard_capslock_once else R.drawable.ic_keyboard_capslock_once_ascii
+                CapsState.Lock -> if (!asciiMode) R.drawable.ic_keyboard_capslock_lock else R.drawable.ic_keyboard_capslock_lock_ascii
             }
         )
     }
 
+    override fun updateSpaceKeyText(text: String) {
+        if (!asciiMode) {
+            spaceRawText = text
+        }
+        super.updateSpaceKeyText(text)
+    }
+
     override fun updatePunctuation(punctuation: Punctuation) {
-        state = punctuation
+        this@QwertyKeyboard.punctuationState = punctuation
         this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
         for (kv in letterKeyViews) {
             if (kv is AltTextKeyView) {

@@ -30,6 +30,8 @@ sealed class KeyboardAction {
 
     data object CapsAction : KeyboardAction()
 
+    data object AscIIAction : KeyboardAction()
+
     data class LayoutSwitchAction(val target: String) : KeyboardAction()
 
     data object BackAction : KeyboardAction()
@@ -51,6 +53,10 @@ sealed class KeyboardAction {
     data object VoiceInputAction : KeyboardAction()
 
     data object StopVoiceInputAction : KeyboardAction()
+
+    data class VoiceDragPosition(val rawX: Float, val rawY: Float) : KeyboardAction()
+
+    data object VoiceDragUp : KeyboardAction()
 
     data class MultiReturnAction(val text: String) : KeyboardAction()
 }

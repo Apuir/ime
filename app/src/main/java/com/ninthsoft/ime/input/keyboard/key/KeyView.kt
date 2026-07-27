@@ -317,10 +317,11 @@ class AltTextKeyView(
             verticalBias = 0.85f
         }
 
-        doOnPreDraw {
-            val altDef = def as KeyDef.Appearance.AltText
-            mainText.translationY = dp(altDef.mainTextTranslationY).toFloat()
-            altText.translationY = dp(altDef.altTextTranslationY).toFloat()
+        val altDef = def as KeyDef.Appearance.AltText
+        mainText.translationY = dp(altDef.mainTextTranslationY).toFloat()
+        altText.translationY = dp(altDef.altTextTranslationY).toFloat()
+
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateMainTextPosition()
             updateAltTextPosition()
         }
@@ -465,7 +466,7 @@ class ImageTextKeyView(
             verticalBias = 0.3f
         }
 
-        doOnPreDraw {
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTextPosition()
         }
     }

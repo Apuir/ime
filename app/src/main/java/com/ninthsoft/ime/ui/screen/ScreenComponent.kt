@@ -474,7 +474,7 @@ object ScreenComponent {
                                     .weight(1f)
                                     .fillMaxSize()
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(Color(colors.keyBackground)),
+                                    .background(Color(colors.specialKeyBackground)),
                             )
                         }
                         Box(

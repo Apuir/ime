@@ -87,6 +87,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     private var lastClickTime = 0L
     private var maybeDoubleTap = false
 
+    var onTouchMoveListener: ((Float, Float) -> Unit)? = null
     var onTouchDownListener: ((View) -> Unit)? = null
     var onTouchUpListener: ((View) -> Unit)? = null
     var onDoubleTapListener: ((View) -> Unit)? = null
@@ -197,6 +198,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             MotionEvent.ACTION_MOVE -> {
                 if (!isEnabled) return false
                 drawableHotspotChanged(x, y)
+                if (longPressTriggered) {
+                    onTouchMoveListener?.invoke(event.rawX, event.rawY)
+                }
                 if (!touchMovedOutside && !pointInView(x, y)) {
                     touchMovedOutside = true
                     if (longPressEnabled) {

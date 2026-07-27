@@ -84,6 +84,7 @@ fun capsLockKey(): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CapsAction),
+        KeyDef.Behavior.LongPress(KeyboardAction.AscIIAction),
     ),
 )
 

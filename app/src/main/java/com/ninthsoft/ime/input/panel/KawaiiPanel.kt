@@ -146,7 +146,7 @@ class KawaiiPanel(
         },
         onSidePanelAction = onSidePanelAction,
     ).apply {
-        onWordForget = { candidate, x, y ->
+        /*onWordForget = { candidate, x, y ->
             confirmOverlay.confirm(
                 message = context.getString(
                     R.string.candidate_forget_confirm,
@@ -156,7 +156,7 @@ class KawaiiPanel(
                 cardX = x,
                 cardY = y,
             )
-        }
+        }*/
         onDragComplete = { candidates ->
             (view.currentRenderer as? ComposingRenderer)?.candidates = candidates
             this@KawaiiPanel.onCandidateGridDragComplete?.invoke(candidates)

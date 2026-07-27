@@ -70,7 +70,15 @@ class KeyboardWindowView(
 
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-    private val voiceOverlay = SpeechOverlayView(context)
+    private val voiceOverlay = SpeechOverlayView(context).apply {
+        onSpeechActionListener = object : SpeechOverlayView.OnSpeechActionListener {
+            override fun onClose() {
+                stopVoiceInput()
+            }
+
+            override fun onLockStateChanged(isLocked: Boolean) {}
+        }
+    }
 
     private var isVoiceRecording = false
 
@@ -101,6 +109,30 @@ class KeyboardWindowView(
 
             is KeyboardAction.StopVoiceInputAction -> {
                 stopVoiceInput()
+                null
+            }
+
+            is KeyboardAction.VoiceDragPosition -> {
+                if (isVoiceRecording) {
+                    voiceOverlay.onDragPosition(action.rawX, action.rawY)
+                }
+                null
+            }
+
+            is KeyboardAction.VoiceDragUp -> {
+                if (isVoiceRecording) {
+                    when (voiceOverlay.currentDragTarget) {
+                        SpeechOverlayView.DragTarget.CLOSE -> {
+                            stopVoiceInput()
+                        }
+                        SpeechOverlayView.DragTarget.LOCK -> {
+                            voiceOverlay.setDragLocked()
+                        }
+                        SpeechOverlayView.DragTarget.NONE -> {
+                            stopVoiceInput()
+                        }
+                    }
+                }
                 null
             }
 
@@ -158,7 +190,12 @@ class KeyboardWindowView(
         }
 
         voiceOverlay.applyColors(
-            cachedColors.background, cachedColors.accentKeyBackground, cachedColors.accentKeyText
+            cachedColors.background,
+            cachedColors.specialKeyBackground,
+            cachedColors.specialKeyPressed,
+            cachedColors.specialKeyText,
+            cachedColors.accentKeyBackground,
+            cachedColors.accentKeyText
         )
 
         setBackgroundColor(cachedColors.background)
@@ -283,7 +320,12 @@ class KeyboardWindowView(
         preeditPinner.refreshTheme(context)
         keyboardManager.rebuild(cachedColors)
         voiceOverlay.applyColors(
-            cachedColors.background, cachedColors.accentKeyBackground, cachedColors.accentKeyText
+            cachedColors.background,
+            cachedColors.specialKeyBackground,
+            cachedColors.specialKeyPressed,
+            cachedColors.specialKeyText,
+            cachedColors.accentKeyBackground,
+            cachedColors.accentKeyText
         )
     }
 
@@ -366,8 +408,12 @@ class KeyboardWindowView(
     private fun startVoiceInput() {
         if (isVoiceRecording) return
         isVoiceRecording = true
+        voiceOverlay.unlock()
         voiceOverlay.applyColors(
-            cachedColors.background, cachedColors.keyText, cachedColors.keyText
+            cachedColors.background,
+            cachedColors.specialKeyBackground,
+            cachedColors.specialKeyPressed,
+            cachedColors.specialKeyText
         )
         if (voiceOverlay.parent == null) {
             addView(voiceOverlay)
@@ -384,7 +430,9 @@ class KeyboardWindowView(
         }
         SpeechUiBridge.onDone = {
             isVoiceRecording = false
-            voiceOverlay.hide()
+            if (!voiceOverlay.isLocked) {
+                voiceOverlay.hide()
+            }
         }
 
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
@@ -395,6 +443,10 @@ class KeyboardWindowView(
         isVoiceRecording = false
         SherpaSpeechClient.stopHoldSession()
         voiceOverlay.hide()
+    }
+
+    fun switchWaveViewType(type: SpeechOverlayView.WaveViewType) {
+        voiceOverlay.switchWaveView(type)
     }
 
     fun onInputChanged(info: EditorInfo?, text: String): Any {
