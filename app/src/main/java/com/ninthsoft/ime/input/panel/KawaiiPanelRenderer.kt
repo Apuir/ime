@@ -13,7 +13,7 @@ import com.ninthsoft.ime.engine.data.EngineMessage
 import kotlin.math.sin
 
 class ComposingRenderer(
-    val candidates: List<EngineMessage.Candidate>,
+    var candidates: List<EngineMessage.Candidate>,
     private val expandDrawable: Drawable?,
     var horizontalPaddingDp: Float,
     var iconScale: Float = 1f,
@@ -61,8 +61,8 @@ class ComposingRenderer(
 
         var x = hPad + slideW + if (hasRerankPill) gap else 0f
         val pills = mutableListOf<PillRect>()
-        for (c in candidates) {
-            val indexW = paints.candidateIndexPaint.measureText("${c.index}. ")
+        for ((i, c) in candidates.withIndex()) {
+            val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
             val textW = paints.candidateTextPaint.measureText(c.text)
             val commentW =
                 if (c.comment.isNotEmpty()) paints.candidateIndexPaint.measureText(" ${c.comment}") else 0f
@@ -126,10 +126,10 @@ class ComposingRenderer(
                         pill.left, pillY, pill.right, pillY + pillH, pillR, pillR,
                         paints.candidateBgPaint,
                     )
-                    val indexW = paints.candidateIndexPaint.measureText("${c.index}. ")
+                    val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
                     val textW = paints.candidateTextPaint.measureText(c.text)
                     drawText(
-                        "${c.index + 1}. ", pill.left + pillPad, textY, paints.candidateIndexPaint,
+                        "${i + 1}. ", pill.left + pillPad, textY, paints.candidateIndexPaint,
                     )
                     drawText(c.text, pill.left + pillPad + indexW, textY, paints.candidateTextPaint)
                     if (c.comment.isNotEmpty()) {

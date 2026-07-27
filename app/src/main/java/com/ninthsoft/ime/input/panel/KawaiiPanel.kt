@@ -28,6 +28,7 @@ class KawaiiPanel(
     var onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
     var onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
     var onCopyTextCommit: ((String) -> Unit)? = null,
+    var onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
 ) : IPanel {
 
     sealed class Action {
@@ -155,6 +156,10 @@ class KawaiiPanel(
                 cardX = x,
                 cardY = y,
             )
+        }
+        onDragComplete = { candidates ->
+            (view.currentRenderer as? ComposingRenderer)?.candidates = candidates
+            this@KawaiiPanel.onCandidateGridDragComplete?.invoke(candidates)
         }
     }
 

@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import timber.log.Timber
 
 class ImeInputMethodService : InputMethodService() {
     private val engine: IEngine? = EngineFactory.current()
@@ -86,6 +87,12 @@ class ImeInputMethodService : InputMethodService() {
             onClipboardClear = { ClipboardRepository.clearAll(this) },
             onClipboardItemDelete = { entry -> ClipboardRepository.removeEntry(this, entry.text) },
             onCopyTextCommit = { text -> currentInputConnection?.commitText(text, 1) },
+            onCandidateGridDragComplete = { candidates ->
+                engine?.resortCandidates(candidates)
+            },
+            onCandidateForget = { candidate ->
+                engine?.deleteCandidate(candidate.index)
+            },
         ).apply { setKeyActionListener(keyActionListener) }
         return keyboardWindow!!.view
     }

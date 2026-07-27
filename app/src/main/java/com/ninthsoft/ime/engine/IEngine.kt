@@ -18,7 +18,9 @@ interface IEngine {
     fun resetComposition()
     fun selectSchema(schemaId: String)
     fun selectCandidatePinYin(pinYin: CandidatePinYin)
-    fun segement(){}
+    fun segement()
     fun undo(service: InputMethodService)
     fun redo(service: InputMethodService)
+    fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
+    fun deleteCandidate(index: Int): Unit?
 }

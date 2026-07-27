@@ -39,6 +39,8 @@ class KeyboardWindowView(
     onClipboardClear: (() -> Unit)? = null,
     onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
     onCopyTextCommit: ((String) -> Unit)? = null,
+    onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
+    onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
 ) : FrameLayout(context), IManagedView {
 
     companion object {
@@ -60,6 +62,8 @@ class KeyboardWindowView(
         onClipboardClear = onClipboardClear,
         onClipboardItemDelete = onClipboardItemDelete,
         onCopyTextCommit = onCopyTextCommit,
+        onCandidateGridDragComplete = onCandidateGridDragComplete,
+        onCandidateForget = onCandidateForget,
     )
 
     private val preeditPinner = PreeditPinner(context)

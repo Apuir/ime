@@ -22,6 +22,8 @@ class KeyboardWindow(
     onClipboardClear: (() -> Unit)? = null,
     onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
     onCopyTextCommit: ((String) -> Unit)? = null,
+    onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
+    onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
 ) : IManagedView {
 
     var currentEditorInfo: EditorInfo? = null
@@ -37,6 +39,8 @@ class KeyboardWindow(
         onClipboardClear = onClipboardClear,
         onClipboardItemDelete = onClipboardItemDelete,
         onCopyTextCommit = onCopyTextCommit,
+        onCandidateGridDragComplete = onCandidateGridDragComplete,
+        onCandidateForget = onCandidateForget,
     )
 
     val colors: KeyboardColors.ColorScheme get() = KeyboardColors.resolve(view.context)

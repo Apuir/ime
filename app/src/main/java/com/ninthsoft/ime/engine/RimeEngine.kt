@@ -6,6 +6,8 @@ import android.os.SystemClock
 import android.view.KeyEvent.*
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.rime.behavior.Segmentation
+import com.ninthsoft.ime.data.database.AppDatabase
+import com.ninthsoft.ime.data.database.CandidateSorting
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.rime.host.BehaviorHost
@@ -19,7 +21,6 @@ import com.ninthsoft.ime.engine.rime.behavior.Selection
 import com.ninthsoft.ime.engine.rime.core.EngineMessage
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
 import com.ninthsoft.ime.engine.rime.core.RimeApi
-import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
 import kotlinx.coroutines.CompletableDeferred
@@ -140,6 +141,24 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         sendCombinationKeyEvent(service, KEYCODE_Z, ctrl = true, shift = true)
     }
 
+    override fun resortCandidates(candidates: List<EngineMessage.Candidate>) {
+        val ctx = context ?: return
+        val db = AppDatabase.getInstance(ctx)
+        sendJob {
+            val preedit = getRawInput().replace("'", " ")
+            if (preedit.isNotEmpty()) {
+                val ids = candidates.map { it.index }
+                db.candidateSortingDao().saveSorting(CandidateSorting(preedit, ids))
+            }
+        }
+    }
+
+    override fun deleteCandidate(index: Int) {
+        sendJob {
+            deleteCandidate(index, global = true)
+        }
+    }
+
     private fun sendCombinationKeyEvent(
         service: InputMethodService, keyCode: Int, ctrl: Boolean = false, shift: Boolean = false
     ) {
@@ -180,7 +199,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         behaviorHosted?.resetState()
     }
 
-    private fun postPossibleCandidatePinYin() {
+    private fun possibleCandidatePinYin() {
         sendJob {
             val currentInput = getRawInput()
             val confirmedLen = getInputConfirmedPosition()
@@ -193,14 +212,24 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     override fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
         callback = on
         scope.launch {
-            daemon.observeMessages { msg ->
-                if (msg is RimeMessage.InlinePreeditMessage) {
-                    if (msg.preedit.isEmpty()) {
-                        behaviorHosted?.resetState()
+            daemon.observeMessages { message ->
+                val msg = message.EngineMessage()
+                when (msg) {
+                    is EngineMessage.InlinePreedit -> {
+                        if (msg.preedit.isEmpty()) {
+                            behaviorHosted?.resetState()
+                        }
+                        possibleCandidatePinYin()
                     }
-                    postPossibleCandidatePinYin()
+
+                    is EngineMessage.Candidates -> {
+                        restoreCandidates(msg)
+                        return@observeMessages
+                    }
+
+                    else -> {}
                 }
-                callback(msg.EngineMessage())
+                callback(msg)
             }
         }
     }
@@ -246,5 +275,29 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             deferred.complete(defaultValue)
         }
         return deferred.await()
+    }
+
+    private fun restoreCandidates(msg: EngineMessage.Candidates) {
+        sendJob {
+            val preedit = getRawInput().replace("'", " ")
+            if (preedit.isEmpty()) {
+                callback(msg)
+                return@sendJob
+            }
+            val db = AppDatabase.getInstance(context!!)
+            val sorting = db.candidateSortingDao().loadSorting(preedit)
+            if (sorting != null && sorting.candidateIds.isNotEmpty()) {
+                val reordered = sorting.candidateIds.mapNotNull { id ->
+                    msg.list.find { it.index == id }
+                }
+                val remaining = msg.list.filter { it.index !in sorting.candidateIds }
+                val result = reordered + remaining
+                db.candidateSortingDao()
+                    .saveSorting(CandidateSorting(preedit, result.map { it.index }))
+                callback(EngineMessage.Candidates(result, msg.highlighted, msg.page))
+                return@sendJob
+            }
+            callback(msg)
+        }
     }
 }

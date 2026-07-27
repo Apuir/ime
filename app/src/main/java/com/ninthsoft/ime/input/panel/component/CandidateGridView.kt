@@ -46,6 +46,7 @@ class CandidateGridView(
 
     private var allCandidates: List<EngineMessage.Candidate> = emptyList()
     var onCandidatesReordered: ((List<EngineMessage.Candidate>) -> Unit)? = null
+    var onDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null
     var onWordForget: ((EngineMessage.Candidate, Float, Float) -> Unit)? = null
 
     private val sidePanelKey = SidePanelKeyView(
@@ -450,6 +451,7 @@ class CandidateGridView(
                             recomputeLayout()
                             this@CandidateGridView.onCandidatesReordered?.invoke(allCandidates)
                         }
+                        this@CandidateGridView.onDragComplete?.invoke(allCandidates)
                         dragIndex = -1
                         dragTargetIndex = -1
                         stopShake()
