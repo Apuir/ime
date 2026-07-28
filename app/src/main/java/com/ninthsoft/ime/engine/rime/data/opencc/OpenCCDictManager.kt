@@ -12,7 +12,7 @@ import kotlin.system.measureTimeMillis
 
 object OpenCCDictManager {
     init {
-        System.loadLibrary("rime_jni")
+        System.loadLibrary("librime_jni")
     }
 
     private val sharedDir = File(DataManager.sharedDataDir, "opencc").also { it.mkdirs() }

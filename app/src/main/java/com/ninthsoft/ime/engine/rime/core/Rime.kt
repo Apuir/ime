@@ -7,7 +7,6 @@ import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.OpenCCDictManager
 import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.base.util.isStorageAvailable
-import com.ninthsoft.ime.engine.rime.core.Rime.Companion
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow

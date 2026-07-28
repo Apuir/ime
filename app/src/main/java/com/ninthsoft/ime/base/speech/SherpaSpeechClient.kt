@@ -20,34 +20,28 @@ import java.nio.ByteOrder
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.jvm.java
 import kotlin.math.abs
 
 object SherpaSpeechClient {
     private val recognizerRef = AtomicReference<OfflineRecognizer?>(null)
-
-    // 采用双重引用或直接维持标准 AtomicReference
     private val currentStreamRef = AtomicReference<OfflineStream?>(null)
     private val punctuationRef = AtomicReference<OfflinePunctuation?>(null)
 
-    // 使用 AtomicBoolean 确保多线程状态切换的可见性与原子性
     private val isHolding = AtomicBoolean(false)
+    private val isStopping = AtomicBoolean(false)
 
     private var audioJob: Job? = null
     private var audioRecord: AudioRecord? = null
 
+    private val pendingComposingText = AtomicReference<String?>(null)
+    private var uiSyncJob: Job? = null
+
     private var serviceRef: WeakReference<ImeInputMethodService>? = null
-    private val initLock = Any()  // 初始化锁
-    private val audioLock = Any() // 音频处理与流释放锁
+    private val initLock = Any()
 
     private const val SAMPLE_RATE = 16000
-
-    // 静音检测阈值（振幅比值 0.0f ~ 1.0f）
     private const val NOISE_THRESHOLD = 0.02f
 
-    /**
-     * 按需懒加载初始化推理引擎（运行在 IO 线程）
-     */
     private fun initEngineIfNeeded(ctx: Context): Boolean {
         if (recognizerRef.get() != null) return true
 
@@ -55,7 +49,8 @@ object SherpaSpeechClient {
             if (recognizerRef.get() != null) return true
 
             val appContext = ctx.applicationContext
-            val voiceDir = File(appContext.getExternalFilesDir(null), "voice").also { it.mkdirs() }
+            val voiceDir =
+                File(appContext.getExternalFilesDir(null), "model/speech").also { it.mkdirs() }
             val metaFile = File(voiceDir, "metadata.json")
             val tokensFile = File(voiceDir, "tokens.txt")
 
@@ -76,20 +71,16 @@ object SherpaSpeechClient {
                     language = json.optString("language", language)
                     provider = json.optString("provider", provider)
                     decodingMethod = json.optString("decodingMethod", decodingMethod)
-                    Timber.i("⚙️ 成功从外部 JSON 载入配置")
                 } catch (e: Exception) {
                     Timber.e(e, "⚠️ 外部 metadata.json 解析失败")
                 }
             }
 
             val modelFile = File(voiceDir, modelName)
-            if (!modelFile.exists() || !tokensFile.exists()) {
-                Timber.e("❌ 初始化终止：未找到指定的模型文件或词表。")
-                return false
-            }
+            if (!modelFile.exists() || !tokensFile.exists()) return false
             val punctModelFile = File(voiceDir, punctModelName)
+
             return try {
-                // 1. 初始化语音识别 ASR 引擎
                 val senseVoiceConfig = OfflineSenseVoiceModelConfig(
                     model = modelFile.absolutePath,
                     language = language,
@@ -112,11 +103,9 @@ object SherpaSpeechClient {
                 )
 
                 recognizerRef.set(OfflineRecognizer(null, config))
-                Timber.i("🚀 Sherpa-onnx 外置离线 ASR 引擎初始化成功！")
 
-                // 2. 初始化标点模型
                 if (punctModelFile.exists()) {
-                    try {
+                    runCatching {
                         val punctConfig = OfflinePunctuationConfig(
                             model = OfflinePunctuationModelConfig(
                                 ctTransformer = punctModelFile.absolutePath,
@@ -126,36 +115,35 @@ object SherpaSpeechClient {
                             )
                         )
                         punctuationRef.set(OfflinePunctuation(null, punctConfig))
-                        Timber.i("🎯 标点模型加载成功: ${punctModelFile.name}")
-                    } catch (e: Throwable) {
-                        Timber.e(e, "⚠️ 标点模型加载失败，将输出无标点文本")
-                        punctuationRef.set(null)
                     }
-                } else {
-                    Timber.w("⚠️ 未能在 voice 目录下找到标点模型，将输出无标点纯文本")
-                    punctuationRef.set(null)
                 }
-
                 true
             } catch (e: Throwable) {
-                Timber.e(e, "❌ 外置引擎模型初始化崩溃")
                 false
             }
         }
     }
 
-    /**
-     * 按下语音键，启动会话
-     */
     fun startHoldSession(service: ImeInputMethodService) {
         if (!isHolding.compareAndSet(false, true)) return
+        isStopping.set(false)
 
         serviceRef = WeakReference(service)
+        pendingComposingText.set(null)
+
+        uiSyncJob = service.scope?.launch(Dispatchers.Main) {
+            while (isActive && isHolding.get()) {
+                delay(50)
+                val text = pendingComposingText.getAndSet(null)
+                if (!text.isNullOrBlank()) {
+                    service.currentInputConnection?.setComposingText(text, 1)
+                }
+            }
+        }
 
         service.scope?.launch {
             val initSuccess = withContext(Dispatchers.IO) { initEngineIfNeeded(service) }
 
-            // 用户在引擎初始化期间可能已松手；放弃本次录音，避免“松开后才打开麦克风”的竞态。
             if (!isHolding.get()) {
                 clearReferences()
                 return@launch
@@ -165,13 +153,10 @@ object SherpaSpeechClient {
                 val engine = recognizerRef.get()
                 if (engine != null) {
                     try {
-                        synchronized(audioLock) {
-                            val newStream = engine.createStream()
-                            currentStreamRef.set(newStream)
-                        }
+                        val newStream = engine.createStream()
+                        currentStreamRef.set(newStream)
                         startAudioStreaming(service)
                     } catch (t: Throwable) {
-                        Timber.e(t, "创建推理流失败")
                         cancelSession()
                     }
                 }
@@ -182,36 +167,74 @@ object SherpaSpeechClient {
         }
     }
 
-    /**
-     * 松开语音键，结束当前会话并上屏。
-     * 仅置位 isHolding=false 让录音循环优雅退出，复用协程内部的 [withContext(NonCancellable)]
-     * 来确保“最后一帧全量解码 + setComposingText + onDone”不会被取消抢断。
-     */
     fun stopHoldSession() {
         if (!isHolding.compareAndSet(true, false)) return
+        if (!isStopping.compareAndSet(false, true)) return
+
         val job = audioJob
         audioJob = null
+        uiSyncJob?.cancel()
+        uiSyncJob = null
+
         val svc = serviceRef?.get()
+
         if (svc != null) {
             svc.scope?.launch {
-                // 等待内部优雅收尾（最终解码 + 上屏 + onDone 全部在 NonCancellable 内完成）
+                val rec = audioRecord
+                try {
+                    rec?.stop()
+                } catch (_: Throwable) {
+                }
+
                 job?.join()
+
                 withContext(NonCancellable) {
-                    svc.currentInputConnection?.finishComposingText()
+                    var finalCleanText: String? = null
+                    val engine = recognizerRef.get()
+                    val stream = currentStreamRef.get()
+                    val puncEngine = punctuationRef.get()
+
+                    if (engine != null && stream != null) {
+                        try {
+                            engine.decode(stream)
+                            val finalResult = engine.getResult(stream)
+                            if (finalResult.text.isNotBlank()) {
+                                val cleanText = cleanSenseVoiceText(finalResult.text)
+                                finalCleanText = if (puncEngine != null && cleanText.isNotBlank()) {
+                                    puncEngine.addPunctuation(cleanText)
+                                } else {
+                                    cleanText
+                                }
+                            }
+                        } catch (e: Throwable) {
+                            Timber.e(e, "松手后最终解码失败")
+                        }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        val ic = svc.currentInputConnection
+                        if (ic != null) {
+                            if (!finalCleanText.isNullOrBlank()) {
+                                ic.setComposingText(finalCleanText, 1)
+                                ic.finishComposingText()
+                            } else {
+                                ic.finishComposingText()
+                            }
+                        }
+                        runCatching { SpeechUiBridge.onDone?.invoke() }
+                    }
                     clearReferences()
+                    isStopping.set(false)
                 }
             }
         } else {
-            // 没有 service 可用，强制取消并清理
             job?.cancel()
             clearReferences()
+            isStopping.set(false)
             runCatching { SpeechUiBridge.onDone?.invoke() }
         }
     }
 
-    /**
-     * 核心音频采集与流式投喂控制
-     */
     private fun startAudioStreaming(service: ImeInputMethodService) {
         if (ContextCompat.checkSelfPermission(
                 service, Manifest.permission.RECORD_AUDIO
@@ -245,10 +268,7 @@ object SherpaSpeechClient {
                         it.state == AudioRecord.STATE_INITIALIZED
                     }
                 }
-                if (rec == null) {
-                    Timber.e("❌ 无法创建 AudioRecord 实例")
-                    return@launch
-                }
+                if (rec == null) return@launch
 
                 audioRecord = rec
                 rec.startRecording()
@@ -301,108 +321,47 @@ object SherpaSpeechClient {
                         floatChunk[i] = shortChunk[i] / 32768.0f
                     }
 
-                    var pendingText: String? = null
+                    val engine = recognizerRef.get()
+                    val stream = currentStreamRef.get()
+                    val puncEngine = punctuationRef.get()
 
-                    // ─── 优化点 1：流式运行中解码与标点追加（锁内部） ───
-                    synchronized(audioLock) {
-                        val engine = recognizerRef.get()
-                        val stream = currentStreamRef.get()
-                        val puncEngine = punctuationRef.get()
+                    if (engine != null && stream != null) {
+                        if (hasRealAudioEntered) {
+                            if (continuousSilenceCount <= maxTailBufferFrames) {
+                                stream.acceptWaveform(floatChunk, SAMPLE_RATE)
 
-                        if (engine != null && stream != null) {
-                            if (hasRealAudioEntered) {
-                                if (continuousSilenceCount <= maxTailBufferFrames) {
-                                    stream.acceptWaveform(floatChunk, SAMPLE_RATE)
-
-                                    loopCounter++
-                                    if (loopCounter % 8 == 0) {
-                                        try {
-                                            engine.decode(stream)
-                                            val resultObj = engine.getResult(stream)
-                                            if (resultObj.text.isNotBlank()) {
-                                                val cleanText = cleanSenseVoiceText(resultObj.text)
-                                                // 如果标点符号引擎就绪，追加动态断句标点
-                                                pendingText =
-                                                    if (puncEngine != null && cleanText.isNotBlank()) {
-                                                        puncEngine.addPunctuation(cleanText)
-                                                    } else {
-                                                        cleanText
-                                                    }
-                                            }
-                                        } catch (e: Throwable) {
-                                            Timber.e(e, "流式运行中解码失败")
+                                loopCounter++
+                                if (loopCounter % 8 == 0) {
+                                    try {
+                                        engine.decode(stream)
+                                        val resultObj = engine.getResult(stream)
+                                        if (resultObj.text.isNotBlank()) {
+                                            val cleanText = cleanSenseVoiceText(resultObj.text)
+                                            val streamingText =
+                                                if (puncEngine != null && cleanText.isNotBlank()) {
+                                                    puncEngine.addPunctuation(cleanText)
+                                                } else {
+                                                    cleanText
+                                                }
+                                            pendingComposingText.set(streamingText)
                                         }
+                                    } catch (_: Throwable) {
                                     }
                                 }
                             }
-                        }
-                    }
-
-                    if (!pendingText.isNullOrBlank()) {
-                        withContext(Dispatchers.Main) {
-                            serviceRef?.get()?.currentInputConnection?.setComposingText(
-                                pendingText, 1
-                            )
                         }
                     }
 
                     withContext(Dispatchers.Main) {
                         runCatching { SpeechUiBridge.onAmplitude?.invoke(amp) }
                     }
-
                     delay(5)
                 }
 
-                // ─── 优化点 2：松手时全量完美断句与上屏。
-                    // 包在 NonCancellable 内：即使外部 job 已被取消，最终解码、
-                    // setComposingText 与 onDone 也必须完整执行，避免末字丢失/UI 卡住。
-                    val finalCleanText = withContext(NonCancellable) {
-                        var result: String? = null
-                        synchronized(audioLock) {
-                            val engine = recognizerRef.get()
-                            val stream = currentStreamRef.get()
-                            val puncEngine = punctuationRef.get()
-
-                            if (engine != null && stream != null && hasRealAudioEntered) {
-                                try {
-                                    engine.decode(stream)
-                                    val finalResult = engine.getResult(stream)
-                                    if (finalResult.text.isNotBlank()) {
-                                        val cleanText = cleanSenseVoiceText(finalResult.text)
-                                        // 全量文本送入标点模型加工
-                                        result = if (puncEngine != null && cleanText.isNotBlank()) {
-                                            puncEngine.addPunctuation(cleanText)
-                                        } else {
-                                            cleanText
-                                        }
-                                    }
-                                } catch (e: Throwable) {
-                                    Timber.e(e, "松手后最终解码失败")
-                                }
-                            }
-                        }
-                        result
-                    }
-
-                    withContext(NonCancellable + Dispatchers.Main) {
-                        if (!finalCleanText.isNullOrBlank()) {
-                            serviceRef?.get()?.currentInputConnection?.setComposingText(
-                                finalCleanText, 1
-                            )
-                        }
-                        runCatching { SpeechUiBridge.onDone?.invoke() }
-                    }
-
             } catch (t: Throwable) {
-                if (t is CancellationException) {
-                    withContext(NonCancellable + Dispatchers.Main) {
-                        runCatching { SpeechUiBridge.onDone?.invoke() }
-                    }
-                } else {
-                    Timber.e(t, "录音及核心推理链异常")
+                if (t !is CancellationException) {
                     withContext(NonCancellable + Dispatchers.Main) {
                         serviceRef?.get()?.let { toast(it, "录音异常") }
-                        runCatching { SpeechUiBridge.onDone?.invoke() }
                     }
                 }
             } finally {
@@ -414,13 +373,11 @@ object SherpaSpeechClient {
                 if (audioRecord == rec) {
                     audioRecord = null
                 }
-                synchronized(audioLock) {
-                    try {
-                        currentStreamRef.get()?.release()
-                    } catch (_: Throwable) {
-                    }
-                    currentStreamRef.set(null)
+                try {
+                    currentStreamRef.get()?.release()
+                } catch (_: Throwable) {
                 }
+                currentStreamRef.set(null)
             }
         }
     }
@@ -429,21 +386,26 @@ object SherpaSpeechClient {
 
     private fun cancelSession() {
         isHolding.set(false)
+        isStopping.set(false)
         audioJob?.cancel()
         audioJob = null
+        uiSyncJob?.cancel()
+        uiSyncJob = null
         runCatching { SpeechUiBridge.onDone?.invoke() }
         resetStateDirectly()
     }
 
     private fun resetStateDirectly() {
         isHolding.set(false)
-        synchronized(audioLock) {
-            try {
-                currentStreamRef.get()?.release()
-            } catch (_: Throwable) {
-            }
-            currentStreamRef.set(null)
+        isStopping.set(false)
+        uiSyncJob?.cancel()
+        uiSyncJob = null
+        pendingComposingText.set(null)
+        try {
+            currentStreamRef.get()?.release()
+        } catch (_: Throwable) {
         }
+        currentStreamRef.set(null)
         clearReferences()
     }
 
@@ -461,9 +423,7 @@ object SherpaSpeechClient {
         return max.toFloat() / 32768f
     }
 
-    private fun cleanSenseVoiceText(rawText: String): String {
-        return rawText.trim()
-    }
+    private fun cleanSenseVoiceText(rawText: String): String = rawText.trim()
 
     private fun toast(ctx: Context, msg: String) {
         ContextCompat.getMainExecutor(ctx).execute {

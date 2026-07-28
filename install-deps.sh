@@ -19,6 +19,7 @@ DEPS=(
     "$DEPS_DIR/librime-lua-deps|https://github.com/hchunhui/librime-lua.git|thirdparty"
     "$DEPS_DIR/librime-octagram|https://github.com/lotem/librime-octagram.git|master"
     "$DEPS_DIR/librime-predict|https://github.com/rime/librime-predict.git|master"
+    "$DEPS_DIR/llama.cpp|https://github.com/ggml-org/llama.cpp.git|master"
 )
 
 echo ">>> 开始同步 Git 依赖..."

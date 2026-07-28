@@ -67,6 +67,7 @@ class TextEditView(
 
     private var hasSelection = false
     private var userSelection = false
+    private var hasContent = false
 
     private fun TextEditingButton.onClickRepeating(block: () -> Unit) {
         setOnClickListener { block() }
@@ -250,6 +251,8 @@ class TextEditView(
                 userSelection = false
                 updateSelection(hasSelection, userSelection)
                 onAction?.invoke(Action.CancelSelection)
+            } else if (!userSelection && !hasContent) {
+                return@setOnClickListener
             } else {
                 userSelection = !userSelection
                 updateSelection(false, userSelection)
@@ -295,6 +298,10 @@ class TextEditView(
         updateSelection(start != end, userSelection)
     }
 
+    fun onInputChanged(text: String) {
+        hasContent = text.isNotEmpty()
+    }
+
     override fun show() {
         if (visibility != VISIBLE) {
             hasSelection = false
@@ -329,6 +336,7 @@ class TextEditingButton(
 
     private var hasActivatedState = false
     private var pressedLayerAlpha = 0
+    private var wasPressed = false
     private var bgAnimator: Animator? = null
 
     val textView: TextView = textView {
@@ -419,6 +427,10 @@ class TextEditingButton(
         }
         val bg = background
         if (bg !is LayerDrawable || bg.numberOfLayers < 2) return
+
+        val pressedChanged = isPressed != wasPressed
+        wasPressed = isPressed
+        if (!pressedChanged) return
 
         bgAnimator?.cancel()
         val pressedDrawable = bg.getDrawable(1) ?: return

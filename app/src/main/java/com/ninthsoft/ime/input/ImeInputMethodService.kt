@@ -25,7 +25,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import timber.log.Timber
 
 class ImeInputMethodService : InputMethodService() {
     private val engine: IEngine? = EngineFactory.current()
@@ -63,7 +62,6 @@ class ImeInputMethodService : InputMethodService() {
         keyboardWindow = KeyboardWindow(
             service = this,
             onCandidateSelected = { candidate -> engine?.selectCandidate(candidate.index) },
-            onRerankedSelected = { text -> currentInputConnection?.commitText(text, 1) },
             onToolbarAction = { action ->
                 when (action) {
                     CloseKeyboard -> requestHideSelf(0)

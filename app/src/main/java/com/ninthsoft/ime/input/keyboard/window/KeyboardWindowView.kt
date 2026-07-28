@@ -25,6 +25,7 @@ import com.ninthsoft.ime.input.speech.SpeechOverlayView
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.speech.SpeechUiBridge
 import com.ninthsoft.ime.input.ImeInputMethodService
+import timber.log.Timber
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -400,7 +401,9 @@ class KeyboardWindowView(
 
     override fun onDetach() {
         if (isVoiceRecording) {
-            stopVoiceInput()
+            isVoiceRecording = false
+            SherpaSpeechClient.stopHoldSession()
+            voiceOverlay.hide()
         }
         keyboardManager.detachCurrent()
     }
@@ -450,6 +453,11 @@ class KeyboardWindowView(
     }
 
     fun onInputChanged(info: EditorInfo?, text: String): Any {
+        if (isVoiceRecording && text.isEmpty()){
+            SherpaSpeechClient.stopHoldSession()
+            voiceOverlay.hide()
+        }
+        panel.onInputChanged(text)
         return keyboardManager.onInputChanged(info, text)
     }
 }

@@ -9,23 +9,20 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
-import android.widget.FrameLayout
 import android.widget.OverScroller
+import androidx.core.graphics.withRotation
+import androidx.core.graphics.withSave
 import com.ninthsoft.ime.base.util.slideUpCollapse
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.sin
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
-import androidx.core.graphics.withRotation
-import androidx.core.graphics.withSave
-import timber.log.Timber
+import kotlin.math.abs
+import kotlin.math.max
 
 @SuppressLint("ViewConstructor")
 class CandidateGridView(

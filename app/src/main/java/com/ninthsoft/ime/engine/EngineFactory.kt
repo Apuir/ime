@@ -22,10 +22,7 @@ object EngineFactory {
                 SingletonRegistry.registerIfAbsent(clazz, it)
             }
         } catch (e: Exception) {
-            throw RuntimeException(
-                "无法创建引擎实例: ${clazz.simpleName}",
-                e,
-            )
+            throw e
         }
     }
 

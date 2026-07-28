@@ -126,7 +126,7 @@ class QwertyKeyboard(
                 asciiPunctuationState = punctuationState
                 var spaceText = spaceRawText
                 if (asciiMode) {
-                    spaceText += " (AscII)"
+                    spaceText += " (Ascii)"
                 }
 
                 updateSpaceKeyText(spaceText)

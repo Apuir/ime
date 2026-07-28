@@ -307,14 +307,14 @@ class AltTextKeyView(
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.25f
+            verticalBias = 0.15f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.85f
+            verticalBias = 0.80f
         }
 
         val altDef = def as KeyDef.Appearance.AltText

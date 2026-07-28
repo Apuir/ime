@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.view.View
 import androidx.core.graphics.withScale
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sin
@@ -20,12 +21,21 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
     private var smoothVolume = 0f
     private val barCount = 9
     private val contentScale = 0.55f
+    private val centerIndex = (barCount - 1) / 2
 
+    // 基础高斯权重
     private val gaussianWeights = FloatArray(barCount) { i ->
-        val center = (barCount - 1) / 2f
-        val sigma = barCount / 4f
+        val center = centerIndex.toFloat()
+        val sigma = barCount / 4.0f
         val x = (i - center) / sigma
-        exp((-x * x / 2).toDouble()).toFloat()
+        var weight = exp((-x * x / 2).toDouble()).toFloat()
+
+        // 适当削减两端中高音权重
+        val distanceFromCenter = abs(i - center)
+        if (distanceFromCenter > 2f) {
+            weight *= 0.82f
+        }
+        weight
     }
 
     private val currentHeights = FloatArray(barCount) { 0.08f }
@@ -45,6 +55,13 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
 
     private val idleSpeed = FloatArray(barCount) {
         0.01f + Random.nextFloat() * 0.02f
+    }
+
+    private val microPhase = FloatArray(barCount) {
+        Random.nextFloat() * 6.28f
+    }
+    private val microSpeed = FloatArray(barCount) {
+        0.03f + Random.nextFloat() * 0.03f
     }
 
     private val barColors = intArrayOf(
@@ -74,26 +91,71 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
 
     private fun updateFrame() {
         val target = targetVolume.coerceIn(0, 100) / 100f
-        smoothVolume += (target - smoothVolume) * 0.08f
+        smoothVolume += (target - smoothVolume) * 0.16f
         globalPhase += 0.035f
 
-        val volume = smoothVolume.pow(1.6f)
+        // 中高音音量映射抑制
+        val volume = if (smoothVolume > 0.6f) {
+            0.6f + (smoothVolume - 0.6f).pow(1.3f) * 0.6f
+        } else {
+            smoothVolume.pow(1.2f)
+        }
 
         for (i in 0 until barCount) {
             noisePhase[i] += noiseSpeed[i]
             idlePhase[i] += idleSpeed[i]
+            microPhase[i] += microSpeed[i]
 
             val base = gaussianWeights[i]
-            val noise = sin(noisePhase[i].toDouble()).toFloat() * 0.12f
+            val noise = sin(noisePhase[i].toDouble()).toFloat() * 0.06f
             val idle = sin(idlePhase[i].toDouble()).toFloat() * 0.015f
+
+            // 极小范围的邻域微扰，避免第4、5、6根波动过剧烈
+            val microJitter = if (i == centerIndex) {
+                0f
+            } else {
+                sin(microPhase[i].toDouble()).toFloat() * 0.025f * volume
+            }
+
             val breathing = sin(
                 (globalPhase + i * 0.25f).toDouble()
-            ).toFloat() * 0.025f
-            val height = 0.08f + base * volume * 0.4f + noise * volume * 0.08f + idle + breathing
+            ).toFloat() * 0.02f
 
-            targetHeights[i] = height.coerceIn(
-                0.05f, 0.6f
-            )
+            // 基础高度计算
+            var height = 0.08f + (base * volume * 0.38f) + microJitter + (noise * volume * 0.025f) + idle + breathing
+
+            // 中高音及过渡区缩减（第4、5、6根周围的过渡更平滑）
+            val distanceFromCenter = abs(i - centerIndex)
+            if (distanceFromCenter >= 2) {
+                val baseFloor = 0.08f + idle + breathing
+                val dynamicPart = height - baseFloor
+                if (dynamicPart > 0f) {
+                    height = baseFloor + dynamicPart * 0.56f
+                }
+            }
+
+            targetHeights[i] = height
+        }
+
+        // 用平滑的滑动平均（邻域柔化）来处理第 4、5、6 根，消除突兀的阶梯感
+        // 让第 5 根自然略高于邻居，而不是硬拔高
+        for (i in 1 until barCount - 1) {
+            // 对中间区域进行轻度的均值融合，使 4、5、6 之间的过渡如丝般顺滑
+            if (i in 3..5) {
+                targetHeights[i] = (targetHeights[i - 1] * 0.25f) + (targetHeights[i] * 0.5f) + (targetHeights[i + 1] * 0.25f)
+            }
+        }
+
+        // 确保最中间那根（第5根）依然保持自然最长
+        if (targetHeights[centerIndex] < targetHeights[centerIndex - 1]) {
+            targetHeights[centerIndex] = targetHeights[centerIndex - 1] * 1.05f
+        }
+        if (targetHeights[centerIndex] < targetHeights[centerIndex + 1]) {
+            targetHeights[centerIndex] = targetHeights[centerIndex + 1] * 1.05f
+        }
+
+        for (i in 0 until barCount) {
+            targetHeights[i] = targetHeights[i].coerceIn(0.05f, 0.58f)
             updateSmoothHeight(i)
         }
 
@@ -101,8 +163,7 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
     }
 
     private fun updateSmoothHeight(index: Int) {
-        val speed = 0.12f + (index % 3) * 0.015f
-
+        val speed = 0.18f + (index % 3) * 0.02f
         currentHeights[index] += (targetHeights[index] - currentHeights[index]) * speed
     }
 
@@ -192,7 +253,7 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
             val barMaxHeight = height * 0.55f
 
             for (i in 0 until barCount) {
-                val barHeight = barMaxHeight * currentHeights[i] / 0.6f
+                val barHeight = barMaxHeight * currentHeights[i] / 0.58f
                 val x = startX + i * (barWidth + spacing)
                 val y = (height - barHeight) / 2f
                 val color = barColors[i]

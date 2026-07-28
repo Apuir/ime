@@ -19,7 +19,7 @@ import com.ninthsoft.ime.R
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 class SpeechOverlayView(
     context: Context,
-    type: WaveViewType = WaveViewType.PARTICLE,
+    type: WaveViewType = WaveViewType.SPECTRUM,
 ) : FrameLayout(context) {
 
     enum class WaveViewType { PARTICLE, SPECTRUM }

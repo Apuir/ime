@@ -234,6 +234,10 @@ class KawaiiPanel(
         textEditingView.setSelection(start, end)
     }
 
+    fun onInputChanged(text: String) {
+        textEditingView.onInputChanged(text)
+    }
+
     private fun showCopyIfRecent(text: String) {
         copyText = text
         val recentTime = ClipboardRepository.lastCopyTimestamp

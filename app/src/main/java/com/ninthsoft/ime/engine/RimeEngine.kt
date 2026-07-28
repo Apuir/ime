@@ -250,7 +250,6 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 this@RimeEngine.resetComposition()
             } else {
                 service.currentInputConnection?.let {
-                    it.finishComposingText()
                     it.performContextMenuAction(android.R.id.selectAll)
                     it.commitText("", 1)
                 }

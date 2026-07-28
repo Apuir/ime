@@ -32,7 +32,6 @@ class MessageHandler(
 
             is EngineMessage.CompositionEnd -> {
                 withContext(Dispatchers.Main) {
-                    service.currentInputConnection?.finishComposingText()
                     window?.updatePreedit(null)
                 }
             }
