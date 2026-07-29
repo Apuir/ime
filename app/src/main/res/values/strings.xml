@@ -24,7 +24,8 @@
 
 
     <string name="keyboard_layout">键盘布局</string>
-    <string name="keyboard_height">键盘高度</string>
+    <string name="keyboard_height">键盘高度（竖屏）</string>
+    <string name="keyboard_height_landscape">键盘高度（横屏）</string>
 
     <!-- IME Setup -->
     <string name="ime_setup_title">输入法设置</string>

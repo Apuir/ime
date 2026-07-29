@@ -32,11 +32,11 @@ class SpeechOverlayView(
     }
 
     companion object {
-        private const val BUTTON_HEIGHT_DP = 32
-        private const val BUTTON_MAX_SIZE_DP = 88
-        private const val BUTTON_MARGIN_DP = 16
         private const val CAPSULE_ALPHA = 30
         private const val HIGHLIGHT_ALPHA = 100
+        private const val BUTTON_HEIGHT_RATIO = 0.12f
+        private const val BUTTON_MAX_RATIO = 0.32f
+        private const val BUTTON_MARGIN_RATIO = 0.056f
     }
 
     var onSpeechActionListener: OnSpeechActionListener? = null
@@ -53,12 +53,10 @@ class SpeechOverlayView(
     private var waveViewType: WaveViewType = type
     private var waveView: ISpeechView = createWaveView(type, context)
 
-    private val buttonHeight =
-        context.resources.displayMetrics.density.let { (BUTTON_HEIGHT_DP * it).toInt() }
-    private val buttonMaxSize =
-        context.resources.displayMetrics.density.let { (BUTTON_MAX_SIZE_DP * it).toInt() }
-    private val buttonMargin =
-        context.resources.displayMetrics.density.let { (BUTTON_MARGIN_DP * it).toInt() }
+    private val density = context.resources.displayMetrics.density
+    private var buttonHeight = (32f * density).toInt()
+    private var buttonMaxSize = (88f * density).toInt()
+    private var buttonMargin = (16f * density).toInt()
     private val closeButton: ImageView
     private val lockButton: ImageView
     private val closeButtonBg: GradientDrawable
@@ -163,9 +161,14 @@ class SpeechOverlayView(
         val w = waveView.view.width
         val h = waveView.view.height
         if (w <= 0 || h <= 0) return
-        val capsulePad = w * 0.08f
+        val minDim = minOf(w, h).toFloat()
+        val capsulePad = minDim * 0.08f
         val buttonSize =
-            ((h - capsulePad * 3.6f) * 0.55f * 0.82f).toInt().coerceIn(buttonHeight, buttonMaxSize)
+            ((h - capsulePad * 3.6f) * 0.55f * 0.66f).toInt().coerceIn(buttonHeight, buttonMaxSize)
+
+        buttonHeight = (h * BUTTON_HEIGHT_RATIO).toInt()
+        buttonMaxSize = (h * BUTTON_MAX_RATIO).toInt()
+        buttonMargin = (h * BUTTON_MARGIN_RATIO).toInt()
 
         val lp = LayoutParams(buttonSize, buttonSize).apply {
             gravity = Gravity.CENTER_VERTICAL or Gravity.START

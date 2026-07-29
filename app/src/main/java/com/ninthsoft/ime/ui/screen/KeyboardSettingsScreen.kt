@@ -62,6 +62,9 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
     var keyboardHeight by remember {
         mutableFloatStateOf(KeyboardManager.Keyboard.getHeightPercent(context).toFloat())
     }
+    var keyboardHeightLandscape by remember {
+        mutableFloatStateOf(KeyboardManager.Keyboard.getHeightPercentLandscape(context).toFloat())
+    }
     var horizontalPadding by remember {
         mutableFloatStateOf(KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat())
     }
@@ -287,6 +290,16 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     onValueChange = {
                         keyboardHeight = it
                         KeyboardManager.Keyboard.setHeightPercent(context, it.toInt())
+                    },
+                )
+                SliderRow(
+                    title = stringResource(R.string.keyboard_height_landscape),
+                    value = keyboardHeightLandscape,
+                    valueLabel = "${keyboardHeightLandscape.toInt()}%",
+                    range = 30f..70f,
+                    onValueChange = {
+                        keyboardHeightLandscape = it
+                        KeyboardManager.Keyboard.setHeightPercentLandscape(context, it.toInt())
                     },
                 )
                 SliderRow(

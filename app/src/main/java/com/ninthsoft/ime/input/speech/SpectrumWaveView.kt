@@ -8,6 +8,7 @@ import android.view.View
 import androidx.core.graphics.withScale
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
@@ -20,7 +21,7 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
     private var targetVolume = 0
     private var smoothVolume = 0f
     private val barCount = 9
-    private val contentScale = 0.55f
+    private val contentScale = 0.48f
     private val centerIndex = (barCount - 1) / 2
 
     // 基础高斯权重
@@ -221,9 +222,10 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
         canvas.withScale(
             contentScale, contentScale, width / 2f, height / 2f
         ) {
-            val capsulePad = width * 0.08f
-            val capsuleTop = capsulePad * 1.8f
-            val capsuleBottom = height - capsulePad * 1.8f
+            val baseDim = min(width, height).toFloat()
+            val capsulePad = baseDim * 0.08f
+            val capsuleTop = capsulePad * 2.8f
+            val capsuleBottom = height - capsulePad * 2.8f
             val capsuleRight = width - capsulePad
             val capsuleRadius = (capsuleBottom - capsuleTop) / 2f
 
@@ -244,13 +246,13 @@ class SpectrumWaveView(context: Context) : View(context), ISpeechView {
                 paint
             )
 
-            val barAreaPad = width * 0.15f
+            val barAreaPad = baseDim * 0.15f
             val barWidth = (width - barAreaPad * 2) / (barCount * 2.2f)
             val spacing = barWidth * 0.6f
             val totalWidth = barCount * barWidth + (barCount - 1) * spacing
             val startX = (width - totalWidth) / 2f
             val alpha = (90 + smoothVolume * 165).toInt().coerceIn(80, 255)
-            val barMaxHeight = height * 0.55f
+            val barMaxHeight = height * 0.44f
 
             for (i in 0 until barCount) {
                 val barHeight = barMaxHeight * currentHeights[i] / 0.58f

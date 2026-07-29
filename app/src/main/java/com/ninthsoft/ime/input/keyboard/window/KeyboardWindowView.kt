@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard.window
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.util.TypedValue
 import android.view.WindowManager
@@ -155,7 +156,7 @@ class KeyboardWindowView(
     fun onConfigChanged(key: String) {
         when (key) {
             SchemaManager.KEY_ENABLED_IDS -> keyboardManager.onConfigChanged(key)
-            KeyboardManager.Keyboard.KEY_HEIGHT, KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL, KeyboardManager.Keyboard.Padding.KEY_BOTTOM, KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
+            KeyboardManager.Keyboard.KEY_HEIGHT, KeyboardManager.Keyboard.KEY_HEIGHT_LANDSCAPE, KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL, KeyboardManager.Keyboard.Padding.KEY_BOTTOM, KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
                 panel.view.updateHorizontalPadding(
                     KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
                 )
@@ -352,7 +353,12 @@ class KeyboardWindowView(
     }
 
     private fun contentHeight(): Int {
-        val percent = KeyboardManager.Keyboard.getHeightPercent(context)
+        val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val percent = if (isLandscape) {
+            KeyboardManager.Keyboard.getHeightPercentLandscape(context)
+        } else {
+            KeyboardManager.Keyboard.getHeightPercent(context)
+        }
         val fullHeight = fullScreenHeight()
         return (fullHeight * percent / 100).coerceAtLeast(minimumHeight)
     }

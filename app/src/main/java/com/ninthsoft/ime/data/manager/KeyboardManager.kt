@@ -7,6 +7,7 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
 object KeyboardManager {
     const val PREFS_NAME = "keyboard_settings"
     private const val DEFAULT_KEYBOARD_HEIGHT = 24
+    private const val DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE = 44
     private const val DEFAULT_PADDING_DP = 4
 
     object Theme {
@@ -30,6 +31,7 @@ object KeyboardManager {
     object Keyboard {
         private const val PREFIX = "keyboard"
         const val KEY_HEIGHT = "$PREFIX.height"
+        const val KEY_HEIGHT_LANDSCAPE = "$PREFIX.height_landscape"
         const val KEY_IGNORE_INSETS = "$PREFIX.ignore_insets"
         const val KEY_THEME = "$PREFIX.theme"
 
@@ -41,6 +43,17 @@ object KeyboardManager {
         fun setHeightPercent(context: Context, percent: Int) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                 putInt("$PREFIX.height", percent)
+            }
+        }
+
+        fun getHeightPercentLandscape(context: Context): Int {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt("$PREFIX.height_landscape", DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE)
+        }
+
+        fun setHeightPercentLandscape(context: Context, percent: Int) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putInt("$PREFIX.height_landscape", percent)
             }
         }
 
