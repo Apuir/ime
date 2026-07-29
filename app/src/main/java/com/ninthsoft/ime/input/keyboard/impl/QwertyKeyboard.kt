@@ -171,10 +171,6 @@ class QwertyKeyboard(
         updateKeyTextForState(capsState)
     }
 
-    override fun onDetach() {
-        Timber.d("oNormalKeyboard detached")
-    }
-
     override fun name(): String {
         return NAME
     }

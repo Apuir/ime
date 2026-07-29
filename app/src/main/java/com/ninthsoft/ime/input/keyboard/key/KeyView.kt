@@ -381,7 +381,7 @@ class SidePanelKeyView(
             }
             val textColor = when (itemAppearance.variant) {
                 Variant.Normal -> theme.keyText
-                Variant.AltForeground, Variant.Alternative -> theme.altText
+                Variant.AltForeground, Variant.Alternative -> theme.specialKeyText
                 Variant.Accent -> theme.accentKeyText
                 Variant.None -> colors.keyText
             }
@@ -449,7 +449,7 @@ class ImageTextKeyView(
     init {
         appearanceView.apply {
             id = if (def.viewId > 0) def.viewId else generateViewId()
-            add(img, lParams(dp(13), dp(13)))
+            add(img, lParams(dp(16), dp(16)))
         }
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId

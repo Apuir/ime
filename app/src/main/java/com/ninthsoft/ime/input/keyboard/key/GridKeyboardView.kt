@@ -22,6 +22,7 @@ class GridKeyboardView(
 ) : ViewGroup(context) {
 
     var onKeyAction: ((KeyboardAction) -> Unit)? = null
+    var onKeyPressed: ((KeyView) -> Unit)? = null
 
     private var scrollOffsetY = 0f
     private var rowH = 0
@@ -78,6 +79,9 @@ class GridKeyboardView(
                 if (action != null) {
                     onKeyAction?.invoke(action)
                 }
+            }
+            onPressedChanged = { key ->
+                if (key.isPressed) onKeyPressed?.invoke(key)
             }
         }
     }

@@ -418,6 +418,8 @@ abstract class BaseKeyboard(
     override fun onAttach() {}
 
     override fun onDetach() {
+        Timber.d("onDetached")
+        rippleView.cancelRipple()
         resetSidePanelPosition()
         previewPopup.dismiss()
         keyboardPopup.dismiss()

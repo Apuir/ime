@@ -2,22 +2,24 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
-import com.ninthsoft.ime.data.Punctuation
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
-import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.data.Punctuation
+import com.ninthsoft.ime.data.Symbol
 import com.ninthsoft.ime.input.keyboard.key.GridKeyboardView
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
+import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
-import androidx.core.view.isEmpty
-import timber.log.Timber
+import com.ninthsoft.ime.data.Symbol.Category
 
 @SuppressLint("ViewConstructor")
 class SymbolKeyboard(
@@ -27,32 +29,9 @@ class SymbolKeyboard(
 
     companion object {
         const val NAME = "Symbol"
-
-        private val CATEGORIES: Map<String, List<String>> = mapOf(
-            "表情" to listOf(
-                "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃",
-                "🫠", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "☺",
-                "😚", "😙", "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗",
-                "🤭", "🫢", "🫣", "🤫", "🤔", "🫡", "🤐", "🤨", "😐", "😑",
-                "😶", "😏", "😒", "🙄", "😬", "🤥", "😌", "😔", "😪", "🤤",
-                "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴",
-                "😵", "🤯", "🤠", "🥳", "🥸", "😎", "🤓", "🧐", "😕", "🫤",
-                "😟", "🙁", "😮", "😯", "😲", "😳", "🥺", "🥹", "😦", "😧",
-                "😨", "😰", "😥", "😢", "😭", "😱", "😖", "😣", "😞", "😓",
-                "😩", "😫", "🥱", "😤", "😡", "😠", "🤬", "👋", "🤚", "🖐",
-                "✋", "🖖", "🫱", "🫲", "🫳", "🫴", "👌", "🤌", "🤏", "🤞",
-                "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "🫵",
-                "👍", "👎", "✊", "👊", "🤛", "🤜", "💊", "👀",
-            ),
-            "符" to listOf("@", "#", "$", "%", "&", "*", "-", "+", "(", ")"),
-            "标" to listOf("!", "\"", "'", ":", ";", "/", "?", "~", ",", "."),
-            "括" to listOf("[", "]", "{", "}", "<", ">", "/", "\\", "_", "|"),
-            "^" to listOf("^", "`", "€", "£", "¥", "¢", "§", "©", "®", "™"),
-            "°" to listOf("°", "±", "×", "÷", "√", "∞", "≈", "≠", "≤", "≥"),
-        )
-
         private const val COLUMNS = 5
         private const val ROWS = 5
+        private var categorys: List<Pair<Category, Array<String>>> = Symbol.Symbol
 
         private fun keyDef(text: String): KeyDef {
             return KeyDef(
@@ -82,6 +61,14 @@ class SymbolKeyboard(
 
     private val gridView = GridKeyboardView(context, colors, COLUMNS, ROWS).apply {
         onKeyAction = { action -> keyActionListener?.onKeyAction(action) }
+        onKeyPressed = { key -> triggerRipple(key) }
+    }
+
+    private val rippleView = KeyboardRippleView(context).apply {
+        id = generateViewId()
+        isClickable = false
+        isEnabled = false
+        isFocusable = false
     }
 
     private val returnKeyDef = KeyDef(
@@ -106,25 +93,29 @@ class SymbolKeyboard(
         sideReturnBtn.setOnClickListener {
             keyActionListener?.onKeyAction(KeyboardAction.BackAction)
         }
+        sideReturnBtn.onPressedChanged = { key ->
+            if (key.isPressed) triggerRipple(key)
+        }
 
         isClickable = true
 
-        sidePanelItemDefs = CATEGORIES.keys.map { label ->
+        sidePanelItemDefs = categorys.map { (category, _) ->
             KeyDef(
                 appearance = KeyDef.Appearance.Text(
-                    displayText = label, textSize = 15f, percentWidth = 0.5f,
+                    displayText = category.label, textSize = 15f, percentWidth = 0.5f,
                     margin = false, variant = KeyDef.Appearance.Variant.Alternative,
                 ),
-                behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(label))),
+                behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(category.label))),
             )
         }
         sidePanelKey.updateItems(sidePanelItemDefs)
 
         sidePanelKey.setOnItemActionListener { action ->
-            if (action is KeyboardAction.CommitAction && action.text in CATEGORIES) {
-                val symbols = CATEGORIES[action.text] ?: return@setOnItemActionListener
+            if (action is KeyboardAction.CommitAction && categorys.any { it.first.label == action.text }) {
+                val symbols = categorys.firstOrNull { it.first.label == action.text }?.second
+                    ?: return@setOnItemActionListener
                 gridView.setItems(symbols.map { keyDef(it) })
-                val index = CATEGORIES.keys.indexOf(action.text)
+                val index = categorys.indexOfFirst { it.first.label == action.text }
                 if (index >= 0) sidePanelKey.selectIndex(index)
             } else {
                 keyActionListener?.onKeyAction(action)
@@ -134,6 +125,7 @@ class SymbolKeyboard(
         addView(sidePanelKey, lParams(0, matchParent))
         addView(sideReturnBtn, lParams(0, matchParent))
         addView(gridView, lParams(0, matchParent))
+        addView(rippleView, LayoutParams(matchParent, matchParent))
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -166,17 +158,31 @@ class SymbolKeyboard(
     override fun updatePunctuation(punctuation: Punctuation) {}
     override fun updateEditorInfo(info: EditorInfo, empty: Boolean) {}
 
-    override fun setRippleEnabled(enabled: Boolean) {}
+    override fun setRippleEnabled(enabled: Boolean) {
+        rippleView.rippleEnabled = enabled
+        rippleView.visibility = if (enabled) View.VISIBLE else View.INVISIBLE
+    }
+
+    private fun triggerRipple(key: KeyView) {
+        val keyLoc = IntArray(2)
+        val boardLoc = IntArray(2)
+        key.getLocationOnScreen(keyLoc)
+        getLocationOnScreen(boardLoc)
+        val cx = keyLoc[0] + key.width / 2f - boardLoc[0]
+        val cy = keyLoc[1] + key.height / 2f - boardLoc[1]
+        rippleView.startRipple(cx, cy, key)
+    }
 
     override fun onAttach() {
         reset()
     }
 
-    override fun onDetach() {}
+    override fun onDetach() {
+        rippleView.cancelRipple()
+    }
 
     fun reset() {
-        val first = CATEGORIES.keys.first()
-        val symbols = CATEGORIES[first] ?: return
+        val (_, symbols) = categorys.first()
         gridView.setItems(symbols.map { keyDef(it) })
         sidePanelKey.selectIndex(0)
         sidePanelKey.resetPosition()

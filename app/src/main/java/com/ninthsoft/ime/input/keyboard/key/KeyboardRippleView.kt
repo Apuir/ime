@@ -44,6 +44,12 @@ class KeyboardRippleView(
     private var animator: ValueAnimator? = null
     var rippleEnabled = true
 
+    fun cancelRipple() {
+        animator?.cancel()
+        animator = null
+        animProgress = 0f
+    }
+
     // 波纹中心
     private var cx = 0f
     private var cy = 0f
