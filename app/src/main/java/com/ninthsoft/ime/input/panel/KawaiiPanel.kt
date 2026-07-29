@@ -33,9 +33,13 @@ class KawaiiPanel(
 
     sealed class Action {
         data object SwitchKeyboard : Action()
+
+        data object EmojiKeyboard: Action()
         data object Clipboard : Action()
         data object ToggleVoice : Action()
         data object Settings : Action()
+        data object SchemaSettings : Action()
+        data object About : Action()
         data object Undo : Action()
         data object Redo : Action()
         data object Palette : Action()
@@ -84,7 +88,11 @@ class KawaiiPanel(
         confirmOverlay.dismiss()
         when (state) {
             is State.Composing -> candidateGrid.hide()
-            State.Menu -> menuGrid.hide()
+            State.Menu -> {
+                menuGrid.hide()
+                (view.currentRenderer as? IdleRenderer)?.showArrow = false
+                view.invalidate()
+            }
             State.TextEditing -> {
                 textEditingView.hide()
                 (view.currentRenderer as? IdleRenderer)?.textEditingMode = false
@@ -110,7 +118,11 @@ class KawaiiPanel(
     private fun enter(state: State) {
         when (state) {
             is State.Composing -> candidateGrid.show(state.candidates)
-            State.Menu -> menuGrid.show()
+            State.Menu -> {
+                menuGrid.show()
+                (view.currentRenderer as? IdleRenderer)?.showArrow = true
+                view.invalidate()
+            }
             State.TextEditing -> {
                 Timber.d("enter TextEditing: setting renderer textEditingMode=true")
                 (view.currentRenderer as? IdleRenderer)?.textEditingMode = true

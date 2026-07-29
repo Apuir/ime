@@ -75,6 +75,14 @@ class MainActivity : ComponentActivity() {
                                 ClipboardActivity::class.java
                             )
                         )
+                    },
+                    onOpenAbout = {
+                        startActivity(
+                            Intent(
+                                this@MainActivity,
+                                AboutActivity::class.java
+                            )
+                        )
                     }
                 )
             }

@@ -1,9 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
-import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 
@@ -84,7 +82,7 @@ fun capsLockKey(): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CapsAction),
-        KeyDef.Behavior.LongPress(KeyboardAction.AscIIAction),
+        KeyDef.Behavior.LongPress(KeyboardAction.ToggleAscIIAction),
     ),
 )
 

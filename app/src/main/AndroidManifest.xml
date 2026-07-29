@@ -54,6 +54,12 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.AboutActivity"
+            android:exported="false"
+            android:label="@string/about_us"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name=".base.speech.SpeechPermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />

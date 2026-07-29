@@ -198,7 +198,6 @@ class IdleRenderer(
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
                 pressRadius = 0f
-                if (!clipboardMode && !textEditingMode) showArrow = !showArrow
                 return KawaiiPanel.TouchResult.ToolbarAction(
                     KawaiiPanel.Action.SwitchKeyboard,
                     tapX = x,

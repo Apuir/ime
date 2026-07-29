@@ -13,6 +13,7 @@ import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
+import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.ISidePanelKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
@@ -78,6 +79,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         val b = when (name) {
             T9Keyboard.NAME -> T9Keyboard(context, cachedColors)
             SymbolKeyboard.NAME -> SymbolKeyboard(context, cachedColors)
+            EmojiKeyboard.NAME -> EmojiKeyboard(context, cachedColors)
             NumberKeyboard.NAME -> NumberKeyboard(context, cachedColors)
             else -> QwertyKeyboard(context, cachedColors)
         }

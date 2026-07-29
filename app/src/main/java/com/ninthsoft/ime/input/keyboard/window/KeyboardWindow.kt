@@ -93,5 +93,7 @@ class KeyboardWindow(
 
     fun onConfigChanged(key: String) = view.onConfigChanged(key)
 
+    fun toggleVoiceLocked() = view.toggleVoiceLocked()
+
     fun onInputChanged(text: String) = view.onInputChanged(currentEditorInfo, text)
 }

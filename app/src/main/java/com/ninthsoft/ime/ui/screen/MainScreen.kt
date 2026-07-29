@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Tune
@@ -47,6 +48,7 @@ fun MainScreen(
     onOpenSchemaSettings: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenClipboard: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     val themes = listOf(
         stringResource(R.string.theme_follow_system),
@@ -129,6 +131,17 @@ fun MainScreen(
                 subtitle = stringResource(R.string.clipboard_manager_desc),
                 onClick = onOpenClipboard,
                 icon = Icons.Filled.ContentPaste,
+                showSpacer = true,
+            )
+
+            Spacer(Modifier.height(8.dp))
+            SectionHeader(stringResource(R.string.about))
+
+            ClickableSettingItem(
+                title = stringResource(R.string.about_us),
+                subtitle = stringResource(R.string.about_us_desc),
+                onClick = onOpenAbout,
+                icon = Icons.Filled.Info,
                 showSpacer = true,
             )
 

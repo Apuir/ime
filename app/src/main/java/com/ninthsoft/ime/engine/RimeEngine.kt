@@ -250,8 +250,9 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 this@RimeEngine.resetComposition()
             } else {
                 service.currentInputConnection?.let {
-                    it.performContextMenuAction(android.R.id.selectAll)
-                    it.commitText("", 1)
+                    val p0 = it.getTextBeforeCursor(Int.MAX_VALUE, 0)?.length ?: 0
+                    val p1 = it.getTextAfterCursor(Int.MAX_VALUE, 0)?.length ?: 0
+                    it.deleteSurroundingTextInCodePoints(p0, p1)
                 }
             }
         }

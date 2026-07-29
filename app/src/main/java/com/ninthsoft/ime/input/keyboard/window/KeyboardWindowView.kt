@@ -127,9 +127,11 @@ class KeyboardWindowView(
                         SpeechOverlayView.DragTarget.CLOSE -> {
                             stopVoiceInput()
                         }
+
                         SpeechOverlayView.DragTarget.LOCK -> {
                             voiceOverlay.setDragLocked()
                         }
+
                         SpeechOverlayView.DragTarget.NONE -> {
                             stopVoiceInput()
                         }
@@ -458,12 +460,54 @@ class KeyboardWindowView(
         voiceOverlay.switchWaveView(type)
     }
 
+    fun toggleVoiceLocked() {
+        if (isVoiceRecording) {
+            stopVoiceInput()
+        } else {
+            startVoiceInputLocked()
+        }
+    }
+
+    private fun startVoiceInputLocked() {
+        if (isVoiceRecording) return
+        isVoiceRecording = true
+        voiceOverlay.unlock()
+        voiceOverlay.applyColors(
+            cachedColors.background,
+            cachedColors.specialKeyBackground,
+            cachedColors.specialKeyPressed,
+            cachedColors.specialKeyText
+        )
+        if (voiceOverlay.parent == null) {
+            addView(voiceOverlay)
+        }
+        voiceOverlay.show()
+        voiceOverlay.bringToFront()
+        voiceOverlay.setDragLocked()
+
+        SpeechUiBridge.clear()
+        SpeechUiBridge.onRecordingStarted = {}
+        SpeechUiBridge.onAmplitude = { amp ->
+            voiceOverlay.updateAmplitude(amp)
+        }
+        SpeechUiBridge.onDone = {
+            isVoiceRecording = false
+            if (!voiceOverlay.isLocked) {
+                voiceOverlay.hide()
+            }
+        }
+
+        SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
+    }
+
     fun onInputChanged(info: EditorInfo?, text: String): Any {
-        if (isVoiceRecording && text.isEmpty()){
+        if (isVoiceRecording && text.isEmpty()) {
             SherpaSpeechClient.stopHoldSession()
             voiceOverlay.hide()
         }
         panel.onInputChanged(text)
         return keyboardManager.onInputChanged(info, text)
     }
+
+    fun switchKeyboard(name: String) = keyboardManager.switchTo(name)
 }

@@ -13,14 +13,20 @@ import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
+import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
+import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.CloseKeyboard
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Palette
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Redo
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.SwitchKeyboard
+import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.ToggleVoice
 import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Undo
 import com.ninthsoft.ime.input.panel.component.TextEditView
+import com.ninthsoft.ime.ui.AboutActivity
 import com.ninthsoft.ime.ui.KeyboardSettingsActivity
+import com.ninthsoft.ime.ui.MainActivity
+import com.ninthsoft.ime.ui.SchemaSettingsActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,12 +72,37 @@ class ImeInputMethodService : InputMethodService() {
                 when (action) {
                     CloseKeyboard -> requestHideSelf(0)
                     SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
+                    KawaiiPanel.Action.EmojiKeyboard -> keyboardWindow?.view?.switchKeyboard(
+                        EmojiKeyboard.NAME)
                     Undo -> engine?.undo(this)
                     Redo -> engine?.redo(this)
 
                     Palette -> startActivity(
                         Intent(
                             this, KeyboardSettingsActivity::class.java
+                        ).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+
+                    ToggleVoice -> keyboardWindow?.toggleVoiceLocked()
+
+                    KawaiiPanel.Action.Settings -> startActivity(
+                        Intent(
+                            this, MainActivity::class.java
+                        ).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+
+                    KawaiiPanel.Action.SchemaSettings -> startActivity(
+                        Intent(
+                            this, SchemaSettingsActivity::class.java
+                        ).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+
+                    KawaiiPanel.Action.About -> startActivity(
+                        Intent(
+                            this, AboutActivity::class.java
                         ).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         })

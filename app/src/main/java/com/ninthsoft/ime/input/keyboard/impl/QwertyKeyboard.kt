@@ -20,7 +20,6 @@ import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
 import com.ninthsoft.ime.input.keyboard.key.peroidKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
-import timber.log.Timber
 
 @SuppressLint("ViewConstructor")
 class QwertyKeyboard(
@@ -32,7 +31,7 @@ class QwertyKeyboard(
 
     var punctuationState: Punctuation = Punctuation.FullWidth
 
-    var asciiPunctuationState: Punctuation = punctuationState
+    var asciiPunctuationState: Punctuation? = null
 
     companion object {
         const val NAME = "Qwerty"
@@ -121,15 +120,15 @@ class QwertyKeyboard(
                 return
             }
 
-            is KeyboardAction.AscIIAction -> {
-                asciiMode = !asciiMode
-                asciiPunctuationState = punctuationState
-                var spaceText = spaceRawText
+            is KeyboardAction.ToggleAscIIAction -> {
                 if (asciiMode) {
-                    spaceText += " (Ascii)"
+                    asciiPunctuationState?.let { updatePunctuation(it) }
+                    asciiPunctuationState = null
+                } else {
+                    asciiPunctuationState = punctuationState
                 }
-
-                updateSpaceKeyText(spaceText)
+                asciiMode = !asciiMode
+                updateSpaceKeyText(if (asciiMode) "English" else spaceRawText)
                 switchCapsState(CapsState.None)
                 return
             }
@@ -182,7 +181,9 @@ class QwertyKeyboard(
             CapsState.Lock -> CapsState.None
         }
         updateKeyTextForState(capsState)
-        updatePunctuation(if (asciiMode) Punctuation.HalfWidth else asciiPunctuationState)
+        if (asciiPunctuationState != null) {
+            updatePunctuation(if (asciiMode) Punctuation.HalfWidth else asciiPunctuationState!!)
+        }
     }
 
 
