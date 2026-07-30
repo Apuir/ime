@@ -3,7 +3,6 @@ package com.ninthsoft.ime.input.keyboard.impl
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
-import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
@@ -79,7 +78,7 @@ class EmojiKeyboard(
             percentWidth = 1f,
             variant = KeyDef.Appearance.Variant.Alternative,
         ),
-        behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.BackAction)),
+        behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ResumeAction)),
     )
 
     private val sideReturnBtn =
@@ -92,7 +91,7 @@ class EmojiKeyboard(
         sideReturnBtn.hMargin = 0
         sideReturnBtn.vMargin = 0
         sideReturnBtn.setOnClickListener {
-            keyActionListener?.onKeyAction(KeyboardAction.BackAction)
+            keyActionListener?.onKeyAction(KeyboardAction.ResumeAction)
         }
         sideReturnBtn.onPressedChanged = { key ->
             if (key.isPressed) triggerRipple(key)

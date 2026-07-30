@@ -128,7 +128,7 @@ fun resumeLayoutKey(
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.BackAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ResumeAction)),
 )
 
 fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
@@ -170,7 +170,10 @@ fun schemaSwitchKey(percentWidth: Float): KeyDef = KeyDef(
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.RotateSchema)),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.RotateSchema),
+        KeyDef.Behavior.LongPress(KeyboardAction.ShowInputMethodPickerAction),
+    ),
 )
 
 fun emoticonSwitchKey(percentWidth: Float): KeyDef = KeyDef(
@@ -250,7 +253,7 @@ fun infiniteKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LangSwitchAction)),
+    behaviors = setOf(),
 )
 
 fun miniSpaceKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(

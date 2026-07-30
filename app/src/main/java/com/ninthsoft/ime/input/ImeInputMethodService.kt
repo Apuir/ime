@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.input
 
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
@@ -7,6 +8,7 @@ import android.os.SystemClock
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.KeyboardManager
@@ -37,6 +39,8 @@ class ImeInputMethodService : InputMethodService() {
     private var keyboardWindow: KeyboardWindow? = null
     private lateinit var keyActionListener: KeyActionListener
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var showingDialog: android.app.Dialog? = null
 
     private var lastSelectionStart = 0
     private var lastSelectionEnd = 0
@@ -133,6 +137,7 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        showingDialog?.dismiss()
         engine?.resetComposition()
         keyboardWindow?.onFinishInputView(finishingInput)
         super.onFinishInputView(finishingInput)
@@ -158,6 +163,21 @@ class ImeInputMethodService : InputMethodService() {
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
         return true
+    }
+
+    fun showDialog(dialog: android.app.Dialog) {
+        showingDialog?.dismiss()
+        val tokenView = keyboardWindow?.view ?: return
+        dialog.window?.apply {
+            attributes.token = tokenView.windowToken
+            attributes.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
+            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                or WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0.5f)
+        }
+        dialog.setOnDismissListener { showingDialog = null }
+        dialog.show()
+        showingDialog = dialog
     }
 
     private fun sendCombinationKeyEvent(keyCode: Int, shift: Boolean) {

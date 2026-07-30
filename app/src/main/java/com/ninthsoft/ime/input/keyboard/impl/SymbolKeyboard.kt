@@ -78,7 +78,7 @@ class SymbolKeyboard(
             percentWidth = 1f,
             variant = KeyDef.Appearance.Variant.Alternative,
         ),
-        behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.BackAction)),
+        behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ResumeAction)),
     )
 
     private val sideReturnBtn =
@@ -91,7 +91,7 @@ class SymbolKeyboard(
         sideReturnBtn.hMargin = 0
         sideReturnBtn.vMargin = 0
         sideReturnBtn.setOnClickListener {
-            keyActionListener?.onKeyAction(KeyboardAction.BackAction)
+            keyActionListener?.onKeyAction(KeyboardAction.ResumeAction)
         }
         sideReturnBtn.onPressedChanged = { key ->
             if (key.isPressed) triggerRipple(key)

@@ -35,6 +35,12 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
 
     private var currentSchema: EngineMessage.Schema? = null
 
+    fun getSchemas(): List<EngineMessage.Schema> {
+        return schemas
+    }
+
+    fun getCurrentSchema(): EngineMessage.Schema? = currentSchema
+
     init {
         refreshSchemas()
     }
@@ -60,6 +66,15 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         currentSchema = if (index >= 0) schemas[(index + 1) % schemas.size] else schemas.first()
         switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
         return currentSchema?.id.orEmpty()
+    }
+
+    fun selectSchema(schemaId: String): String {
+        val schema = schemas.find { it.id == schemaId } ?: return ""
+        if (currentSchema?.id == schemaId) return schemaId
+        currentSchema = schema
+        EngineFactory.current()?.selectSchema(schema.id)
+        switchTo(schema.layout.ifEmpty { QwertyKeyboard.NAME })
+        return schema.id
     }
 
     private fun refreshSchemas() {

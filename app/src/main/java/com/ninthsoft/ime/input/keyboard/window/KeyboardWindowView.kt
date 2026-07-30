@@ -26,7 +26,7 @@ import com.ninthsoft.ime.input.speech.SpeechOverlayView
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.speech.SpeechUiBridge
 import com.ninthsoft.ime.input.ImeInputMethodService
-import timber.log.Timber
+import com.ninthsoft.ime.input.dialog.SchemaPickerDialog
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -104,8 +104,19 @@ class KeyboardWindowView(
                 null
             }
 
-            is KeyboardAction.BackAction -> {
+            is KeyboardAction.ResumeAction -> {
                 keyboardManager.resume()
+                null
+            }
+
+            is KeyboardAction.ShowInputMethodPickerAction -> {
+                val dialog = SchemaPickerDialog.build(
+                    context = context,
+                    schemas = keyboardManager.getSchemas(),
+                    currentSchemaId = keyboardManager.getCurrentSchema()?.id,
+                    colors = cachedColors,
+                    onSchemaSelected = { schemaId -> keyboardManager.selectSchema(schemaId) })
+                (context as ImeInputMethodService).showDialog(dialog)
                 null
             }
 

@@ -337,20 +337,24 @@ private fun SchemaListItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isDefault) {
                         TagBadge(
-                            "默认",
+                            stringResource(R.string.tag_default),
                             MaterialTheme.colorScheme.secondaryContainer,
                             MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Spacer(Modifier.width(4.dp))
                     }
-                    val (tagText, tagBg, tagFg) = Triple(
-                        if (schema.layout == "T9") "九宫格" else "全键盘",
+                    val tagText = if (schema.layout == "T9")
+                        stringResource(R.string.tag_layout_t9)
+                    else stringResource(R.string.tag_layout_full)
+                    TagBadge(
+                        tagText,
                         MaterialTheme.colorScheme.primaryContainer,
                         MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    TagBadge(tagText, tagBg, tagFg)
                     Spacer(Modifier.width(4.dp))
-                    val punctText = if (schema.punctuation == "full-width") "全角符号" else "半角符号"
+                    val punctText = if (schema.punctuation == "full-width")
+                        stringResource(R.string.tag_punctuation_full)
+                    else stringResource(R.string.tag_punctuation_half)
                     TagBadge(
                         punctText,
                         MaterialTheme.colorScheme.tertiaryContainer,

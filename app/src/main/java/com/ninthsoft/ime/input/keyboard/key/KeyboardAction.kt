@@ -34,7 +34,7 @@ sealed class KeyboardAction {
 
     data class LayoutSwitchAction(val target: String) : KeyboardAction()
 
-    data object BackAction : KeyboardAction()
+    data object ResumeAction : KeyboardAction()
 
     data object BackspaceAction : KeyboardAction()
 
