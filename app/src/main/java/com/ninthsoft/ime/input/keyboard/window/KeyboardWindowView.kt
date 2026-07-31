@@ -1,16 +1,21 @@
 package com.ninthsoft.ime.input.keyboard.window
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.util.TypedValue
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
+import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.SchemaManager
@@ -427,8 +432,35 @@ class KeyboardWindowView(
         keyboardManager.detachCurrent()
     }
 
+    private fun ensureRecordAudioPermission(): Boolean {
+        if (ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return true
+        }
+        showMicPermissionPrompt()
+        return false
+    }
+
+    private fun showMicPermissionPrompt() {
+        panel.confirmOverlay.confirm(
+            message = context.getString(R.string.voice_permission_message),
+            onConfirm = {
+                val intent =
+                    Intent(context, com.ninthsoft.ime.base.speech.SpeechPermissionActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                runCatching { context.startActivity(intent) }
+            },
+            centerHorizontal = true,
+            centerVertical = true,
+        )
+    }
+
     private fun startVoiceInput() {
         if (isVoiceRecording) return
+        if (!ensureRecordAudioPermission()) return
         isVoiceRecording = true
         voiceOverlay.unlock()
         voiceOverlay.applyColors(
@@ -481,6 +513,7 @@ class KeyboardWindowView(
 
     private fun startVoiceInputLocked() {
         if (isVoiceRecording) return
+        if (!ensureRecordAudioPermission()) return
         isVoiceRecording = true
         voiceOverlay.unlock()
         voiceOverlay.applyColors(

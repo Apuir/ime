@@ -195,7 +195,7 @@ object ClipboardRepository {
         private set
 
     private fun onClipChanged() {
-        val appContext = com.ninthsoft.ime.base.util.appContext ?: return
+        val appContext = com.ninthsoft.ime.base.util.appContext
         val cm = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0) return

@@ -15,6 +15,7 @@ import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
+import com.ninthsoft.ime.engine.RimeEngine
 import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import com.ninthsoft.ime.input.panel.KawaiiPanel
@@ -35,7 +36,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
 class ImeInputMethodService : InputMethodService() {
-    private val engine: IEngine? = EngineFactory.current()
+    private var engine: IEngine? = null
     private var keyboardWindow: KeyboardWindow? = null
     private lateinit var keyActionListener: KeyActionListener
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -58,6 +59,7 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        engine = EngineFactory.switchTo(this, RimeEngine::class)
         themePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         schemaPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         keyActionListener = KeyActionListener(
@@ -77,7 +79,9 @@ class ImeInputMethodService : InputMethodService() {
                     CloseKeyboard -> requestHideSelf(0)
                     SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
                     KawaiiPanel.Action.EmojiKeyboard -> keyboardWindow?.view?.switchKeyboard(
-                        EmojiKeyboard.NAME)
+                        EmojiKeyboard.NAME
+                    )
+
                     Undo -> engine?.undo(this)
                     Redo -> engine?.redo(this)
 
@@ -171,8 +175,9 @@ class ImeInputMethodService : InputMethodService() {
         dialog.window?.apply {
             attributes.token = tokenView.windowToken
             attributes.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
-            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-                or WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+            )
             setDimAmount(0.5f)
         }
         dialog.setOnDismissListener { showingDialog = null }

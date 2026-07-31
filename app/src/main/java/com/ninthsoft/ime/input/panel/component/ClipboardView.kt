@@ -277,7 +277,7 @@ class ClipboardView(
                 velocityTracker?.let { tracker ->
                     tracker.computeCurrentVelocity(1000)
                     val vy = tracker.yVelocity
-                    if (abs(vy) > ViewConfiguration.getMinimumFlingVelocity()) {
+                    if (abs(vy) > ViewConfiguration.get(context).scaledMinimumFlingVelocity) {
                         val startY = scrollOffsetY.roundToInt()
                         val velY = (-vy).toInt()
                         val maxY = maxScroll.toInt()

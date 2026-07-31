@@ -4,10 +4,13 @@ import android.content.Context
 import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.KeyEvent.*
+import androidx.core.content.edit
+import com.ninthsoft.ime.ImeApplication
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.rime.behavior.Segmentation
 import com.ninthsoft.ime.data.database.AppDatabase
 import com.ninthsoft.ime.data.database.CandidateSorting
+import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.rime.host.BehaviorHost
@@ -20,7 +23,9 @@ import com.ninthsoft.ime.engine.rime.behavior.SelectPinYin
 import com.ninthsoft.ime.engine.rime.behavior.Selection
 import com.ninthsoft.ime.engine.rime.core.EngineMessage
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
+import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.engine.rime.core.RimeApi
+import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
 import kotlinx.coroutines.CompletableDeferred
@@ -31,24 +36,60 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
-    private val session: RimeSession = daemon.createSession(javaClass.name)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val jobs = Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED)
+    private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    private val boot by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    private val jobs by lazy { Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED) }
+    private var session: RimeSession? = null
     private var behaviorHosted: BehaviorHost? = null
     private var context: Context? = null
     private var callback: suspend (EngineMessage) -> Unit = { }
+    private var inited: Boolean = false
 
     override fun initialize(context: Context) {
         this.context = context
+        (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.STARTING_ENGINE)
+        boot.launch {
+            daemon.observeMessages {
+                Timber.d("mmmmm %s", it)
+                if (it is RimeMessage.DeployMessage && it.state == RimeMessage.DeployMessage.State.Success) {
+                    inited = true
+                    boot.cancel()
+                }
+            }
+        }
+        session = daemon.createSession(javaClass.name)
         scope.launch {
             for (job in jobs) {
-                session.runOnReady(job)
+                session?.runOnReady(job)
             }
         }
         behaviorHosted = BehaviorHost(this)
+        sendJob {
+            val prefs = context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE)
+            val enabledIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
+                ?.filter { it.isNotBlank() }
+            var index = 0
+            while (index < 300) {
+                index++
+                if (!inited) {
+                    Thread.sleep(1000)
+                    continue
+                }
+                val schemas = enabledSchemata()
+                if (enabledIds.isNullOrEmpty()) {
+                    val ids = schemas.joinToString(",") { it.id }
+                    prefs.edit { putString(SchemaManager.KEY_ENABLED_IDS, ids) }
+                }
+                break
+            }
+            //预热一下
+            processKey(KeyMapping.Key_Delete, 0U, false)
+            (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.DONE)
+        }
     }
 
     override fun finalize() {

@@ -70,7 +70,7 @@ object KeyboardManager {
 
         fun getFollowSystem(context: Context): Boolean {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean("$PREFIX.follow_system", true)
+                .getBoolean("$PREFIX.follow_system", false)
         }
 
         fun setFollowSystem(context: Context, followSystem: Boolean) {
@@ -209,7 +209,7 @@ object KeyboardManager {
 
             fun isEnabled(context: Context): Boolean {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean(KEY, true)
+                    .getBoolean(KEY, false)
             }
 
             fun setEnabled(context: Context, enabled: Boolean) {
@@ -224,7 +224,7 @@ object KeyboardManager {
 
             fun isEnabled(context: Context): Boolean {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean(KEY, true)
+                    .getBoolean(KEY, false)
             }
 
             fun setEnabled(context: Context, enabled: Boolean) {

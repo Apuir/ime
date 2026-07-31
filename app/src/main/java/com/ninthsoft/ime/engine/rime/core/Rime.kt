@@ -41,7 +41,7 @@ class Rime : RimeApi, RimeLifecycleOwner {
     private val dispatcher = RimeDispatcher(
         object : RimeDispatcher.RimeController {
             override fun nativeStartup() {
-                startRime(false)
+                startRime(true)
                 lifecycleRegistry.emitState(RimeLifecycle.State.READY)
             }
 

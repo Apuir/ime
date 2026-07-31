@@ -13,6 +13,7 @@ import com.ninthsoft.ime.engine.rime.behavior.Segmentation
 import com.ninthsoft.ime.engine.rime.behavior.SelectPinYin
 import com.ninthsoft.ime.engine.rime.behavior.Selection
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
+import timber.log.Timber
 
 class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
 
@@ -31,7 +32,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
      */
     private fun updateRimeInput(): Boolean {
         rimeJob.sendJob {
-            setInput(buildRimeInput())
+            setInput(build())
         }
         return true
     }
@@ -213,7 +214,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
      * 根据 inputStringQueue 与 selectedPinYinQueue 构造要投递给 Rime 的输入串。
      * 每个选中的拼音会替换原 raw，并在其后追加 segmentKeyChar 作为分隔符。
      */
-    fun buildRimeInput(): String {
+    fun build(): String {
         val input = inputStringQueue.joinToString("")
         if (selectedPinYinQueue.isEmpty()) return input
         val first = selectedPinYinQueue.first()

@@ -13,12 +13,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.ninthsoft.ime.ImeApplication
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.ImeInputMethodService
 import com.ninthsoft.ime.ui.screen.MainScreen
 import com.ninthsoft.ime.ui.theme.ImeTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val initLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (!isImeConfigured()) {
+            setupImeLauncher.launch(Intent(this, SetupActivity::class.java))
+        }
+    }
 
     private val setupImeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -30,7 +39,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (!isImeConfigured()) {
+        val initState = ImeApplication.getInstance().initState.value
+        if (initState != ImeApplication.InitState.DONE) {
+            initLauncher.launch(Intent(this, InitActivity::class.java))
+        } else if (!isImeConfigured()) {
             setupImeLauncher.launch(Intent(this, SetupActivity::class.java))
         }
 
@@ -46,55 +58,32 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenImeSetup = {
                         setupImeLauncher.launch(
-                            Intent(
-                                this@MainActivity,
-                                SetupActivity::class.java
-                            )
+                            Intent(this@MainActivity, SetupActivity::class.java)
                         )
                     },
                     onOpenSchemaSettings = {
                         startActivity(
-                            Intent(
-                                this@MainActivity,
-                                SchemaSettingsActivity::class.java
-                            )
+                            Intent(this@MainActivity, SchemaSettingsActivity::class.java)
                         )
                     },
                     onOpenKeyboardSettings = {
                         startActivity(
-                            Intent(
-                                this@MainActivity,
-                                KeyboardSettingsActivity::class.java
-                            )
+                            Intent(this@MainActivity, KeyboardSettingsActivity::class.java)
                         )
                     },
                     onOpenClipboard = {
                         startActivity(
-                            Intent(
-                                this@MainActivity,
-                                ClipboardActivity::class.java
-                            )
+                            Intent(this@MainActivity, ClipboardActivity::class.java)
                         )
                     },
                     onOpenAbout = {
                         startActivity(
-                            Intent(
-                                this@MainActivity,
-                                AboutActivity::class.java
-                            )
+                            Intent(this@MainActivity, AboutActivity::class.java)
                         )
                     }
                 )
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-    }
-
-    override fun onPause() {
-        super.onPause()
     }
 
     private fun isImeConfigured(): Boolean {

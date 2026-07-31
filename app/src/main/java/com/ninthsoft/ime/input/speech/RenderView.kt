@@ -6,6 +6,8 @@ import android.util.AttributeSet
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import java.lang.ref.WeakReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 
 abstract class RenderView @JvmOverloads constructor(
@@ -72,10 +74,10 @@ abstract class RenderView @JvmOverloads constructor(
                 // 仅在状态栅栏处持锁，绘制阶段不持有 surfaceLock 与 Canvas，
                 // 这样 onRender 进入冬眠 wait() 时既不会阻塞 onPause/ onDestroy，
                 // 也不会让 Canvas 长时间被锁住造成黑屏/ANR。
-                synchronized(surfaceLock) {
+                surfaceLock.withLock {
                     while (isPause && !destroyed) {
                         try {
-                            (surfaceLock as Object).wait()
+                            surfaceCondition.await()
                         } catch (ignored: InterruptedException) {
                             Thread.currentThread().interrupt()
                         }
@@ -146,16 +148,16 @@ abstract class RenderView @JvmOverloads constructor(
     }
 
     fun onResume() {
-        synchronized(surfaceLock) {
+        surfaceLock.withLock {
             if (renderThread != null) {
                 renderThread!!.isPause = false
-                (surfaceLock as Object).notifyAll()
+                surfaceCondition.signalAll()
             }
         }
     }
 
     fun onPause() {
-        synchronized(surfaceLock) {
+        surfaceLock.withLock {
             if (renderThread != null) renderThread!!.isPause = true
         }
     }
@@ -163,12 +165,12 @@ abstract class RenderView @JvmOverloads constructor(
     override fun surfaceChanged(p0: SurfaceHolder, height: Int, p2: Int, p3: Int) {}
 
     override fun surfaceDestroyed(p0: SurfaceHolder) {
-        synchronized(surfaceLock) {
+        surfaceLock.withLock {
             if (renderThread != null) {
                 renderThread!!.setRun(false)
                 renderThread!!.destroyed = true
                 renderThread!!.isPause = false
-                (surfaceLock as Object).notifyAll()
+                surfaceCondition.signalAll()
             }
         }
     }
@@ -185,9 +187,9 @@ abstract class RenderView @JvmOverloads constructor(
     private fun startThread() {
         if (renderThread != null && !renderThread!!.running) {
             renderThread!!.setRun(true)
-            synchronized(surfaceLock) {
+            surfaceLock.withLock {
                 renderThread!!.isPause = false
-                (surfaceLock as Object).notifyAll()
+                surfaceCondition.signalAll()
             }
             try {
                 if (renderThread!!.state == Thread.State.NEW) renderThread!!.start()
@@ -208,11 +210,11 @@ abstract class RenderView @JvmOverloads constructor(
 
     open fun release() {
         stopAnim()
-        synchronized(surfaceLock) {
+        surfaceLock.withLock {
             if (renderThread != null) {
                 renderThread!!.destroyed = true
                 renderThread!!.isPause = false
-                (surfaceLock as Object).notifyAll()
+                surfaceCondition.signalAll()
             }
         }
         // 仅移除回调，交由 Framework 管理 Surface 生命周期，避免 native 释放竞态
@@ -220,7 +222,8 @@ abstract class RenderView @JvmOverloads constructor(
     }
 
     companion object {
-        private val surfaceLock = Any()
+        private val surfaceLock = ReentrantLock()
+        private val surfaceCondition = surfaceLock.newCondition()
         const val RENDER_FRAME_INTERVAL_MS: Long = 16
     }
 }

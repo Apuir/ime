@@ -153,7 +153,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 if (longPressEnabled) {
                     longPressJob?.cancel()
                     longPressJob = lifecycleScope.launch {
-                        delay(longPressDelay.toLong())
+                        delay(longPressDelay)
                         if (longPressFeedbackEnabled) {
 //                            InputFeedbacks.hapticFeedback(this@CustomGestureView, true)
                         }

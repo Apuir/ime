@@ -157,7 +157,7 @@ fun peroidKey(percentWidth: Float): KeyDef = KeyDef(
         viewId = KeyView.button_peroid
     ),
     behaviors = setOf(
-        KeyDef.Behavior.Press(KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_PERIOD)),
+        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(".")),
         KeyDef.Behavior.LongPress(KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME))
     ),
 )
@@ -176,9 +176,9 @@ fun schemaSwitchKey(percentWidth: Float): KeyDef = KeyDef(
     ),
 )
 
-fun emoticonSwitchKey(percentWidth: Float): KeyDef = KeyDef(
+fun symbolSwitchKey(percentWidth: Float): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
-        src = R.drawable.ic_keyboard_emoticon,
+        src = R.drawable.ic_keyboard_symbol,
         viewId = KeyView.button_lang,
         percentWidth = percentWidth,
         variant = Variant.Alternative,

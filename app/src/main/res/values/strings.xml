@@ -28,6 +28,10 @@
     <string name="keyboard_height_landscape">键盘高度（横屏）</string>
 
     <!-- IME Setup -->
+    <string name="initializing">正在初始化…</string>
+    <string name="initializing_desc">正在释放资源文件</string>
+    <string name="starting_engine">正在启动引擎…</string>
+    <string name="starting_engine_desc">正在初始化输入法引擎</string>
     <string name="ime_setup_title">输入法设置</string>
     <string name="ime_setup_description">使用前需要进行以下设置</string>
     <string name="enable_ime">启用输入法</string>
@@ -115,6 +119,7 @@
     <string name="menu_emoji">表情</string>
     <string name="menu_clipboard">剪贴板</string>
     <string name="menu_voice">语音转文字</string>
+    <string name="voice_permission_message">语音转文字功能需要麦克风权限，是否前往授权？</string>
     <string name="menu_cursor">光标</string>
     <string name="menu_settings">设置</string>
     <string name="menu_schema">方案管理</string>

@@ -137,8 +137,12 @@ fun ImeTheme(
     SideEffect {
         activity?.window?.let { window ->
             val bgColor = colorScheme.background.toArgb()
-            window.statusBarColor = bgColor
-            window.navigationBarColor = bgColor
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = bgColor
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = bgColor
+            }
             WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars =
                 !darkTheme
         }

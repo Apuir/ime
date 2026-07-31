@@ -11,7 +11,7 @@ import com.ninthsoft.ime.input.keyboard.key.atKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.clearKey
 import com.ninthsoft.ime.input.keyboard.key.commitKey
-import com.ninthsoft.ime.input.keyboard.key.emoticonSwitchKey
+import com.ninthsoft.ime.input.keyboard.key.symbolSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.miniSpaceKey
 import com.ninthsoft.ime.input.keyboard.key.resumeLayoutKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
@@ -53,7 +53,7 @@ class NumberKeyboard(
             ),
             listOf(
                 resumeLayoutKey("返回", percentWidth = 0.15f),
-                emoticonSwitchKey(0.13f),
+                symbolSwitchKey(0.13f),
                 commitKey(",", variant = Variant.Alternative, percentWidth = 0.10333f),
                 commitKey("0", percentWidth = 0.23333f, variant = Variant.Alternative),
                 commitKey(".", percentWidth = 0.13f, variant = Variant.Alternative),

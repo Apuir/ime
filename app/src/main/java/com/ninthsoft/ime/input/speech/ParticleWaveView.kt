@@ -5,6 +5,8 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
 import java.util.Random
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.*
 import androidx.core.graphics.toColorInt
 
@@ -40,7 +42,8 @@ class ParticleWaveView @JvmOverloads constructor(
     private var polygonSides = 8
 
     // 线程阻塞锁状态机
-    private val renderLock = Object()
+    private val renderLock = ReentrantLock()
+    private val renderCondition = renderLock.newCondition()
     private var silentFrameCount = 0
 
     @Volatile
@@ -155,13 +158,13 @@ class ParticleWaveView @JvmOverloads constructor(
     override fun shouldIdleWait(): Boolean = isEngineSleeping && isViewAttached
 
     override fun awaitWakeUp() {
-        synchronized(renderLock) {
+        renderLock.withLock {
             while (isEngineSleeping && isViewAttached) {
                 try {
-                    (renderLock as Object).wait()
+                    renderCondition.await()
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
-                    return
+                    return@withLock
                 }
             }
         }
@@ -478,9 +481,9 @@ class ParticleWaveView @JvmOverloads constructor(
             checkVolumeValue()
 
             if (inputVolume > 0 && isEngineSleeping) {
-                synchronized(renderLock) {
+                renderLock.withLock {
                     isEngineSleeping = false
-                    renderLock.notifyAll()
+                    renderCondition.signalAll()
                 }
             }
         }
@@ -489,9 +492,9 @@ class ParticleWaveView @JvmOverloads constructor(
     override fun stopAnim() {
         super.stopAnim()
         clearDraw()
-        synchronized(renderLock) {
+        renderLock.withLock {
             isEngineSleeping = false
-            renderLock.notifyAll()
+            renderCondition.signalAll()
         }
     }
 
@@ -511,14 +514,14 @@ class ParticleWaveView @JvmOverloads constructor(
         release()
     }
 
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus) {
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) {
             stopAnim()
         } else {
-            synchronized(renderLock) {
+            renderLock.withLock {
                 isEngineSleeping = false
-                renderLock.notifyAll()
+                renderCondition.signalAll()
             }
             startAnim()
         }

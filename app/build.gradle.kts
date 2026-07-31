@@ -58,6 +58,9 @@ plugins {
     sourceSets {
         getByName("main") {
             jniLibs.directories.add("src/main/libs")
+            assets {
+                srcDirs("src/main/assets")
+            }
         }
     }
 }
@@ -65,8 +68,6 @@ plugins {
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     // implementation(libs.tokenizer)
-    implementation(libs.onnxruntime.android)
-    implementation(libs.androidx.startup.runtime)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.timber)
     implementation(libs.kotlinpoet)

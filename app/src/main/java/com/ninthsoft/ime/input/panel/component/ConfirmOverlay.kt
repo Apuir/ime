@@ -110,6 +110,8 @@ class ConfirmOverlay(
         onCancel: (() -> Unit)? = null,
         cardX: Float = Float.NaN,
         cardY: Float = Float.NaN,
+        centerHorizontal: Boolean = false,
+        centerVertical: Boolean = false,
     ) {
         this.onConfirm = onConfirm
         this.onCancel = onCancel
@@ -139,8 +141,12 @@ class ConfirmOverlay(
                     if (cardY.isNaN()) measuredHeight - card.measuredHeight - marginV else cardY.toInt()
                 val maxX = (measuredWidth - card.measuredWidth - marginH).coerceAtLeast(marginH)
                 val maxY = (measuredHeight - card.measuredHeight - marginV).coerceAtLeast(marginV)
-                card.translationX = cx.coerceIn(marginH, maxX).toFloat()
-                card.translationY = cy.coerceIn(marginV, maxY).toFloat()
+                val finalCx =
+                    if (centerHorizontal) (measuredWidth - card.measuredWidth) / 2 else cx
+                val finalCy =
+                    if (centerVertical) (measuredHeight - card.measuredHeight) / 2 else cy
+                card.translationX = finalCx.coerceIn(marginH, maxX).toFloat()
+                card.translationY = finalCy.coerceIn(marginV, maxY).toFloat()
 
                 card.scaleX = 0f
                 card.scaleY = 0f
