@@ -69,6 +69,11 @@ namespace rime_jni {
                   label(lbl) {}
     };
 
+    struct SyllableData {
+        std::string rawInput;
+        std::string spelling;
+    };
+
     struct CompositionData {
         int length = 0;
         int cursorPos = 0;
@@ -76,6 +81,7 @@ namespace rime_jni {
         int selEnd = 0;
         std::optional<std::string> preedit;
         std::optional<std::string> commitTextPreview;
+        std::vector<SyllableData> syllables;
     };
 
     struct MenuData {
@@ -110,6 +116,15 @@ namespace rime_jni {
                 composition.preedit = preeditStr;
                 if (ctx->commit_text_preview) {
                     composition.commitTextPreview = ctx->commit_text_preview;
+                }
+                if (c.num_syllables > 0 && c.syllables) {
+                    composition.syllables.reserve(c.num_syllables);
+                    for (int i = 0; i < c.num_syllables; ++i) {
+                        SyllableData sd;
+                        sd.rawInput = c.syllables[i].raw_input ? c.syllables[i].raw_input : "";
+                        sd.spelling = c.syllables[i].spelling ? c.syllables[i].spelling : "";
+                        composition.syllables.push_back(std::move(sd));
+                    }
                 }
             }
 

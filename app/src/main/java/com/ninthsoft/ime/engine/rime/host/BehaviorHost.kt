@@ -4,6 +4,7 @@ import com.ninthsoft.ime.base.util.PinYin
 import com.ninthsoft.ime.engine.IBehaviorHost
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.data.CandidatePinYin
+import com.ninthsoft.ime.engine.data.UserSegmentSymbol
 import com.ninthsoft.ime.engine.rime.behavior.Backspace
 import com.ninthsoft.ime.engine.rime.behavior.InputKey
 import com.ninthsoft.ime.engine.rime.behavior.InputString
@@ -32,7 +33,9 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
      */
     private fun updateRimeInput(): Boolean {
         rimeJob.sendJob {
-            setInput(build())
+            val input = build()
+            Timber.d("newInput %s",input)
+            setInput(input = input)
         }
         return true
     }
@@ -152,8 +155,8 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
      * （confirmedLen，对应 fcitx getRimeInputConfirmPosition === RimeApi.getInputConfirmedPosition）
      * 构造可能候选拼音。手动选择拼音时插入的分隔符会修正 confirmedLen。
      */
-    fun possiblePinYin(currentInput: String, confirmedLen: Int): Array<CandidatePinYin> {
-        if (inputStringQueue.isEmpty()) return emptyArray()
+    fun possiblePinYin(currentInput: String, confirmedLen: Int): List<CandidatePinYin> {
+        if (inputStringQueue.isEmpty()) return emptyList()
         // 因为手动选择拼音插入分隔符的缘故，此处需要先修正已确认的内容长度
         var len = confirmedLen
         var index = 0
@@ -169,7 +172,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
             }
         }
         val position = nextSequencePosition(len)
-        if (position < 0) return emptyArray()
+        if (position < 0) return emptyList()
         val sequence = inputStringQueue.joinToString("").substring(position)
         return PinYin.possibleCombinations(sequence).map { pinYin ->
             var raw = sequence.substring(0, pinYin.length)
@@ -178,7 +181,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
                 raw += segmentKey
             }
             CandidatePinYin(pinYin, raw, position)
-        }.toTypedArray()
+        }
     }
 
     /**
@@ -245,7 +248,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
 
     companion object {
         // 分隔符（选择拼音时插入的分隔符），字符串形式
-        const val segmentKey = "'"
+        const val segmentKey = UserSegmentSymbol.toString()
 
         // 与 segmentKey 同义，字符形式，便于逐字符比对
         var segmentKeyChar: Char = segmentKey.toCharArray().first()

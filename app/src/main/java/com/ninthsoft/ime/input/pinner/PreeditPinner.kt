@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.engine.data.EngineMessage
 
 class PreeditPinner(context: Context) : IPinner {
 
@@ -19,12 +20,12 @@ class PreeditPinner(context: Context) : IPinner {
 
     override fun refreshTheme(context: Context) {
         val pinner = KeyboardColors.resolve(context).pinner
-        val textSize = 15f * context.resources.displayMetrics.density
-        view.applyTheme(pinner.background, pinner.textColor, textSize)
+        val textSize = 16f * context.resources.displayMetrics.density
+        view.applyTheme(pinner.background, pinner.textColor, pinner.secondaryTextColor, textSize)
     }
 
-    override fun updateText(text: String?) {
-        view.preeditText = text
+    override fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
+        view.preeditItems = items
     }
 
     fun show(context: Context, windowManager: WindowManager, anchorView: View, hPad: Int) {

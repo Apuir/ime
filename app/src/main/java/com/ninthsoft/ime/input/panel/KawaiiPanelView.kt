@@ -38,47 +38,6 @@ class KawaiiPanelView(context: Context) : View(context) {
     private var lastTouchX = 0f
     private var isScrolling = false
     private val screenDensity = resources.displayMetrics.density
-    private var rerankShimmer: ValueAnimator? = null
-    private var rerankInsert: ValueAnimator? = null
-
-    fun showRerankAnimation() {
-        val renderer = currentRenderer as? ComposingRenderer ?: return
-        rerankShimmer?.cancel()
-        rerankInsert?.cancel()
-
-        renderer.rerankInsertProgress = 0.01f
-        rerankInsert = ValueAnimator.ofFloat(0.01f, 1f).apply {
-            duration = 220
-            addUpdateListener {
-                renderer.rerankInsertProgress = animatedValue as Float
-                invalidate()
-            }
-            start()
-        }
-
-        rerankShimmer = ValueAnimator.ofFloat(0f, 1f).apply {
-            startDelay = 220
-            duration = 700
-            repeatCount = ValueAnimator.INFINITE
-            addUpdateListener {
-                renderer.rerankAnimProgress = animatedValue as Float
-                invalidate()
-            }
-            start()
-        }
-    }
-
-    fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
-        rerankShimmer?.cancel()
-        rerankShimmer = null
-        rerankInsert?.cancel()
-        rerankInsert = null
-        val renderer = currentRenderer as? ComposingRenderer
-        renderer?.rerankAnimProgress = -1f
-        renderer?.rerankInsertProgress = 1f
-        renderer?.rerankedText = candidate.text
-        invalidate()
-    }
 
     init {
         paints.updateColors(context)

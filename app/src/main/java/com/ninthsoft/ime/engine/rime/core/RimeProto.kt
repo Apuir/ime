@@ -12,6 +12,11 @@ data class CandidateProto(
     val label: String,
 )
 
+data class SyllableProto(
+    val rawInput: String = "",
+    val spelling: String = "",
+)
+
 data class CompositionProto(
     val length: Int = 0,
     val cursorPos: Int = 0,
@@ -19,6 +24,7 @@ data class CompositionProto(
     val selEnd: Int = 0,
     val preedit: String? = null,
     val commitTextPreview: String? = null,
+    val syllables: Array<SyllableProto> = arrayOf(),
 ) {
     internal constructor(text: String) : this(
         length = text.length,
@@ -27,6 +33,34 @@ data class CompositionProto(
         selEnd = text.length,
         preedit = text,
     )
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as CompositionProto
+
+        if (length != other.length) return false
+        if (cursorPos != other.cursorPos) return false
+        if (selStart != other.selStart) return false
+        if (selEnd != other.selEnd) return false
+        if (preedit != other.preedit) return false
+        if (commitTextPreview != other.commitTextPreview) return false
+        if (!syllables.contentEquals(other.syllables)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = length
+        result = 31 * result + cursorPos
+        result = 31 * result + selStart
+        result = 31 * result + selEnd
+        result = 31 * result + (preedit?.hashCode() ?: 0)
+        result = 31 * result + (commitTextPreview?.hashCode() ?: 0)
+        result = 31 * result + syllables.contentHashCode()
+        return result
+    }
 }
 
 data class MenuProto(

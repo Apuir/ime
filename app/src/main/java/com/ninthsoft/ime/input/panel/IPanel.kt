@@ -7,9 +7,7 @@ import com.ninthsoft.ime.engine.data.EngineMessage
 interface IPanel {
     val view: View
     fun setCandidates(list: List<EngineMessage.Candidate>)
-    fun showRerankAnimation()
-    fun setRerankedCandidate(candidate: EngineMessage.Candidate)
     fun refreshTheme()
     fun onFinishInputView(finishingInput: Boolean)
-    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>)
+    fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>)
 }

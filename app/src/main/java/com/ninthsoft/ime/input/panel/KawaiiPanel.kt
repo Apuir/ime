@@ -19,7 +19,6 @@ import timber.log.Timber
 class KawaiiPanel(
     val context: Context,
     var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    var onRerankedSelected: ((String) -> Unit)? = null,
     var onToolbarAction: ((Action) -> Unit)? = null,
     var onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
     var onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
@@ -56,7 +55,6 @@ class KawaiiPanel(
         ) : TouchResult()
 
         data class SelectCandidate(val candidate: EngineMessage.Candidate) : TouchResult()
-        data class SelectRerankedCandidate(val text: String) : TouchResult()
         data object ExpandCandidates : TouchResult()
         data object CollapseCandidates : TouchResult()
     }
@@ -299,7 +297,6 @@ class KawaiiPanel(
                     onCandidateSelected?.invoke(result.candidate)
                 }
 
-                is TouchResult.SelectRerankedCandidate -> onRerankedSelected?.invoke(result.text)
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
                 is TouchResult.CollapseCandidates -> v.setExpanded(false)
                 null -> {
@@ -412,15 +409,7 @@ class KawaiiPanel(
         view.invalidate()
     }
 
-    override fun showRerankAnimation() {
-        view.showRerankAnimation()
-    }
-
-    override fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
-        view.setRerankedCandidate(candidate)
-    }
-
-    override fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
+    override fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         candidateGrid.onPossibleCandidatePinYin(pinyins)
     }
 

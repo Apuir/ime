@@ -10,7 +10,6 @@ import androidx.core.graphics.withClip
 import androidx.core.graphics.withRotation
 import androidx.core.graphics.withSave
 import com.ninthsoft.ime.engine.data.EngineMessage
-import kotlin.math.sin
 
 class ComposingRenderer(
     var candidates: List<EngineMessage.Candidate>,
@@ -23,9 +22,6 @@ class ComposingRenderer(
 
     private var lastPills: List<PillRect> = emptyList()
     var maxScrollX: Float = 0f
-    var rerankAnimProgress: Float = -1f
-    var rerankedText: String? = null
-    var rerankInsertProgress: Float = 0f
 
     override fun draw(
         canvas: Canvas, width: Int, height: Int, paints: Paints,
@@ -49,17 +45,7 @@ class ComposingRenderer(
         val expandBtnLeft = expandBtnRight - expandBtnW
         val pillsEnd = expandBtnLeft - expandBtnGap
 
-        val hasRerankPill = rerankInsertProgress > 0f || rerankedText != null
-        val rerankLabel = "0. "
-        val rerankText = rerankedText ?: "\u22EF"
-        val rerankPillW = if (hasRerankPill) {
-            paints.candidateIndexPaint.measureText(rerankLabel) + paints.candidateTextPaint.measureText(
-                rerankText
-            ) + pillPad * 2
-        } else 0f
-        val slideW = rerankPillW * rerankInsertProgress.coerceIn(0f, 1f)
-
-        var x = hPad + slideW + if (hasRerankPill) gap else 0f
+        var x = hPad
         val pills = mutableListOf<PillRect>()
         for ((i, c) in candidates.withIndex()) {
             val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
@@ -82,43 +68,6 @@ class ComposingRenderer(
         canvas.withClip(0f, 0f, pillsEnd, height.toFloat()) {
             withSave {
                 translate(scrollX, 0f)
-
-                if (hasRerankPill && slideW > 0f) {
-                    val rerankLeft = hPad
-                    val rerankRight = hPad + slideW
-                    drawRoundRect(
-                        rerankLeft, pillY, rerankRight, pillY + pillH, pillR, pillR,
-                        paints.candidateBgPaint,
-                    )
-
-                    withClip(rerankLeft, 0f, rerankRight, height.toFloat()) {
-                        paints.candidateIndexPaint.alpha =
-                            (255 * rerankInsertProgress.coerceIn(0f, 1f)).toInt()
-                        paints.candidateTextPaint.alpha = paints.candidateIndexPaint.alpha
-                        val idxW = paints.candidateIndexPaint.measureText(rerankLabel)
-                        drawText(rerankLabel, rerankLeft + pillPad, textY, paints.candidateIndexPaint)
-                        drawText(
-                            rerankText, rerankLeft + pillPad + idxW, textY, paints.candidateTextPaint
-                        )
-                        paints.candidateIndexPaint.alpha = 255
-                        paints.candidateTextPaint.alpha = 255
-                    }
-
-                    lastPills = listOf(PillRect(rerankLeft, rerankRight, -1)) + lastPills
-
-                    if (rerankAnimProgress >= 0f) {
-                        val shimmerAlpha =
-                            ((sin(rerankAnimProgress * Math.PI * 2).toFloat() + 1f) / 2f * 100 + 30).toInt()
-                        val shimmerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            color = Color.argb(shimmerAlpha, 100, 140, 255)
-                            style = Paint.Style.FILL
-                        }
-                        drawRoundRect(
-                            rerankLeft, pillY, rerankRight, pillY + pillH,
-                            pillR, pillR, shimmerPaint,
-                        )
-                    }
-                }
 
                 for ((i, c) in candidates.withIndex()) {
                     val pill = pills[i]
@@ -200,9 +149,6 @@ class ComposingRenderer(
         val adjustedX = x - scrollX
         for (pill in lastPills) {
             if (adjustedX >= pill.left && adjustedX <= pill.right) {
-                if (pill.index == -1) {
-                    return KawaiiPanel.TouchResult.SelectRerankedCandidate(rerankedText ?: "")
-                }
                 val c = candidates.find { it.index == pill.index } ?: return null
                 return KawaiiPanel.TouchResult.SelectCandidate(c)
             }

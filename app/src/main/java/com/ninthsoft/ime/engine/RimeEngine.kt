@@ -121,8 +121,6 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                                     val before = ic.getTextBeforeCursor(1, 0)
                                     if (!before.isNullOrEmpty()) {
                                         ic.deleteSurroundingText(1, 0)
-                                    } else {
-                                        ic.deleteSurroundingText(0, 1)
                                     }
                                 }
                                 return@sendJob
@@ -245,7 +243,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             val currentInput = getRawInput()
             val confirmedLen = getInputConfirmedPosition()
             val pinYins = behaviorHosted?.possiblePinYin(currentInput, confirmedLen)
-                ?: emptyArray<CandidatePinYin>()
+                ?: emptyList()
             callback(EngineMessage.PossibleCandidatePinYin(pinYins))
         }
     }
@@ -261,6 +259,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                             behaviorHosted?.resetState()
                         }
                         possibleCandidatePinYin()
+                        return@observeMessages
                     }
 
                     is EngineMessage.Candidates -> {

@@ -14,7 +14,6 @@ import com.ninthsoft.ime.input.panel.component.TextEditView
 class KeyboardWindow(
     service: ImeInputMethodService,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    onRerankedSelected: ((String) -> Unit)? = null,
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
     onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
     onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
@@ -31,7 +30,6 @@ class KeyboardWindow(
     val view: KeyboardWindowView = KeyboardWindowView(
         context = service,
         onCandidateSelected = onCandidateSelected,
-        onRerankedSelected = onRerankedSelected,
         onToolbarAction = onToolbarAction,
         onSidePanelAction = onSidePanelAction,
         onTextEditingAction = onTextEditingAction,
@@ -57,16 +55,12 @@ class KeyboardWindow(
         view.setCandidates(list)
     }
 
-    fun setRerankedCandidate(candidate: EngineMessage.Candidate) {
-        view.setRerankedCandidate(candidate)
-    }
-
-    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
+    fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         view.onPossibleCandidatePinYin(pinyins)
     }
 
-    fun updatePreedit(text: String?) {
-        view.updatePreedit(text)
+    fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
+        view.updateDynamicPreedit(items)
     }
 
     fun onSelectionUpdate(start: Int, end: Int) {

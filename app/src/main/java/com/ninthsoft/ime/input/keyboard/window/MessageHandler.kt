@@ -16,23 +16,10 @@ class MessageHandler(
     }
 
     suspend fun handle(message: EngineMessage) {
-        Timber.d("KeyboardMessageHandler.handle $message")
         when (message) {
             is EngineMessage.Commit -> {
                 withContext(Dispatchers.Main) {
                     service.currentInputConnection?.commitText(message.text, 1)
-                }
-            }
-
-            is EngineMessage.Composition -> {
-                withContext(Dispatchers.Main) {
-                    window?.updatePreedit(message.preedit)
-                }
-            }
-
-            is EngineMessage.CompositionEnd -> {
-                withContext(Dispatchers.Main) {
-                    window?.updatePreedit(null)
                 }
             }
 
@@ -42,46 +29,19 @@ class MessageHandler(
                 }
             }
 
-            is EngineMessage.RerankStarted -> {
-                withContext(Dispatchers.Main) {
-                    window?.panel?.showRerankAnimation()
-                }
-            }
-
-            is EngineMessage.RerankedCandidate -> {
-                withContext(Dispatchers.Main) {
-                    window?.setRerankedCandidate(message.best)
-                }
-            }
-
             is EngineMessage.PossibleCandidatePinYin -> {
                 withContext(Dispatchers.Main) {
                     window?.onPossibleCandidatePinYin(message.possibleCandidatePinYins)
                 }
             }
 
-            is EngineMessage.Status -> {
-                Timber.d("status: schema=${message.schemaName}")
+            is EngineMessage.DynamicPreedit -> {
+                Timber.d("ssss %s", message.preedits)
+                withContext(Dispatchers.Main) {
+                    window?.updateDynamicPreedit(message.preedits)
+                }
             }
-
-            is EngineMessage.Key -> {
-                Timber.d("key: key=${message.key}")
-            }
-
-            is EngineMessage.InlinePreedit -> {
-                Timber.d("InlinePreedit: InlinePreedit=${message.preedit}")
-            }
-
-            is EngineMessage.CandidateMenu -> {
-                Timber.d("CandidateMenu: CandidateMenu=${message}")
-            }
-
-            is EngineMessage.Schema -> {
-                Timber.d("Schema: Schema=${message}")
-            }
-            is EngineMessage.Unknown -> {
-                Timber.d("Unknown ${message.toString()}")
-            }
+            else -> {}
         }
     }
 }

@@ -80,15 +80,29 @@ namespace rime_jni {
         return arr;
     }
 
+    inline jobject toJavaSyllable(JNIEnv *env, const SyllableData &sd) {
+        return env->NewObject(jni::g_refs->SyllableProto,
+                              jni::g_refs->SyllableProtoCtor,
+                              jni::makeString(env, sd.rawInput),
+                              jni::makeString(env, sd.spelling));
+    }
+
     inline jobject toJavaComposition(JNIEnv *env, const CompositionData &comp) {
         jstring preedit = comp.preedit ? jni::makeString(env, *comp.preedit) : nullptr;
         jstring preview = comp.commitTextPreview
                           ? jni::makeString(env, *comp.commitTextPreview)
                           : nullptr;
+        jobjectArray syllableArray = env->NewObjectArray(
+                static_cast<int>(comp.syllables.size()),
+                jni::g_refs->SyllableProto, nullptr);
+        for (int i = 0; i < static_cast<int>(comp.syllables.size()); ++i) {
+            jni::LocalRef<> ref(env, toJavaSyllable(env, comp.syllables[i]));
+            env->SetObjectArrayElement(syllableArray, i, ref.get());
+        }
         return env->NewObject(jni::g_refs->CompositionProto,
                               jni::g_refs->CompositionProtoCtor, comp.length,
                               comp.cursorPos, comp.selStart, comp.selEnd, preedit,
-                              preview);
+                              preview, syllableArray);
     }
 
     inline jobject toJavaMenu(JNIEnv *env, const MenuData &menu) {

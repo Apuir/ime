@@ -60,11 +60,13 @@ object KeyboardColors {
         data class PinnerColors(
             val background: Int,
             val textColor: Int,
+            val secondaryTextColor: Int,
         ) {
             companion object {
                 fun from(c: ColorScheme) = PinnerColors(
                     background = c.keyBackground,
                     textColor = c.accentKeyText,
+                    secondaryTextColor = c.altText,
                 )
             }
         }

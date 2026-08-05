@@ -36,7 +36,7 @@ class T9Keyboard(
         this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
-    override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+    override fun onPossibleCandidatePinYin(data: List<CandidatePinYin>) {
         if (data.isEmpty()) {
             super.updateSidePanel(
                 punctuations.map { ch ->
@@ -106,7 +106,7 @@ class T9Keyboard(
     }
 
     override fun onAttach() {
-        this.onPossibleCandidatePinYin(emptyArray())
+        this.onPossibleCandidatePinYin(emptyList())
         super.onAttach()
     }
 
@@ -117,7 +117,7 @@ class T9Keyboard(
                 else -> fullWidthPunctuations
             }
             state = punctuation
-            this.onPossibleCandidatePinYin(emptyArray())
+            this.onPossibleCandidatePinYin(emptyList())
         }
         this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
     }

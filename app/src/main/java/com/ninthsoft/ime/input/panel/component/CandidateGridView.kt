@@ -692,7 +692,7 @@ class CandidateGridView(
         }
     }
 
-    fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+    fun onPossibleCandidatePinYin(data: List<CandidatePinYin>) {
         if (!subscribePossibleCandidatePinYin) return
         if (data.isEmpty()) {
             sidePanelKey.updateItems(sidePanelPunctuationItems)

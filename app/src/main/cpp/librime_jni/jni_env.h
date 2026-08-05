@@ -125,6 +125,9 @@ namespace jni {
         jclass ContextProto;
         jmethodID ContextProtoCtor;
 
+        jclass SyllableProto;
+        jmethodID SyllableProtoCtor;
+
         jclass CompositionProto;
         jmethodID CompositionProtoCtor;
 
@@ -176,11 +179,17 @@ namespace jni {
                     "(Lcom/ninthsoft/ime/engine/rime/core/CompositionProto;"
                     "Lcom/ninthsoft/ime/engine/rime/core/MenuProto;Ljava/lang/String;I)V");
 
+            SyllableProto = static_cast<jclass>(env->NewGlobalRef(
+                    env->FindClass("com/ninthsoft/ime/engine/rime/core/SyllableProto")));
+            SyllableProtoCtor = env->GetMethodID(
+                    SyllableProto, "<init>",
+                    "(Ljava/lang/String;Ljava/lang/String;)V");
+
             CompositionProto = static_cast<jclass>(env->NewGlobalRef(
                     env->FindClass("com/ninthsoft/ime/engine/rime/core/CompositionProto")));
             CompositionProtoCtor = env->GetMethodID(
                     CompositionProto, "<init>",
-                    "(IIIILjava/lang/String;Ljava/lang/String;)V");
+                    "(IIIILjava/lang/String;Ljava/lang/String;[Lcom/ninthsoft/ime/engine/rime/core/SyllableProto;)V");
 
             MenuProto = static_cast<jclass>(env->NewGlobalRef(
                     env->FindClass("com/ninthsoft/ime/engine/rime/core/MenuProto")));

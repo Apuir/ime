@@ -38,7 +38,6 @@ import kotlin.math.roundToInt
 class KeyboardWindowView(
     context: Context,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    onRerankedSelected: ((String) -> Unit)? = null,
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
     onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
     onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
@@ -61,7 +60,6 @@ class KeyboardWindowView(
     val panel = KawaiiPanel(
         context = context,
         onCandidateSelected = onCandidateSelected,
-        onRerankedSelected = onRerankedSelected,
         onToolbarAction = onToolbarAction,
         onSidePanelAction = onSidePanelAction,
         onTextEditingAction = onTextEditingAction,
@@ -352,17 +350,15 @@ class KeyboardWindowView(
     fun refreshLayout() = requestLayout()
 
     fun setCandidates(list: List<EngineMessage.Candidate>) = panel.setCandidates(list)
-    fun setRerankedCandidate(candidate: EngineMessage.Candidate) =
-        panel.setRerankedCandidate(candidate)
 
-    fun onPossibleCandidatePinYin(pinyins: Array<CandidatePinYin>) {
+    fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         panel.onPossibleCandidatePinYin(pinyins)
         keyboardManager.onPossibleCandidatePinYin(pinyins)
     }
 
-    fun updatePreedit(text: String?) {
-        preeditPinner.updateText(text)
-        if (text.isNullOrBlank()) {
+    fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
+        preeditPinner.updateDynamicPreedit(items)
+        if (items.isEmpty()) {
             preeditPinner.hide(wm)
         } else {
             val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))

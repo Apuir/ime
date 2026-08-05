@@ -24,7 +24,7 @@ class NumberKeyboard(
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
 
     init {
-        this.onPossibleCandidatePinYin(emptyArray())
+        this.onPossibleCandidatePinYin(emptyList())
         this.setSidePanelItemListener { action -> this.onAction(action) }
     }
 
@@ -67,7 +67,7 @@ class NumberKeyboard(
         return NAME
     }
 
-    override fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+    override fun onPossibleCandidatePinYin(data: List<CandidatePinYin>) {
         super.updateSidePanel(
             listOf("+", "-", "*", "/", "=", "~", "?", "!").map { ch ->
                 KeyDef(

@@ -3,14 +3,14 @@
 package com.ninthsoft.ime.engine.rime.core
 
 import com.ninthsoft.ime.engine.data.EngineMessage
-import com.ninthsoft.ime.engine.event.KeyEvent
+import com.ninthsoft.ime.engine.data.SystemSegmentSymbol
+import com.ninthsoft.ime.engine.data.UserSegmentSymbol
 import com.ninthsoft.ime.engine.event.KeyModifiers
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateListMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CandidateMenuMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CommitTextMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.CompositionMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.InlinePreeditMessage
-import com.ninthsoft.ime.engine.rime.core.RimeMessage.KeyMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.SchemaMessage
 import com.ninthsoft.ime.engine.rime.core.RimeMessage.StatusMessage
 import timber.log.Timber
@@ -30,6 +30,7 @@ sealed class RimeMessage<T>(val data: T) {
             is StatusMessage -> MessageType.Status
             is CandidateListMessage -> MessageType.Candidate
             is KeyMessage -> MessageType.Key
+            is DynamicPreeditMessage -> MessageType.DynamicPreedit
         }
 
     data class UnknownMessage(val params: Array<Any>) : RimeMessage<Array<Any>>(params) {
@@ -53,6 +54,15 @@ sealed class RimeMessage<T>(val data: T) {
     data class CommitTextMessage(val commit: CommitProto) : RimeMessage<CommitProto>(commit)
 
     data class InlinePreeditMessage(val preedit: String) : RimeMessage<String>(preedit)
+
+    data class DynamicPreeditMessage(val preedits: List<SyllableProto>, val fallback: String) :
+        RimeMessage<DynamicPreeditMessage.DynamicPreedit>(
+            DynamicPreedit(
+                preedits, fallback
+            )
+        ) {
+        data class DynamicPreedit(val preedits: List<SyllableProto>, val fallback: String)
+    }
 
     data class CompositionMessage(val composition: CompositionProto) :
         RimeMessage<CompositionProto>(composition)
@@ -118,7 +128,7 @@ sealed class RimeMessage<T>(val data: T) {
     }
 
     enum class MessageType {
-        Unknown, Schema, Option, Deploy, Commit, InlinePreedit, Composition, Menu, Status, Candidate, Key,
+        Unknown, Schema, Option, Deploy, Commit, InlinePreedit, Composition, Menu, Status, Candidate, Key, DynamicPreedit
     }
 
     companion object {
@@ -168,6 +178,10 @@ sealed class RimeMessage<T>(val data: T) {
                 params[2] as Boolean,
             )
 
+            MessageType.DynamicPreedit -> DynamicPreeditMessage(
+                params[0] as List<SyllableProto>, params[1] as String
+            )
+
             else -> UnknownMessage(params)
         }
     }
@@ -182,11 +196,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
     is CompositionMessage -> {
         val preedit = data.preedit.orEmpty()
         val cursor = data.cursorPos
-        if (preedit.isEmpty()) {
-            EngineMessage.CompositionEnd
-        } else {
-            EngineMessage.Composition(preedit, cursor)
-        }
+        EngineMessage.Composition(preedit, cursor)
     }
 
     is CandidateListMessage -> {
@@ -211,21 +221,13 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         )
     }
 
-    is KeyMessage -> {
-        EngineMessage.Key(
-            KeyEvent.CodeEvent(
-                keyCode = data.value.keyCode, modifiers = data.modifiers, isVirtual = data.isVirtual
-            )
-        )
-    }
-
     is CandidateMenuMessage -> {
         EngineMessage.CandidateMenu(
             isLastPage = data.isLastPage,
             pageSize = data.pageSize,
             pageNumber = data.pageNumber,
             selectKeys = data.selectKeys,
-            selectLabels = data.selectLabels,
+            selectLabels = data.selectLabels.asIterable().toList(),
             highlightedCandidateIndex = data.highlightedCandidateIndex,
             candidates = data.candidates.mapIndexed { index, item ->
                 EngineMessage.CandidateMenu.Candidate(
@@ -234,12 +236,55 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
                     comment = item.comment,
                     label = item.label,
                 )
-            }.toTypedArray()
-        )
+            })
     }
 
     is InlinePreeditMessage -> {
         EngineMessage.InlinePreedit(data)
+    }
+
+    is RimeMessage.DynamicPreeditMessage -> {
+        val items = mutableListOf<EngineMessage.DynamicPreedit.DynamicPreeditItem>()
+        val preedits = data.preedits
+        if (preedits.isEmpty() && data.fallback.isNotEmpty()) {
+            items.add(
+                EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                    text = data.fallback,
+                    type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
+                )
+            )
+            return EngineMessage.DynamicPreedit(items)
+        }
+        preedits.forEachIndexed { _, proto ->
+            val segmented = proto.rawInput.endsWith(UserSegmentSymbol.toString())
+            val raw = proto.rawInput.trimEnd(UserSegmentSymbol)
+            val len = raw.length
+            val normalPart = proto.spelling.take(len)
+            val secondaryPart = proto.spelling.drop(len)
+            if (normalPart.isNotEmpty()) {
+                items.add(
+                    EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                        text = normalPart,
+                        type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
+                    )
+                )
+            }
+            if (secondaryPart.isNotEmpty()) {
+                items.add(
+                    EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                        text = secondaryPart,
+                        type = EngineMessage.DynamicPreedit.DynamicPreeditType.Secondary
+                    )
+                )
+            }
+            items.add(
+                EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                    text = if (segmented) UserSegmentSymbol.toString() else SystemSegmentSymbol.toString(),
+                    type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
+                )
+            )
+        }
+        EngineMessage.DynamicPreedit(items)
     }
 
     is SchemaMessage -> {

@@ -33,8 +33,9 @@ object KeyboardThemePresets {
                 candidateDivider = Color.argb(120,130, 130, 130),
             ),
             pinner = KeyboardColors.ColorScheme.PinnerColors(
-                background = Color.rgb(46, 46, 46),
+                background = Color.rgb(26, 26, 26),
                 textColor = Color.rgb(220, 220, 220),
+                secondaryTextColor = Color.rgb(120, 120, 120),
             ),
         ),
     )
@@ -71,6 +72,7 @@ object KeyboardThemePresets {
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(255, 255, 255),
                 textColor = Color.rgb(20, 20, 20),
+                secondaryTextColor = Color.rgb(130, 130, 135),
             ),
         ),
     )
@@ -106,6 +108,7 @@ object KeyboardThemePresets {
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(33, 52, 46),
                 textColor = Color.rgb(255, 255, 255),
+                secondaryTextColor = Color.rgb(145, 175, 155),
             ),
         ),
     )
@@ -141,6 +144,7 @@ object KeyboardThemePresets {
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(38, 52, 66),
                 textColor = Color.rgb(255, 255, 255),
+                secondaryTextColor = Color.rgb(140, 170, 200),
             ),
         ),
     )
@@ -176,6 +180,7 @@ object KeyboardThemePresets {
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(58, 52, 58),
                 textColor = Color.rgb(255, 255, 255),
+                secondaryTextColor = Color.rgb(185, 170, 160),
             ),
         ),
     )
@@ -211,6 +216,7 @@ object KeyboardThemePresets {
             pinner = KeyboardColors.ColorScheme.PinnerColors(
                 background = Color.rgb(50, 42, 58),
                 textColor = Color.rgb(255, 255, 255),
+                secondaryTextColor = Color.rgb(175, 160, 190),
             ),
         ),
     )

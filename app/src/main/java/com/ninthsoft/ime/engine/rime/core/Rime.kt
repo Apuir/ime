@@ -191,20 +191,22 @@ class Rime : RimeApi, RimeLifecycleOwner {
     }
 
     private fun emitResponse(commit: () -> CommitProto = { getCommit() }) {
-        handleMessage(RimeMessage.MessageType.Commit.ordinal, arrayOf(commit()))
+        val c = commit()
+        if (c.text?.isNotEmpty() == true) {
+            handleMessage(RimeMessage.MessageType.Commit.ordinal, arrayOf(c))
+        }
         val context = getContext()
         handlePreedit(context.composition)
-        if (getOption("paging_mode")) {
-            handleMessage(RimeMessage.MessageType.Menu.ordinal, arrayOf(context.menu))
-        } else {
-            handleMessage(RimeMessage.MessageType.Candidate.ordinal, getBulkCandidates())
-        }
-        handleMessage(RimeMessage.MessageType.Status.ordinal, arrayOf(getStatus()))
+        handleMessage(RimeMessage.MessageType.Candidate.ordinal, getBulkCandidates())
     }
 
     private fun handlePreedit(composition: CompositionProto) {
         handleMessage(
             RimeMessage.MessageType.InlinePreedit.ordinal, arrayOf(composition.preedit ?: "")
+        )
+        handleMessage(
+            RimeMessage.MessageType.DynamicPreedit.ordinal,
+            arrayOf(composition.syllables.toList(), composition.preedit ?: "")
         )
         handleMessage(RimeMessage.MessageType.Composition.ordinal, arrayOf(composition))
     }

@@ -55,7 +55,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
         if (key == SchemaManager.KEY_ENABLED_IDS) refreshSchemas()
     }
 
-    fun onPossibleCandidatePinYin(data: Array<CandidatePinYin>) {
+    fun onPossibleCandidatePinYin(data: List<CandidatePinYin>) {
         (currentKeyboard as? ISidePanelKeyboard)?.onPossibleCandidatePinYin(data)
     }
 
