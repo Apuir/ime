@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.base.util.ResourceExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -36,6 +37,7 @@ object AppStartup {
             setupLogger()
             extractResourcesIfNeeded(context, app)
             EngineFactory.switchTo(context, RimeEngine::class)
+            setupSound(context)
             initialized = true
         }
     }
@@ -44,6 +46,10 @@ object AppStartup {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+    }
+
+    private fun setupSound(context: Context) {
+        InputFeedbacks.initSoundPool(context)
     }
 
     private fun extractResourcesIfNeeded(context: Context, app: ImeApplication) {

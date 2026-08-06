@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -93,15 +94,13 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var onDoubleTapListener: ((View) -> Unit)? = null
     var onRepeatListener: ((View) -> Unit)? = null
     var onGestureListener: OnGestureListener? = null
-
-//    var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
-
+    var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
 
     init {
         // disable system sound effect and haptic feedback
-        isSoundEffectsEnabled = false
-        isHapticFeedbackEnabled = false
+        isSoundEffectsEnabled = true
+        isHapticFeedbackEnabled = true
     }
 
     override fun setEnabled(enabled: Boolean) {
@@ -148,6 +147,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 if (!isEnabled) return false
                 drawableHotspotChanged(x, y)
                 isPressed = true
+                InputFeedbacks.hapticFeedback(this)
+                InputFeedbacks.soundEffect(context, soundEffect)
                 onTouchDownListener?.invoke(this)
                 dispatchGestureEvent(GestureType.Down, x, y)
                 if (longPressEnabled) {
@@ -155,7 +156,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                     longPressJob = lifecycleScope.launch {
                         delay(longPressDelay)
                         if (longPressFeedbackEnabled) {
-//                            InputFeedbacks.hapticFeedback(this@CustomGestureView, true)
+                            InputFeedbacks.hapticFeedback(this@CustomGestureView, true)
                         }
                         longPressTriggered = performLongClick()
                     }

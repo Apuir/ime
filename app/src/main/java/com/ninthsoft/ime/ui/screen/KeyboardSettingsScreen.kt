@@ -49,7 +49,9 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 fun KeyboardSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    var keySoundEnabled by remember { mutableStateOf(true) }
+    var keySoundEnabled by remember {
+        mutableStateOf(KeyboardManager.Keyboard.Feedback.getSoundEnabled(context))
+    }
     var keyVibrationEnabled by remember {
         mutableStateOf(KeyboardManager.Keyboard.Feedback.getVibrationEnabled(context))
     }
@@ -219,7 +221,10 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                 SwitchRow(
                     title = stringResource(R.string.key_sound),
                     checked = keySoundEnabled,
-                    onCheckedChange = { keySoundEnabled = it },
+                    onCheckedChange = {
+                        keySoundEnabled = it
+                        KeyboardManager.Keyboard.Feedback.setSoundEnabled(context, it)
+                    },
                 )
                 SwitchRow(
                     title = stringResource(R.string.key_vibration),

@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.OverScroller
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
@@ -65,8 +66,8 @@ abstract class SidePanelView(
 
     fun setOnItemActionListener(listener: (KeyboardAction) -> Unit) {
         contentView.onItemAction = {
-//            InputFeedbacks.hapticFeedback(contentView)
-//            InputFeedbacks.soundEffect(InputFeedbacks.SoundEffect.Standard)
+            InputFeedbacks.hapticFeedback(contentView)
+            InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
             listener.invoke(it)
         }
     }

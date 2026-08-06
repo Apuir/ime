@@ -3,6 +3,7 @@ package com.ninthsoft.ime.input.panel
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.KeyboardManager
@@ -270,6 +271,7 @@ class KawaiiPanel(
         v.onTap = { result ->
             when (result) {
                 is TouchResult.ToolbarAction -> {
+                    InputFeedbacks.hapticFeedback(view)
                     when (result.action) {
                         Action.CursorMove -> state = State.TextEditing
                         Action.Clipboard -> state = State.Clipboard
@@ -294,6 +296,8 @@ class KawaiiPanel(
                 }
 
                 is TouchResult.SelectCandidate -> {
+                    InputFeedbacks.hapticFeedback(view)
+                    InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
                     onCandidateSelected?.invoke(result.candidate)
                 }
 
