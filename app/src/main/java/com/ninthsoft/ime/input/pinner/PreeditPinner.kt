@@ -20,7 +20,7 @@ class PreeditPinner(context: Context) : IPinner {
 
     override fun refreshTheme(context: Context) {
         val pinner = KeyboardColors.resolve(context).pinner
-        val textSize = 16f * context.resources.displayMetrics.density
+        val textSize = 15f * context.resources.displayMetrics.density
         view.applyTheme(pinner.background, pinner.textColor, pinner.secondaryTextColor, textSize)
     }
 
@@ -30,6 +30,16 @@ class PreeditPinner(context: Context) : IPinner {
 
     fun show(context: Context, windowManager: WindowManager, anchorView: View, hPad: Int) {
         val pinnerView = view
+        val density = context.resources.displayMetrics.density
+        val screenWidth = context.resources.displayMetrics.widthPixels
+        val rightMargin = (8f * density).toInt()
+
+        val loc = IntArray(2)
+        anchorView.getLocationOnScreen(loc)
+        val x = loc[0] + hPad
+        val availableWidth = screenWidth - rightMargin - x
+        pinnerView.maxWidth = availableWidth.coerceAtLeast(0)
+
         pinnerView.measure(
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
@@ -38,9 +48,6 @@ class PreeditPinner(context: Context) : IPinner {
         val pillH = pinnerView.measuredHeight
         if (pillW <= 0 || pillH <= 0) return
 
-        val loc = IntArray(2)
-        anchorView.getLocationOnScreen(loc)
-        val x = loc[0] + hPad
         val y = loc[1] - pillH
 
         val params = WindowManager.LayoutParams().apply {

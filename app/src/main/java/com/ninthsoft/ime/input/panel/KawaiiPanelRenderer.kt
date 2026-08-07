@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
+import kotlin.math.max
 import android.graphics.drawable.Drawable
 import androidx.core.graphics.withClip
 import androidx.core.graphics.withRotation
@@ -36,24 +37,59 @@ class ComposingRenderer(
         val hPad = horizontalPaddingDp * density
         val pillPad = 8f * density
         val gap = 6f * density
-        val textY =
-            pillY + pillH / 2f - (paints.candidateTextPaint.descent() + paints.candidateTextPaint.ascent()) / 2f
 
         val expandBtnW = 32f * density
         val expandBtnGap = 22f * density
         val expandBtnRight = width.toFloat() - hPad
         val expandBtnLeft = expandBtnRight - expandBtnW
         val pillsEnd = expandBtnLeft - expandBtnGap
+        val maxPillW = pillsEnd - hPad
 
-        var x = hPad
+        val minTextSize = 12f * density
+        val minScale = minTextSize / minOf(
+            paints.candidateTextPaint.textSize,
+            paints.candidateIndexPaint.textSize,
+        )
+
+        data class PillLayout(
+            val rect: PillRect,
+            val indexPaint: Paint,
+            val textPaint: Paint,
+            val indexW: Float,
+            val textW: Float,
+        )
+
+        val layouts = mutableListOf<PillLayout>()
         val pills = mutableListOf<PillRect>()
+        var x = hPad
         for ((i, c) in candidates.withIndex()) {
             val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
             val textW = paints.candidateTextPaint.measureText(c.text)
             val commentW =
                 if (c.comment.isNotEmpty()) paints.candidateIndexPaint.measureText(" ${c.comment}") else 0f
-            val pillW = indexW + textW + commentW + pillPad * 2
+            val contentW = (2 * indexW) + textW + commentW + 10
+            val scale = if (contentW >= maxPillW) {
+                (maxPillW / contentW).coerceAtLeast(minScale)
+            } else {
+                1f
+            }
+            val indexPaint = Paint(paints.candidateIndexPaint).apply {
+                textSize = paints.candidateIndexPaint.textSize * scale
+            }
+            val textPaint = Paint(paints.candidateTextPaint).apply {
+                textSize = paints.candidateTextPaint.textSize * scale
+            }
+            val sIndexW = indexPaint.measureText("${i + 1}. ")
+            val sTextW = textPaint.measureText(c.text)
+            val sCommentW =
+                if (c.comment.isNotEmpty()) indexPaint.measureText(" ${c.comment}") else 0f
+            val pillW = sIndexW + sTextW + sCommentW + pillPad * 2
             pills.add(PillRect(x, x + pillW, c.index))
+            layouts.add(
+                PillLayout(
+                    PillRect(x, x + pillW, c.index), indexPaint, textPaint, sIndexW, sTextW,
+                )
+            )
             x += pillW + gap
         }
         lastPills = pills
@@ -70,23 +106,24 @@ class ComposingRenderer(
                 translate(scrollX, 0f)
 
                 for ((i, c) in candidates.withIndex()) {
-                    val pill = pills[i]
+                    val layout = layouts[i]
+                    val pill = layout.rect
+                    val textY =
+                        pillY + pillH / 2f - (layout.textPaint.descent() + layout.textPaint.ascent()) / 2f
                     drawRoundRect(
                         pill.left, pillY, pill.right, pillY + pillH, pillR, pillR,
                         paints.candidateBgPaint,
                     )
-                    val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
-                    val textW = paints.candidateTextPaint.measureText(c.text)
                     drawText(
-                        "${i + 1}. ", pill.left + pillPad, textY, paints.candidateIndexPaint,
+                        "${i + 1}. ", pill.left + pillPad, textY, layout.indexPaint,
                     )
-                    drawText(c.text, pill.left + pillPad + indexW, textY, paints.candidateTextPaint)
+                    drawText(c.text, pill.left + pillPad + layout.indexW, textY, layout.textPaint)
                     if (c.comment.isNotEmpty()) {
                         drawText(
                             " ${c.comment}",
-                            pill.left + pillPad + indexW + textW,
+                            pill.left + pillPad + layout.indexW + layout.textW,
                             textY,
-                            paints.candidateIndexPaint,
+                            layout.indexPaint,
                         )
                     }
                 }
@@ -101,7 +138,9 @@ class ComposingRenderer(
         }
 
         canvas.drawRect(pillsEnd, 0f, width.toFloat(), height.toFloat(), paints.bgPaint)
-        canvas.drawLine(dividerX, pillY + pillH / 4f, dividerX, pillY + pillH * 3f / 4f, paints.dividerPaint)
+        canvas.drawLine(
+            dividerX, pillY + pillH / 4f, dividerX, pillY + pillH * 3f / 4f, paints.dividerPaint
+        )
         canvas.drawRoundRect(
             expandBtnLeft, pillY, expandBtnRight, pillY + pillH, pillR, pillR,
             paints.candidateBgPaint,

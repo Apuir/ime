@@ -19,6 +19,7 @@ class IdleRenderer(
     private val expandDrawable: Drawable? = null,
     private val clearDrawable: Drawable? = null,
     var horizontalPaddingDp: Float = 0f,
+    var centerHorizontalPaddingDp: Float = 12f,
     var iconScale: Float = 0.94f,
 ) : IRenderer {
 
@@ -53,8 +54,9 @@ class IdleRenderer(
 
         val menuLeft = hPad
         val menuCenter = menuLeft + fixedW / 2f
-        val centerAreaLeft = menuLeft + fixedW
-        val centerAreaW = width - centerAreaLeft - hPad - fixedW
+        val centerPad = centerHorizontalPaddingDp * density
+        val centerAreaLeft = menuLeft + fixedW + centerPad
+        val centerAreaW = width - centerAreaLeft - hPad - fixedW - centerPad
 
         if (pressRadius > 0f && pressRadiusMax > 0f) {
             val progress = (pressRadius / pressRadiusMax).coerceIn(0f, 1f)
@@ -91,7 +93,7 @@ class IdleRenderer(
             val pillH = 34f * density
             val pillPad = 8f * density
             val clipLeft = centerAreaLeft + 16f * density
-            val clipRight = width - hPad - fixedW - 16f * density
+            val clipRight = width - hPad - fixedW - centerPad - 16f * density
             val textCenterY = height / 2f
             val gap = 8f * density
             val iconW = (clipboardDrawable?.intrinsicWidth?.toFloat()?.times(iconScale)?.toInt() ?: 0)
@@ -207,11 +209,13 @@ class IdleRenderer(
 
             else -> {
                 if (copyText != null) return null
-                val centerAreaW = width - menuRight - hPad - fixedW
+                val centerPad = centerHorizontalPaddingDp * density
+                val centerAreaLeft = menuRight + centerPad
+                val centerAreaW = width - centerAreaLeft - hPad - fixedW - centerPad
                 val otherW = centerAreaW / centerButtons.size
-                val index = ((x - menuRight) / otherW).toInt().coerceIn(0, centerButtons.size - 1)
+                val index = ((x - centerAreaLeft) / otherW).toInt().coerceIn(0, centerButtons.size - 1)
                 if ((clipboardMode || textEditingMode) && index >= 2) return null
-                pressCx = menuRight + otherW * index + otherW / 2f
+                pressCx = centerAreaLeft + otherW * index + otherW / 2f
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
                 pressRadius = 0f
