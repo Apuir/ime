@@ -5,9 +5,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import androidx.core.content.edit
+import com.ninthsoft.ime.data.database.AppDatabase
+import com.ninthsoft.ime.data.database.ClipboardDao
+import com.ninthsoft.ime.data.database.ClipboardRecord
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import timber.log.Timber
-import org.json.JSONArray
-import org.json.JSONObject
 
 object ClipboardRepository {
 
@@ -15,7 +18,6 @@ object ClipboardRepository {
     var onContentChanged: (() -> Unit)? = null
 
     private const val PREFS_NAME = "clipboard_settings"
-    private const val KEY_ENTRIES = "entries"
     private const val KEY_CLOUD_SYNC = "cloud_sync"
     private const val KEY_MAX_ENTRIES = "max_entries"
     private const val KEY_RETENTION_DAYS = "retention_days"
@@ -78,81 +80,67 @@ object ClipboardRepository {
         val cloud: Boolean = false,
     )
 
-    fun getEntries(context: Context): List<Entry> {
-        val json = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_ENTRIES, null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { i ->
-                val obj = arr.getJSONObject(i)
-                Entry(
-                    obj.getString("text"), obj.getLong("timestamp"), obj.optBoolean("cloud", false)
-                )
-            }.sortedByDescending { it.timestamp }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to load clipboard entries")
-            emptyList()
-        }
+    fun getEntries(context: Context): List<Entry> = db(context) { db ->
+        db.clipboardDao().getAllActive().map { Entry(it.text, it.timestamp, it.cloud) }
     }
 
-    fun addEntry(context: Context, text: String) {
+    fun addEntry(context: Context, text: String, notify: Boolean = true) {
         if (text.isBlank()) return
-        val entries = getEntries(context).toMutableList()
-        val existing = entries.firstOrNull { it.text == text }
-        entries.removeAll { it.text == text }
-        entries.add(Entry(text))
-        val max = getMaxEntries(context)
-        if (entries.size > max) {
-            entries.sortByDescending { it.timestamp }
-            entries.subList(max, entries.size).clear()
+        val existing = getEntries(context).firstOrNull { it.text == text }
+        val now = System.currentTimeMillis()
+        db(context) { db ->
+            val dao = db.clipboardDao()
+            dao.deleteByText(text)
+            dao.insert(ClipboardRecord(text = text, timestamp = now, cloud = isCloudSyncEnabled(context)))
+            trimExcess(dao, getMaxEntries(context))
+            dao.deleteOlderThan(now - getRetentionDays(context) * 86400000L)
         }
-        saveEntries(context, entries)
-        if (existing == null) onNewEntry?.invoke(Entry(text))
+        if (notify && existing == null) onNewEntry?.invoke(Entry(text, now))
+    }
+
+    private suspend fun trimExcess(dao: ClipboardDao, limit: Int) {
+        val excess = dao.count() - limit
+        if (excess > 0) dao.deleteOldest(excess)
     }
 
     fun clearAll(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            remove(KEY_ENTRIES)
-        }
+        db(context) { db -> db.clipboardDao().softDeleteAll() }
+        lastCopyText = null
+        lastCopyTimestamp = 0L
     }
 
     fun removeEntry(context: Context, text: String) {
-        val entries = getEntries(context).toMutableList()
-        entries.removeAll { it.text == text }
-        saveEntries(context, entries)
-    }
-
-    private fun saveEntries(context: Context, entries: List<Entry>) {
-        val arr = JSONArray()
-        entries.forEach { entry ->
-            val obj = JSONObject()
-            obj.put("text", entry.text)
-            obj.put("timestamp", entry.timestamp)
-            if (entry.cloud) obj.put("cloud", true)
-            arr.put(obj)
-        }
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            putString(KEY_ENTRIES, arr.toString())
-        }
+        db(context) { db -> db.clipboardDao().softDeleteByText(text) }
     }
 
     // ── 系统剪切板监听 ──
+
+    private fun clipText(clip: ClipData, context: Context): String? {
+        val item = clip.getItemAt(0) ?: return null
+        val text = item.text?.toString() ?: return null
+        if (text.isBlank()) return null
+        if (text.any { it.code in 0..31 && it != '\t' && it != '\n' && it != '\r' }) return null
+        return text
+    }
+
+    private fun clipTimestamp(clip: ClipData): Long =
+        if (Build.VERSION.SDK_INT >= 33) clip.description?.timestamp?.takeIf { it > 0 } ?: -1L
+        else -1L
 
     fun checkCurrentClipboard(context: Context) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0) return
-        val text = clip.getItemAt(0).coerceToText(context).toString()
-        if (text.isBlank()) return
+        val text = clipText(clip, context) ?: return
+
+        val ts = clipTimestamp(clip)
+        if (ts > 0) lastClipTimestamp = ts
         lastText = text
 
-        val clipTimestamp = if (Build.VERSION.SDK_INT >= 33) {
-            clip.description?.timestamp?.takeIf { it > 0 } ?: -1L
-        } else -1L
-        if (clipTimestamp > 0) lastClipTimestamp = clipTimestamp
+        val latest = db(context) { db -> db.clipboardDao().getLatest() }
+        if (latest?.text == text) return
 
-        val entries = getEntries(context)
-        if (entries.none { it.text == text }) {
+        if (getEntries(context).none { it.text == text }) {
             lastCopyText = text
             lastCopyTimestamp = System.currentTimeMillis()
             addEntry(context, text)
@@ -180,18 +168,13 @@ object ClipboardRepository {
         onClipChanged()
     }
 
-    @Volatile
-    private var lastText: String = ""
+    @Volatile private var lastText: String = ""
+    @Volatile private var lastClipTimestamp: Long = -1L
 
-    @Volatile
-    private var lastClipTimestamp: Long = -1L
-
-    @Volatile
-    var lastCopyText: String? = null
+    @Volatile var lastCopyText: String? = null
         private set
 
-    @Volatile
-    var lastCopyTimestamp: Long = 0L
+    @Volatile var lastCopyTimestamp: Long = 0L
         private set
 
     private fun onClipChanged() {
@@ -200,23 +183,35 @@ object ClipboardRepository {
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0) return
 
-        val clipTimestamp = if (Build.VERSION.SDK_INT >= 33) {
-            clip.description?.timestamp?.takeIf { it > 0 } ?: -1L
-        } else -1L
-        if (clipTimestamp > 0) {
-            if (clipTimestamp == lastClipTimestamp) return
-            lastClipTimestamp = clipTimestamp
-        }
+        val text = clipText(clip, appContext) ?: return
 
-        val text = clip.getItemAt(0).coerceToText(appContext).toString()
-        if (text.isBlank()) return
-        if (clipTimestamp <= 0 && text == lastText) return
+        val ts = clipTimestamp(clip)
+        if (ts > 0) {
+            if (ts == lastClipTimestamp) return
+            lastClipTimestamp = ts
+        }
+        if (ts <= 0 && text == lastText) return
         lastText = text
 
-        lastCopyText = text
-        lastCopyTimestamp = System.currentTimeMillis()
+        val latest = db(appContext) { db -> db.clipboardDao().getLatest() }
+        val isNew = latest == null || latest.text != text
 
-        addEntry(appContext, text)
+        if (isNew) {
+            lastCopyText = text
+            lastCopyTimestamp = System.currentTimeMillis()
+        }
+        addEntry(appContext, text, notify = isNew)
         onContentChanged?.invoke()
     }
+
+    private fun <T> db(context: Context, block: suspend (com.ninthsoft.ime.data.database.AppDatabase) -> T): T =
+        try {
+            runBlocking(Dispatchers.IO) {
+                val db = AppDatabase.getInstance(context)
+                block(db)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "clipboard database operation failed")
+            null as T
+        }
 }

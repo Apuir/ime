@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.KeyEvent.*
 import androidx.core.content.edit
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.ngram.GramDb
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.rime.behavior.Segmentation
 import com.ninthsoft.ime.data.database.AppDatabase
@@ -25,9 +26,11 @@ import com.ninthsoft.ime.engine.rime.core.EngineMessage
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.engine.rime.core.RimeApi
+import com.ninthsoft.ime.engine.rime.core.RimeConfig
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
+import com.ninthsoft.ime.engine.rime.data.DataManager.sharedDataDir
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +40,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
+import java.io.File
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
@@ -48,13 +52,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private var context: Context? = null
     private var callback: suspend (EngineMessage) -> Unit = { }
     private var inited: Boolean = false
+    private var gramDb: GramDb? = null;
 
     override fun initialize(context: Context) {
         this.context = context
         (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.STARTING_ENGINE)
         boot.launch {
             daemon.observeMessages {
-                Timber.d("mmmmm %s", it)
                 if (it is RimeMessage.DeployMessage && it.state == RimeMessage.DeployMessage.State.Success) {
                     inited = true
                     boot.cancel()
@@ -85,6 +89,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     prefs.edit { putString(SchemaManager.KEY_ENABLED_IDS, ids) }
                 }
                 break
+            }
+            val currentSchema = currentSchema()
+            RimeConfig.openSchema(currentSchema.schemaId).use { config ->
+                config.getString("grammar/language")?.let { initGramdb(it) }
             }
             //预热一下
             processKey(KeyMapping.Key_Delete, 0U, false)
@@ -242,8 +250,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         sendJob {
             val currentInput = getRawInput()
             val confirmedLen = getInputConfirmedPosition()
-            val pinYins = behaviorHosted?.possiblePinYin(currentInput, confirmedLen)
-                ?: emptyList()
+            val pinYins = behaviorHosted?.possiblePinYin(currentInput, confirmedLen) ?: emptyList()
             callback(EngineMessage.PossibleCandidatePinYin(pinYins))
         }
     }
@@ -338,6 +345,14 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 return@sendJob
             }
             callback(msg)
+        }
+    }
+
+    private fun initGramdb(language: String) {
+        val gram = File(sharedDataDir, "$language.gram")
+        if (gram.isFile) {
+            Timber.d("initGramdb %s", gram.absolutePath)
+            gramDb = GramDb(gram.absolutePath)
         }
     }
 }

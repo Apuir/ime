@@ -100,7 +100,7 @@ fun ClipboardScreen(onBack: () -> Unit) {
                     title = stringResource(R.string.clipboard_max_entries),
                     value = maxEntries,
                     valueLabel = "${maxEntries.toInt()} 条",
-                    range = 20f..500f,
+                    range = 20f..100f,
                     onValueChange = {
                         maxEntries = it
                         ClipboardRepository.setMaxEntries(context, it.toInt())
