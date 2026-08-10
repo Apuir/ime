@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import com.ninthsoft.ime.data.manager.ClipboardRepository
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
@@ -40,9 +41,7 @@ class ImeInputMethodService : InputMethodService() {
     private var keyboardWindow: KeyboardWindow? = null
     private lateinit var keyActionListener: KeyActionListener
     var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private var showingDialog: android.app.Dialog? = null
-
     private var lastSelectionStart = 0
     private var lastSelectionEnd = 0
     private val themePrefs: SharedPreferences by lazy {

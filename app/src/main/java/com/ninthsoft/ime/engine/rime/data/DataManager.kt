@@ -37,6 +37,7 @@ object DataManager {
             .let { deserializeDataSum(it) }
 
     val sharedDataDir = File(appContext.getExternalFilesDir(null), "shared").also { it.mkdirs() }
+    val modelDir = File(appContext.getExternalFilesDir(null), "model").also { it.mkdirs() }
     val userDataDir
         get() = File(appContext.getExternalFilesDir(null), "user").also { it.mkdirs() }
     val prebuiltDataDir = File(sharedDataDir, "build")

@@ -23,4 +23,6 @@ interface IEngine {
     fun redo(service: InputMethodService)
     fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
     fun deleteCandidate(index: Int): Unit?
+
+    fun onInputChanged(text: String)
 }

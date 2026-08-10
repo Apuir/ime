@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.KeyEvent.*
 import androidx.core.content.edit
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.marisa.Prediction
 import com.ninthsoft.ime.base.ngram.GramDb
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.rime.behavior.Segmentation
@@ -30,6 +31,7 @@ import com.ninthsoft.ime.engine.rime.core.RimeConfig
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
+import com.ninthsoft.ime.engine.rime.data.DataManager.modelDir
 import com.ninthsoft.ime.engine.rime.data.DataManager.sharedDataDir
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +55,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private var callback: suspend (EngineMessage) -> Unit = { }
     private var inited: Boolean = false
     private var gramDb: GramDb? = null;
+    private var prediction: Prediction? = null
 
     override fun initialize(context: Context) {
         this.context = context
@@ -103,6 +106,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     override fun finalize() {
         jobs.close()
         scope.cancel()
+        prediction?.destroy()
         daemon.destroySession(javaClass.name)
     }
 
@@ -348,11 +352,19 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
     }
 
-    private fun initGramdb(language: String) {
+    private suspend fun initGramdb(language: String) {
         val gram = File(sharedDataDir, "$language.gram")
         if (gram.isFile) {
-            Timber.d("initGramdb %s", gram.absolutePath)
             gramDb = GramDb(gram.absolutePath)
+            val predictGram = File(modelDir, "predict.marisa")
+            if (predictGram.isFile) {
+                prediction = Prediction(predictGram)
+                prediction?.load()
+            }
         }
+    }
+
+    override fun onInputChanged(text: String) {
+
     }
 }

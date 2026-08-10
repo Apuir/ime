@@ -110,3 +110,5 @@ target_compile_options(
 add_subdirectory(librime_jni)
 
 add_subdirectory(libllamacpp_jni)
+
+add_subdirectory(libmarisa_jni)
