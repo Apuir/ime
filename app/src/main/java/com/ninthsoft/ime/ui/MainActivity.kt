@@ -76,6 +76,11 @@ class MainActivity : ComponentActivity() {
                             Intent(this@MainActivity, ClipboardActivity::class.java)
                         )
                     },
+                    onOpenModelSettings = {
+                        startActivity(
+                            Intent(this@MainActivity, PredictionSettingsActivity::class.java)
+                        )
+                    },
                     onOpenAbout = {
                         startActivity(
                             Intent(this@MainActivity, AboutActivity::class.java)

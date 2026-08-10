@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,7 +18,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,28 +28,37 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.data.manager.ClipboardManager
+import com.ninthsoft.ime.data.manager.CandidateManager
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
-import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClipboardScreen(onBack: () -> Unit) {
+fun PredictionSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-
-    var cloudSync by remember { mutableStateOf(ClipboardManager.isCloudSyncEnabled(context)) }
-    var maxEntries by remember { mutableFloatStateOf(ClipboardManager.getMaxEntries(context).toFloat()) }
-    var retentionDays by remember { mutableFloatStateOf(ClipboardManager.getRetentionDays(context).toFloat()) }
-    var showTimestamp by remember { mutableStateOf(ClipboardManager.isShowTimestamp(context)) }
+    var predictionEnabled by remember {
+        mutableStateOf(CandidateManager.isPredictionEnabled(context))
+    }
+    var rerankEnabled by remember {
+        mutableStateOf(CandidateManager.isRerankEnabled(context))
+    }
+    var showIndex by remember {
+        mutableStateOf(CandidateManager.isShowIndex(context))
+    }
+    var showComment by remember {
+        mutableStateOf(CandidateManager.isShowComment(context))
+    }
+    var borderless by remember {
+        mutableStateOf(CandidateManager.isBorderless(context))
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        stringResource(R.string.clipboard_manager),
+                        text = stringResource(R.string.prediction_candidates),
                         fontSize = barFontSize,
                         fontWeight = FontWeight.Bold,
                     )
@@ -61,7 +67,7 @@ fun ClipboardScreen(onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.back),
                             modifier = Modifier.scale(0.8f),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -77,57 +83,59 @@ fun ClipboardScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Spacer(Modifier.height(4.dp))
 
-            SettingsGroup(title = stringResource(R.string.clipboard_sync)) {
+            SettingsGroup(title = stringResource(R.string.model_prediction)) {
                 SwitchRow(
-                    title = stringResource(R.string.clipboard_cloud_sync),
-                    checked = cloudSync,
+                    title = stringResource(R.string.model_prediction_enable),
+                    checked = predictionEnabled,
                     onCheckedChange = {
-                        cloudSync = it
-                        ClipboardManager.setCloudSyncEnabled(context, it)
+                        predictionEnabled = it
+                        CandidateManager.setPredictionEnabled(context, it)
                     },
                 )
             }
 
-            SettingsGroup(title = stringResource(R.string.clipboard_history)) {
-                Spacer(Modifier.height(4.dp))
-                SliderRow(
-                    title = stringResource(R.string.clipboard_max_entries),
-                    value = maxEntries,
-                    valueLabel = "${maxEntries.toInt()} 条",
-                    range = 20f..100f,
-                    onValueChange = {
-                        maxEntries = it
-                        ClipboardManager.setMaxEntries(context, it.toInt())
-                    },
-                )
-                SliderRow(
-                    title = stringResource(R.string.clipboard_retention_days),
-                    value = retentionDays,
-                    valueLabel = "${retentionDays.toInt()} 天",
-                    range = 1f..365f,
-                    onValueChange = {
-                        retentionDays = it
-                        ClipboardManager.setRetentionDays(context, it.toInt())
-                    },
-                )
+            SettingsGroup(title = stringResource(R.string.model_enhance)) {
                 SwitchRow(
-                    title = stringResource(R.string.clipboard_show_timestamp),
-                    checked = showTimestamp,
+                    title = stringResource(R.string.model_rerank_enable),
+                    checked = rerankEnabled,
                     onCheckedChange = {
-                        showTimestamp = it
-                        ClipboardManager.setShowTimestamp(context, it)
+                        rerankEnabled = it
+                        CandidateManager.setRerankEnabled(context, it)
                     },
-                    showDivider = false,
                 )
             }
 
-            Spacer(Modifier.height(14.dp))
+            SettingsGroup(title = stringResource(R.string.candidate_layout)) {
+                SwitchRow(
+                    title = stringResource(R.string.candidate_show_index),
+                    checked = showIndex,
+                    onCheckedChange = {
+                        showIndex = it
+                        CandidateManager.setShowIndex(context, it)
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.candidate_show_comment),
+                    checked = showComment,
+                    onCheckedChange = {
+                        showComment = it
+                        CandidateManager.setShowComment(context, it)
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.candidate_borderless),
+                    checked = borderless,
+                    onCheckedChange = {
+                        borderless = it
+                        CandidateManager.setBorderless(context, it)
+                    },
+                )
+            }
         }
     }
 }

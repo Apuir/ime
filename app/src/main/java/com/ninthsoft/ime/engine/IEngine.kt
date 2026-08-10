@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.view.inputmethod.InputConnection
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
@@ -12,7 +13,7 @@ interface IEngine {
     fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit)
     fun finalize()
     fun processKey(service: InputMethodService, key: KeyEvent): Unit?
-    fun selectCandidate(index: Int)
+    fun selectCandidate(candidate: EngineMessage.Candidate)
     fun schemasList(): List<EngineMessage.Schema>
     fun clear(service: InputMethodService)
     fun resetComposition()
@@ -23,6 +24,8 @@ interface IEngine {
     fun redo(service: InputMethodService)
     fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
     fun deleteCandidate(index: Int): Unit?
-
-    fun onInputChanged(text: String)
+    fun onInputChanged()
+    fun onStartInputView(ic: InputConnection)
+    fun onFinishInputView()
+    fun reload()
 }

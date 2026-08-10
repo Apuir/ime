@@ -36,7 +36,6 @@ class MessageHandler(
             }
 
             is EngineMessage.DynamicPreedit -> {
-                Timber.d("ssss %s", message.preedits)
                 withContext(Dispatchers.Main) {
                     window?.updateDynamicPreedit(message.preedits)
                 }

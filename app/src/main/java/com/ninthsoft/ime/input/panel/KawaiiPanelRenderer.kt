@@ -17,6 +17,10 @@ class ComposingRenderer(
     private val expandDrawable: Drawable?,
     var horizontalPaddingDp: Float,
     var iconScale: Float = 1f,
+    var showIndex: Boolean = true,
+    var showComment: Boolean = true,
+    var borderless: Boolean = false,
+    var expandBorderless: Boolean = false,
 ) : IRenderer {
 
     private data class PillRect(val left: Float, val right: Float, val index: Int)
@@ -39,8 +43,8 @@ class ComposingRenderer(
         val gap = 6f * density
 
         val expandBtnW = 32f * density
-        val expandBtnGap = 22f * density
-        val expandBtnRight = width.toFloat() - hPad
+        val expandBtnGap = 16f * density
+        val expandBtnRight = width.toFloat() - hPad - (4f * density) //展开键盘 额外padding
         val expandBtnLeft = expandBtnRight - expandBtnW
         val pillsEnd = expandBtnLeft - expandBtnGap
         val maxPillW = pillsEnd - hPad
@@ -63,11 +67,13 @@ class ComposingRenderer(
         val pills = mutableListOf<PillRect>()
         var x = hPad
         for ((i, c) in candidates.withIndex()) {
-            val indexW = paints.candidateIndexPaint.measureText("${i + 1}. ")
+            val indexStr = if (showIndex && !borderless) "${i + 1}. " else ""
+            val indexW = paints.candidateIndexPaint.measureText(indexStr)
             val textW = paints.candidateTextPaint.measureText(c.text)
+            val commentStr = if (showComment && c.comment.isNotEmpty()) " ${c.comment}" else ""
             val commentW =
-                if (c.comment.isNotEmpty()) paints.candidateIndexPaint.measureText(" ${c.comment}") else 0f
-            val contentW = (2 * indexW) + textW + commentW + 10
+                if (commentStr.isNotEmpty()) paints.candidateIndexPaint.measureText(commentStr) else 0f
+            val contentW = indexW + textW + commentW + pillPad * 2
             val scale = if (contentW >= maxPillW) {
                 (maxPillW / contentW).coerceAtLeast(minScale)
             } else {
@@ -79,10 +85,9 @@ class ComposingRenderer(
             val textPaint = Paint(paints.candidateTextPaint).apply {
                 textSize = paints.candidateTextPaint.textSize * scale
             }
-            val sIndexW = indexPaint.measureText("${i + 1}. ")
+            val sIndexW = indexPaint.measureText(indexStr)
             val sTextW = textPaint.measureText(c.text)
-            val sCommentW =
-                if (c.comment.isNotEmpty()) indexPaint.measureText(" ${c.comment}") else 0f
+            val sCommentW = if (commentStr.isNotEmpty()) indexPaint.measureText(commentStr) else 0f
             val pillW = sIndexW + sTextW + sCommentW + pillPad * 2
             pills.add(PillRect(x, x + pillW, c.index))
             layouts.add(
@@ -110,18 +115,30 @@ class ComposingRenderer(
                     val pill = layout.rect
                     val textY =
                         pillY + pillH / 2f - (layout.textPaint.descent() + layout.textPaint.ascent()) / 2f
-                    drawRoundRect(
-                        pill.left, pillY, pill.right, pillY + pillH, pillR, pillR,
-                        paints.candidateBgPaint,
-                    )
-                    drawText(
-                        "${i + 1}. ", pill.left + pillPad, textY, layout.indexPaint,
-                    )
-                    drawText(c.text, pill.left + pillPad + layout.indexW, textY, layout.textPaint)
-                    if (c.comment.isNotEmpty()) {
+
+                    if (!borderless) {
+                        drawRoundRect(
+                            pill.left, pillY, pill.right, pillY + pillH, pillR, pillR,
+                            paints.candidateBgPaint,
+                        )
+                    }
+
+                    val drawIndex = showIndex && !borderless
+                    if (drawIndex) {
+                        drawText(
+                            "${i + 1}. ", pill.left + pillPad, textY, layout.indexPaint,
+                        )
+                    }
+
+                    val textX =
+                        if (drawIndex) pill.left + pillPad + layout.indexW else pill.left + pillPad
+                    drawText(c.text, textX, textY, layout.textPaint)
+
+                    if (showComment && c.comment.isNotEmpty()) {
+                        val commentX = textX + layout.textW
                         drawText(
                             " ${c.comment}",
-                            pill.left + pillPad + layout.indexW + layout.textW,
+                            commentX,
                             textY,
                             layout.indexPaint,
                         )
@@ -141,10 +158,12 @@ class ComposingRenderer(
         canvas.drawLine(
             dividerX, pillY + pillH / 4f, dividerX, pillY + pillH * 3f / 4f, paints.dividerPaint
         )
-        canvas.drawRoundRect(
-            expandBtnLeft, pillY, expandBtnRight, pillY + pillH, pillR, pillR,
-            paints.candidateBgPaint,
-        )
+        if (!expandBorderless) {
+            canvas.drawRoundRect(
+                expandBtnLeft, pillY, expandBtnRight, pillY + pillH, pillR, pillR,
+                paints.candidateBgPaint,
+            )
+        }
         val cx = expandBtnLeft + expandBtnW / 2f
         val cy = pillY + pillH / 2f
         val d = expandDrawable

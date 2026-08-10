@@ -1,6 +1,5 @@
 package com.ninthsoft.ime.input
 
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
@@ -10,8 +9,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.ExtractedTextRequest
-import com.ninthsoft.ime.data.manager.ClipboardRepository
+import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
@@ -66,13 +64,13 @@ class ImeInputMethodService : InputMethodService() {
             engine = engine,
         )
         engine?.observe(scope!!) { keyboardWindow?.handleEngineMessage(it) }
-        ClipboardRepository.startMonitoring(this)
+        ClipboardManager.startMonitoring(this)
     }
 
     override fun onCreateInputView(): View {
         keyboardWindow = KeyboardWindow(
             service = this,
-            onCandidateSelected = { candidate -> engine?.selectCandidate(candidate.index) },
+            onCandidateSelected = { candidate -> engine?.selectCandidate(candidate) },
             onToolbarAction = { action ->
                 when (action) {
                     CloseKeyboard -> requestHideSelf(0)
@@ -81,6 +79,7 @@ class ImeInputMethodService : InputMethodService() {
                         EmojiKeyboard.NAME
                     )
 
+                    KawaiiPanel.Action.ReloadEngine -> engine?.reload()
                     Undo -> engine?.undo(this)
                     Redo -> engine?.redo(this)
 
@@ -120,8 +119,8 @@ class ImeInputMethodService : InputMethodService() {
             onSidePanelAction = { action -> keyActionListener.onKeyAction(action) },
             onTextEditingAction = { action -> handleTextEditingAction(action) },
             onClipboardItemClick = { entry -> currentInputConnection?.commitText(entry.text, 1) },
-            onClipboardClear = { ClipboardRepository.clearAll(this) },
-            onClipboardItemDelete = { entry -> ClipboardRepository.removeEntry(this, entry.text) },
+            onClipboardClear = { ClipboardManager.clearAll(this) },
+            onClipboardItemDelete = { entry -> ClipboardManager.removeEntry(this, entry.text) },
             onCopyTextCommit = { text -> currentInputConnection?.commitText(text, 1) },
             onCandidateGridDragComplete = { candidates ->
                 engine?.resortCandidates(candidates)
@@ -135,6 +134,7 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         keyboardWindow?.onStartInputView(info, restarting)
+        engine?.onStartInputView(currentInputConnection)
         notifyInputChanged()
         super.onStartInputView(info, restarting)
     }
@@ -143,6 +143,7 @@ class ImeInputMethodService : InputMethodService() {
         showingDialog?.dismiss()
         engine?.resetComposition()
         keyboardWindow?.onFinishInputView(finishingInput)
+        engine?.onFinishInputView()
         super.onFinishInputView(finishingInput)
     }
 
@@ -157,7 +158,7 @@ class ImeInputMethodService : InputMethodService() {
         scope?.cancel()
         scope = null
         keyboardWindow = null
-        ClipboardRepository.stopMonitoring(this)
+        ClipboardManager.stopMonitoring(this)
         super.onDestroy()
     }
 
@@ -286,5 +287,6 @@ class ImeInputMethodService : InputMethodService() {
         var text = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString() ?: ""
         text += currentInputConnection.getTextAfterCursor(1, 0)?.toString() ?: ""
         keyboardWindow?.onInputChanged(text)
+        engine?.onInputChanged()
     }
 }

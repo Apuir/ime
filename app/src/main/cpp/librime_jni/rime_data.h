@@ -72,6 +72,9 @@ namespace rime_jni {
     struct SyllableData {
         std::string rawInput;
         std::string spelling;
+        std::string text;
+        int textSyllableStart = -1;
+        int textSyllableEnd = -1;
     };
 
     struct CompositionData {
@@ -123,6 +126,9 @@ namespace rime_jni {
                         SyllableData sd;
                         sd.rawInput = c.syllables[i].raw_input ? c.syllables[i].raw_input : "";
                         sd.spelling = c.syllables[i].spelling ? c.syllables[i].spelling : "";
+                        sd.text = c.syllables[i].text ? c.syllables[i].text : "";
+                        sd.textSyllableStart = c.syllables[i].text_syllable_start;
+                        sd.textSyllableEnd = c.syllables[i].text_syllable_end;
                         composition.syllables.push_back(std::move(sd));
                     }
                 }

@@ -183,7 +183,7 @@ namespace jni {
                     env->FindClass("com/ninthsoft/ime/engine/rime/core/SyllableProto")));
             SyllableProtoCtor = env->GetMethodID(
                     SyllableProto, "<init>",
-                    "(Ljava/lang/String;Ljava/lang/String;)V");
+                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)V");
 
             CompositionProto = static_cast<jclass>(env->NewGlobalRef(
                     env->FindClass("com/ninthsoft/ime/engine/rime/core/CompositionProto")));

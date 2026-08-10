@@ -126,9 +126,6 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
         },
     ) { padding ->
         if (!loaded) return@Scaffold
-        var grammarModelEnabled by remember {
-            mutableStateOf(SchemaManager.isGrammarModelEnabled(context))
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -137,17 +134,6 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Spacer(Modifier.height(4.dp))
-
-            SettingsGroup(title = stringResource(R.string.schema_model)) {
-                SwitchRow(
-                    title = stringResource(R.string.schema_model_grammar),
-                    checked = grammarModelEnabled,
-                    onCheckedChange = {
-                        grammarModelEnabled = it
-                        SchemaManager.setGrammarModelEnabled(context, it)
-                    },
-                )
-            }
 
             Spacer(Modifier.height(8.dp))
             SectionHeader(stringResource(R.string.enabled_schemas))
@@ -343,8 +329,7 @@ private fun SchemaListItem(
                         )
                         Spacer(Modifier.width(4.dp))
                     }
-                    val tagText = if (schema.layout == "T9")
-                        stringResource(R.string.tag_layout_t9)
+                    val tagText = if (schema.layout == "T9") stringResource(R.string.tag_layout_t9)
                     else stringResource(R.string.tag_layout_full)
                     TagBadge(
                         tagText,
@@ -352,9 +337,9 @@ private fun SchemaListItem(
                         MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.width(4.dp))
-                    val punctText = if (schema.punctuation == "full-width")
-                        stringResource(R.string.tag_punctuation_full)
-                    else stringResource(R.string.tag_punctuation_half)
+                    val punctText =
+                        if (schema.punctuation == "full-width") stringResource(R.string.tag_punctuation_full)
+                        else stringResource(R.string.tag_punctuation_half)
                     TagBadge(
                         punctText,
                         MaterialTheme.colorScheme.tertiaryContainer,

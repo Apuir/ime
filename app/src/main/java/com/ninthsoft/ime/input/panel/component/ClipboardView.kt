@@ -13,7 +13,7 @@ import android.widget.OverScroller
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.manager.ClipboardRepository
+import com.ninthsoft.ime.data.manager.ClipboardManager
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -23,8 +23,8 @@ class ClipboardView(
     colors: KeyboardColors.ColorScheme,
 ) : ComponentView(context, colors) {
 
-    var onItemClick: ((ClipboardRepository.Entry) -> Unit)? = null
-    var onItemLongClick: ((ClipboardRepository.Entry, Float, Float) -> Unit)? = null
+    var onItemClick: ((ClipboardManager.Entry) -> Unit)? = null
+    var onItemLongClick: ((ClipboardManager.Entry, Float, Float) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
 
@@ -33,7 +33,7 @@ class ClipboardView(
     private val gap = 6f * density
     private val hMargin = 10f * density
 
-    private var entries = listOf<ClipboardRepository.Entry>()
+    private var entries = listOf<ClipboardManager.Entry>()
 
     private data class EntryLayout(val height: Float, val lines: List<String>)
     private var entryLayouts = listOf<EntryLayout>()
@@ -87,7 +87,7 @@ class ClipboardView(
         addView(emptyView)
     }
 
-    fun show(list: List<ClipboardRepository.Entry>) {
+    fun show(list: List<ClipboardManager.Entry>) {
         entries = list
         resetScroll()
         updateColors()

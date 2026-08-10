@@ -75,10 +75,10 @@ class Prediction(private val modelFile: File) {
         return allCandidates.take(topK)
     }
 
-    data class Candidate(val word: String, val count: Int, val score: Double)
+    data class Candidate(val word: String, val count: Int, var score: Double)
 
     companion object {
-        private const val TOP_K = 20
+        private const val TOP_K = 100
         private const val MAX_ORDER = 5
 
         private fun calcScore(word: String, count: Int): Double {

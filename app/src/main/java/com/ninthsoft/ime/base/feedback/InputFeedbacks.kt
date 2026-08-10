@@ -96,8 +96,8 @@ class InputFeedbacks private constructor() {
             view: View,
             longPress: Boolean = false,
             keyUp: Boolean = false,
-            pressDuration: Long = 20L,
-            longPressDuration: Long = 40L,
+            pressDuration: Long = 15L,
+            longPressDuration: Long = 30L,
             pressAmplitude: Int = 255,
             longPressAmplitude: Int = 255
         ) {

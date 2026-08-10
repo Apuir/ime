@@ -84,7 +84,10 @@ namespace rime_jni {
         return env->NewObject(jni::g_refs->SyllableProto,
                               jni::g_refs->SyllableProtoCtor,
                               jni::makeString(env, sd.rawInput),
-                              jni::makeString(env, sd.spelling));
+                              jni::makeString(env, sd.spelling),
+                              jni::makeString(env, sd.text),
+                              static_cast<jint>(sd.textSyllableStart),
+                              static_cast<jint>(sd.textSyllableEnd));
     }
 
     inline jobject toJavaComposition(JNIEnv *env, const CompositionData &comp) {

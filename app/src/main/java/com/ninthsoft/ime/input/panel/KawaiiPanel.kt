@@ -5,8 +5,9 @@ import android.content.Context
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.manager.ClipboardRepository
+import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
+import com.ninthsoft.ime.data.manager.CandidateManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.component.CandidateGridView
@@ -23,9 +24,9 @@ class KawaiiPanel(
     var onToolbarAction: ((Action) -> Unit)? = null,
     var onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
     var onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
-    var onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
+    var onClipboardItemClick: ((ClipboardManager.Entry) -> Unit)? = null,
     var onClipboardClear: (() -> Unit)? = null,
-    var onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
+    var onClipboardItemDelete: ((ClipboardManager.Entry) -> Unit)? = null,
     var onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
     var onCopyTextCommit: ((String) -> Unit)? = null,
     var onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
@@ -33,13 +34,13 @@ class KawaiiPanel(
 
     sealed class Action {
         data object SwitchKeyboard : Action()
-
-        data object EmojiKeyboard: Action()
+        data object EmojiKeyboard : Action()
         data object Clipboard : Action()
         data object ToggleVoice : Action()
         data object Settings : Action()
         data object SchemaSettings : Action()
         data object About : Action()
+        data object ReloadEngine : Action()
         data object Undo : Action()
         data object Redo : Action()
         data object Palette : Action()
@@ -58,11 +59,13 @@ class KawaiiPanel(
         data class SelectCandidate(val candidate: EngineMessage.Candidate) : TouchResult()
         data object ExpandCandidates : TouchResult()
         data object CollapseCandidates : TouchResult()
+        data object LongPressExpand : TouchResult()
     }
 
     sealed class State {
         data object Idle : State()
         data class Composing(val candidates: List<EngineMessage.Candidate>) : State()
+        data class Prediction(val candidates: List<EngineMessage.Candidate>) : State()
         data object Menu : State()
         data object TextEditing : State()
         data object Clipboard : State()
@@ -72,6 +75,16 @@ class KawaiiPanel(
     private var state: State = State.Idle
         set(value) {
             if (field == value) return
+            if (field is State.Composing && value is State.Composing && view.isExpanded) {
+                candidateGrid.updateCandidates((value as State.Composing).candidates)
+                field = value
+                return
+            }
+            if (field is State.Prediction && value is State.Prediction && view.isExpanded) {
+                candidateGrid.updateCandidates((value as State.Prediction).candidates)
+                field = value
+                return
+            }
             exit(field)
             field = value
             enter(field)
@@ -86,12 +99,13 @@ class KawaiiPanel(
     private fun exit(state: State) {
         confirmOverlay.dismiss()
         when (state) {
-            is State.Composing -> candidateGrid.hide()
+            is State.Composing, is State.Prediction -> candidateGrid.hide()
             State.Menu -> {
                 menuGrid.hide()
                 (view.currentRenderer as? IdleRenderer)?.showArrow = false
                 view.invalidate()
             }
+
             State.TextEditing -> {
                 textEditingView.hide()
                 (view.currentRenderer as? IdleRenderer)?.textEditingMode = false
@@ -116,12 +130,20 @@ class KawaiiPanel(
 
     private fun enter(state: State) {
         when (state) {
-            is State.Composing -> candidateGrid.show(state.candidates)
+            is State.Composing -> {
+                if (view.isExpanded) candidateGrid.show(state.candidates)
+            }
+
+            is State.Prediction -> {
+                if (view.isExpanded) view.setExpanded(false)
+            }
+
             State.Menu -> {
                 menuGrid.show()
                 (view.currentRenderer as? IdleRenderer)?.showArrow = true
                 view.invalidate()
             }
+
             State.TextEditing -> {
                 Timber.d("enter TextEditing: setting renderer textEditingMode=true")
                 (view.currentRenderer as? IdleRenderer)?.textEditingMode = true
@@ -133,7 +155,7 @@ class KawaiiPanel(
                 Timber.d("enter Clipboard: setting renderer clipboardMode=true")
                 (view.currentRenderer as? IdleRenderer)?.clipboardMode = true
                 view.invalidate()
-                clipboardView.show(ClipboardRepository.getEntries(context))
+                clipboardView.show(ClipboardManager.getEntries(context))
             }
 
             State.Copy -> {
@@ -216,25 +238,25 @@ class KawaiiPanel(
             )
         }
 
-        ClipboardRepository.onNewEntry = { entry ->
+        ClipboardManager.onNewEntry = { entry ->
             showCopyIfRecent(entry.text)
         }
 
-        ClipboardRepository.onContentChanged = {
+        ClipboardManager.onContentChanged = {
             if (state == State.Clipboard) {
-                clipboardView.show(ClipboardRepository.getEntries(context))
+                clipboardView.show(ClipboardManager.getEntries(context))
             }
         }
     }
 
     private fun handleClipboardClear() {
         onClipboardClear?.invoke()
-        clipboardView.show(ClipboardRepository.getEntries(context))
+        clipboardView.show(ClipboardManager.getEntries(context))
     }
 
-    private fun handleClipboardDelete(entry: ClipboardRepository.Entry) {
+    private fun handleClipboardDelete(entry: ClipboardManager.Entry) {
         onClipboardItemDelete?.invoke(entry)
-        clipboardView.show(ClipboardRepository.getEntries(context))
+        clipboardView.show(ClipboardManager.getEntries(context))
     }
 
     private fun handleCandidateForget(candidate: EngineMessage.Candidate) {
@@ -251,7 +273,7 @@ class KawaiiPanel(
 
     private fun showCopyIfRecent(text: String) {
         copyText = text
-        val recentTime = ClipboardRepository.lastCopyTimestamp
+        val recentTime = ClipboardManager.lastCopyTimestamp
         if (recentTime <= lastShownCopyTimestamp || System.currentTimeMillis() - recentTime >= 5 * 60 * 1000L) return
         if (text == lastShownCopyText) return
         lastShownCopyTimestamp = recentTime
@@ -262,7 +284,8 @@ class KawaiiPanel(
                 (view.currentRenderer as? IdleRenderer)?.copyText = copyText
                 view.invalidate()
             }
-            State.Clipboard -> clipboardView.show(ClipboardRepository.getEntries(context))
+
+            State.Clipboard -> clipboardView.show(ClipboardManager.getEntries(context))
             else -> {}
         }
     }
@@ -303,6 +326,20 @@ class KawaiiPanel(
 
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
                 is TouchResult.CollapseCandidates -> v.setExpanded(false)
+                is TouchResult.LongPressExpand -> {
+                    if (state is State.Prediction) {
+                        val candidates = (state as State.Prediction).candidates
+                        var predictions = true
+                        candidates.forEach {
+                            if (it.type != EngineMessage.Candidate.CandidateType.Prediction) {
+                                predictions = false
+                                return@forEach
+                            }
+                        }
+                        if (predictions) setCandidates(emptyList()) else v.setExpanded(true)
+                    }
+                }
+
                 null -> {
                     if (state == State.Copy && copyText != null) {
                         onCopyTextCommit?.invoke(copyText ?: "")
@@ -313,7 +350,11 @@ class KawaiiPanel(
         }
 
         v.onExpandChanged = { expanded, candidates ->
-            state = if (expanded) State.Composing(candidates) else State.Idle
+            if (expanded) {
+                candidateGrid.show(candidates)
+            } else {
+                candidateGrid.hide()
+            }
         }
     }
 
@@ -345,16 +386,16 @@ class KawaiiPanel(
         if (clipboardCheckRunnable == null) {
             clipboardCheckRunnable = object : Runnable {
                 override fun run() {
-                    ClipboardRepository.checkCurrentClipboard(context)
+                    ClipboardManager.checkCurrentClipboard(context)
                     checkPendingCopy()
                     view.postDelayed(this, 2000L)
                 }
             }
         }
-        ClipboardRepository.checkCurrentClipboard(context)
+        ClipboardManager.checkCurrentClipboard(context)
         checkPendingCopy()
         view.postDelayed({
-            ClipboardRepository.checkCurrentClipboard(context)
+            ClipboardManager.checkCurrentClipboard(context)
             checkPendingCopy()
         }, 500L)
         view.removeCallbacks(clipboardCheckRunnable!!)
@@ -363,9 +404,9 @@ class KawaiiPanel(
 
     private fun checkPendingCopy() {
         if (state != State.Idle) return
-        val text = ClipboardRepository.lastCopyText ?: return
+        val text = ClipboardManager.lastCopyText ?: return
         if (text == lastShownCopyText) return
-        val time = ClipboardRepository.lastCopyTimestamp
+        val time = ClipboardManager.lastCopyTimestamp
         if (time > lastShownCopyTimestamp && System.currentTimeMillis() - time < 5 * 60 * 1000L) {
             copyText = text
             lastShownCopyTimestamp = time
@@ -383,6 +424,7 @@ class KawaiiPanel(
         if (list.isEmpty()) {
             view.setExpanded(false)
             view.scrollX = 0f
+            state = State.Idle
             view.currentRenderer = IdleRenderer(
                 context.getDrawable(R.drawable.ic_keyboard_menu),
                 context.getDrawable(R.drawable.ic_keyboard_arrow_back),
@@ -405,8 +447,21 @@ class KawaiiPanel(
             view.currentRenderer = ComposingRenderer(
                 list, context.getDrawable(R.drawable.ic_keyboard_expand_more),
                 KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
+                showIndex = CandidateManager.isShowIndex(context),
+                showComment = CandidateManager.isShowComment(context),
+                borderless = CandidateManager.isBorderless(context),
+                expandBorderless = KeyboardManager.Keyboard.ExpandBorderless.isEnabled(context),
             )
-            if (state is State.Composing) {
+            var predictions = true
+            list.forEach {
+                if (it.type != EngineMessage.Candidate.CandidateType.Prediction) {
+                    predictions = false
+                    return@forEach
+                }
+            }
+            state = if (predictions) State.Prediction(list) else State.Composing(list)
+
+            if (view.isExpanded) {
                 candidateGrid.updateCandidates(list)
             }
         }

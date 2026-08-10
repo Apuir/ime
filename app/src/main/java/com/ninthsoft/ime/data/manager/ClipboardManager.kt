@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
-object ClipboardRepository {
+object ClipboardManager {
 
     var onNewEntry: ((Entry) -> Unit)? = null
     var onContentChanged: (() -> Unit)? = null

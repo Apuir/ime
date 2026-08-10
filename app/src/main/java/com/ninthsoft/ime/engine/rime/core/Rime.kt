@@ -206,7 +206,7 @@ class Rime : RimeApi, RimeLifecycleOwner {
         )
         handleMessage(
             RimeMessage.MessageType.DynamicPreedit.ordinal,
-            arrayOf(composition.syllables.toList(), composition.preedit ?: "")
+            arrayOf(composition)
         )
         handleMessage(RimeMessage.MessageType.Composition.ordinal, arrayOf(composition))
     }

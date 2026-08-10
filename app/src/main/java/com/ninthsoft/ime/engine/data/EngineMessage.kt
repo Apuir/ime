@@ -7,7 +7,7 @@ sealed class EngineMessage {
         val list: List<Candidate>,
         val highlighted: Int,
         val page: Int,
-    ) : EngineMessage()
+    ) : EngineMessage() {}
 
     data class Status(val schemaName: String, val isAsciiMode: Boolean) : EngineMessage()
     data class InlinePreedit(val preedit: String) : EngineMessage()
@@ -42,5 +42,14 @@ sealed class EngineMessage {
     }
 
     data object Unknown : EngineMessage()
-    data class Candidate(val index: Int, val text: String, val comment: String = "")
+
+    data class Candidate(
+        val index: Int,
+        val text: String,
+        val comment: String = "",
+        val type: CandidateType = CandidateType.Engine,
+        var score: Double = 0.0
+    ) {
+        enum class CandidateType { Engine, Prediction }
+    }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
@@ -48,6 +49,7 @@ fun MainScreen(
     onOpenSchemaSettings: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenClipboard: () -> Unit,
+    onOpenModelSettings: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     val themes = listOf(
@@ -131,6 +133,14 @@ fun MainScreen(
                 subtitle = stringResource(R.string.clipboard_manager_desc),
                 onClick = onOpenClipboard,
                 icon = Icons.Filled.ContentPaste,
+                showSpacer = true,
+            )
+
+            ClickableSettingItem(
+                title = stringResource(R.string.prediction_candidates),
+                subtitle = stringResource(R.string.prediction_candidates_desc),
+                onClick = onOpenModelSettings,
+                icon = Icons.Filled.AutoAwesome,
                 showSpacer = true,
             )
 

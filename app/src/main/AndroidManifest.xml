@@ -65,6 +65,12 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.PredictionSettingsActivity"
+            android:exported="false"
+            android:label="@string/prediction_candidates"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name=".base.speech.SpeechPermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />

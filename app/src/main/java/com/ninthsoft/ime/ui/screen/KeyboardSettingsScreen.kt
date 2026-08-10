@@ -85,6 +85,9 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
     var keyBorderEnabled by remember {
         mutableStateOf(KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context))
     }
+    var expandBorderless by remember {
+        mutableStateOf(KeyboardManager.Keyboard.ExpandBorderless.isEnabled(context))
+    }
     var followSystem by remember {
         mutableStateOf(KeyboardManager.Keyboard.getFollowSystem(context))
     }
@@ -248,6 +251,14 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                     onCheckedChange = {
                         keyBorderEnabled = it
                         KeyboardManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.expand_borderless),
+                    checked = expandBorderless,
+                    onCheckedChange = {
+                        expandBorderless = it
+                        KeyboardManager.Keyboard.ExpandBorderless.setEnabled(context, it)
                     },
                 )
             Spacer(Modifier.height(14.dp))

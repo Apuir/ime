@@ -2,6 +2,8 @@ package com.ninthsoft.ime.input.panel
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.content.Context
 import android.graphics.Canvas
 import android.view.MotionEvent
@@ -10,6 +12,7 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.toolbar.IdleRenderer
+import timber.log.Timber
 import kotlin.math.abs
 
 @SuppressLint("UseCompatLoadingForDrawables")
@@ -21,6 +24,13 @@ class KawaiiPanelView(context: Context) : View(context) {
     var onExpandChanged: ((Boolean, List<EngineMessage.Candidate>) -> Unit)? = null
     var isExpanded: Boolean = false
         private set
+
+    fun collapse() {
+        if (!isExpanded) return
+        isExpanded = false
+        onExpandChanged?.invoke(false, emptyList())
+        invalidate()
+    }
 
     fun setExpanded(expanded: Boolean) {
         if (isExpanded == expanded) return
@@ -36,6 +46,7 @@ class KawaiiPanelView(context: Context) : View(context) {
 
     private val paints = Paints(context)
     private var lastTouchX = 0f
+    private var lastTouchY = 0f
     private var isScrolling = false
     private val screenDensity = resources.displayMetrics.density
 
@@ -90,6 +101,17 @@ class KawaiiPanelView(context: Context) : View(context) {
     }
 
     private var pressAnimator: ValueAnimator? = null
+    private var expandLongPressed = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        val result = currentRenderer.hitTest(
+            lastTouchX, lastTouchY, width, height, scrollX, isExpanded, screenDensity,
+        )
+        if (result is KawaiiPanel.TouchResult.ExpandCandidates || result is KawaiiPanel.TouchResult.CollapseCandidates) {
+            expandLongPressed = true
+            onTap?.invoke(KawaiiPanel.TouchResult.LongPressExpand)
+        }
+    }
 
     private fun startPressAnimation(renderer: IdleRenderer) {
         pressAnimator?.cancel()
@@ -110,25 +132,35 @@ class KawaiiPanelView(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
+                lastTouchY = event.y
                 isScrolling = false
+                expandLongPressed = false
                 parent.requestDisallowInterceptTouchEvent(true)
+                longPressHandler.postDelayed(longPressRunnable, 500)
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (currentRenderer !is ComposingRenderer) return true
                 val dx = event.x - lastTouchX
-                val threshold = 10 * screenDensity
-                if (isScrolling || abs(dx) > threshold) {
+                val dy = event.y - lastTouchY
+                lastTouchX = event.x
+                lastTouchY = event.y
+                val moveDist = abs(dx) + abs(dy)
+                if (moveDist > 8 * screenDensity) {
+                    longPressHandler.removeCallbacks(longPressRunnable)
+                }
+                if (currentRenderer !is ComposingRenderer) return true
+                if (isScrolling || abs(dx) > 10 * screenDensity) {
                     isScrolling = true
                     val renderer = currentRenderer as ComposingRenderer
                     scrollX = (scrollX + dx).coerceIn(-renderer.maxScrollX, 0f)
-                    lastTouchX = event.x
                     invalidate()
                 }
             }
 
             MotionEvent.ACTION_UP -> {
+                longPressHandler.removeCallbacks(longPressRunnable)
                 parent.requestDisallowInterceptTouchEvent(false)
+                if (expandLongPressed) return true
                 if (!isScrolling) {
                     val result = currentRenderer.hitTest(
                         event.x, event.y, width, height, scrollX, isExpanded, screenDensity,
@@ -145,6 +177,7 @@ class KawaiiPanelView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                longPressHandler.removeCallbacks(longPressRunnable)
                 parent.requestDisallowInterceptTouchEvent(false)
             }
         }

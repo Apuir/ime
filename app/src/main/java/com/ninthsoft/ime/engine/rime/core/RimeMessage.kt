@@ -55,13 +55,11 @@ sealed class RimeMessage<T>(val data: T) {
 
     data class InlinePreeditMessage(val preedit: String) : RimeMessage<String>(preedit)
 
-    data class DynamicPreeditMessage(val preedits: List<SyllableProto>, val fallback: String) :
+    data class DynamicPreeditMessage(val composition: CompositionProto) :
         RimeMessage<DynamicPreeditMessage.DynamicPreedit>(
-            DynamicPreedit(
-                preedits, fallback
-            )
+            DynamicPreedit(composition)
         ) {
-        data class DynamicPreedit(val preedits: List<SyllableProto>, val fallback: String)
+        data class DynamicPreedit(val composition: CompositionProto)
     }
 
     data class CompositionMessage(val composition: CompositionProto) :
@@ -179,7 +177,7 @@ sealed class RimeMessage<T>(val data: T) {
             )
 
             MessageType.DynamicPreedit -> DynamicPreeditMessage(
-                params[0] as List<SyllableProto>, params[1] as String
+                params[0] as CompositionProto
             )
 
             else -> UnknownMessage(params)
@@ -245,22 +243,41 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
 
     is RimeMessage.DynamicPreeditMessage -> {
         val items = mutableListOf<EngineMessage.DynamicPreedit.DynamicPreeditItem>()
-        val preedits = data.preedits
-        if (preedits.isEmpty() && data.fallback.isNotEmpty()) {
+        val composition = data.composition
+        val preedits = composition.syllables
+        if (preedits.isEmpty() && composition.preedit?.isNotEmpty() == true) {
             items.add(
                 EngineMessage.DynamicPreedit.DynamicPreeditItem(
-                    text = data.fallback,
+                    text = composition.preedit,
                     type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
                 )
             )
             return EngineMessage.DynamicPreedit(items)
         }
-        preedits.forEachIndexed { _, proto ->
+        var confirmedProto: SyllableProto? = null
+        preedits.forEachIndexed { index, proto ->
+            if (confirmedProto != null) {
+                val cp = confirmedProto
+                if (cp.textSyllableStart >= 0 && cp.textSyllableEnd >= 0 &&
+                    cp.textSyllableStart <= index && index <= cp.textSyllableEnd) {
+                    return@forEachIndexed
+                }
+            }
             val segmented = proto.rawInput.endsWith(UserSegmentSymbol.toString())
             val raw = proto.rawInput.trimEnd(UserSegmentSymbol)
             val len = raw.length
             val normalPart = proto.spelling.take(len)
             val secondaryPart = proto.spelling.drop(len)
+            if (proto.text.isNotEmpty()) {
+                confirmedProto = proto
+                items.add(
+                    EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                        text = proto.text,
+                        type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
+                    )
+                )
+                return@forEachIndexed
+            }
             if (normalPart.isNotEmpty()) {
                 items.add(
                     EngineMessage.DynamicPreedit.DynamicPreeditItem(

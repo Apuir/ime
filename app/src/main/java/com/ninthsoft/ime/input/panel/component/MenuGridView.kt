@@ -47,7 +47,7 @@ class MenuGridView(
         MenuItem(context.getString(R.string.menu_settings), R.drawable.ic_keyboard_setting, KawaiiPanel.Action.Settings),
         MenuItem(context.getString(R.string.menu_schema), R.drawable.ic_keyboard_tune, KawaiiPanel.Action.SchemaSettings),
         MenuItem(context.getString(R.string.menu_theme), R.drawable.ic_keyboard_palette, KawaiiPanel.Action.Palette),
-        MenuItem(context.getString(R.string.menu_about), R.drawable.ic_keyboard_information_outline, KawaiiPanel.Action.About),
+        MenuItem(context.getString(R.string.menu_reload_engine), R.drawable.ic_keyboard_reload, KawaiiPanel.Action.ReloadEngine),
     )
 
     private val columns = 4
@@ -73,7 +73,7 @@ class MenuGridView(
         for (rowIndex in 0 until rows) {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(matchParent, wrapContent).apply {
                     setPadding(
                         pad,

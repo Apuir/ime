@@ -17,7 +17,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.manager.ClipboardRepository
+import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -41,9 +41,9 @@ class KeyboardWindowView(
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
     onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
     onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
-    onClipboardItemClick: ((ClipboardRepository.Entry) -> Unit)? = null,
+    onClipboardItemClick: ((ClipboardManager.Entry) -> Unit)? = null,
     onClipboardClear: (() -> Unit)? = null,
-    onClipboardItemDelete: ((ClipboardRepository.Entry) -> Unit)? = null,
+    onClipboardItemDelete: ((ClipboardManager.Entry) -> Unit)? = null,
     onCopyTextCommit: ((String) -> Unit)? = null,
     onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
     onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,

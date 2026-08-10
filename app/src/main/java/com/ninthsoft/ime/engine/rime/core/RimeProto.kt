@@ -15,6 +15,9 @@ data class CandidateProto(
 data class SyllableProto(
     val rawInput: String = "",
     val spelling: String = "",
+    val text: String = "",
+    val textSyllableStart: Int = -1,
+    val textSyllableEnd: Int = -1,
 )
 
 data class CompositionProto(
