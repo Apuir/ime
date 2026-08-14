@@ -124,6 +124,8 @@
     <string name="menu_cursor">光标</string>
     <string name="menu_settings">设置</string>
     <string name="menu_schema">方案管理</string>
+    <string name="schema_files">文件管理</string>
+    <string name="schema_files_desc">浏览和管理输入法用户文件</string>
     <string name="menu_theme">主题设置</string>
     <string name="menu_about">关于</string>
     <string name="choose_schema">选择输入方案</string>

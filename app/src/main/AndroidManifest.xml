@@ -52,6 +52,19 @@
             android:label="@string/schema_settings"
             android:theme="@style/Theme.Ime" />
 
+        <provider
+            android:name=".ui.AppFilesDocumentsProvider"
+            android:authorities="com.ninthsoft.ime.files.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
         <activity
             android:name=".ui.ClipboardActivity"
             android:exported="false"

@@ -66,6 +66,7 @@ import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.rime.core.SchemaItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
+import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableSettingItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize

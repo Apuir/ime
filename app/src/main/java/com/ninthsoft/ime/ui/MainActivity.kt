@@ -3,6 +3,7 @@ package com.ninthsoft.ime.ui
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
@@ -79,6 +80,17 @@ class MainActivity : ComponentActivity() {
                     onOpenModelSettings = {
                         startActivity(
                             Intent(this@MainActivity, PredictionSettingsActivity::class.java)
+                        )
+                    },
+                    onOpenFiles = {
+                        startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                DocumentsContract.buildRootUri(
+                                    AppFilesDocumentsProvider.AUTHORITY,
+                                    AppFilesDocumentsProvider.ROOT_ID,
+                                ),
+                            ),
                         )
                     },
                     onOpenAbout = {

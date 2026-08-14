@@ -34,7 +34,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
     private fun updateRimeInput(): Boolean {
         rimeJob.sendJob {
             val input = build()
-            Timber.d("newInput %s",input)
+            Timber.d("newInput %s", input)
             setInput(input = input)
         }
         return true

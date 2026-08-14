@@ -15,10 +15,13 @@ class SchemaSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val themeMode = remember { mutableIntStateOf(KeyboardManager.Theme.getMode(this)) }
+            val themeMode = remember {
+                mutableIntStateOf(KeyboardManager.Theme.getMode(this))
+            }
             ImeTheme(themeMode = themeMode.intValue) {
                 SchemaSettingsScreen(onBack = { finish() })
             }
         }
     }
+
 }

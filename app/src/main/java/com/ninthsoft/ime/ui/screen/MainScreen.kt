@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Palette
@@ -50,6 +51,7 @@ fun MainScreen(
     onOpenKeyboardSettings: () -> Unit,
     onOpenClipboard: () -> Unit,
     onOpenModelSettings: () -> Unit,
+    onOpenFiles: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     val themes = listOf(
@@ -141,6 +143,14 @@ fun MainScreen(
                 subtitle = stringResource(R.string.prediction_candidates_desc),
                 onClick = onOpenModelSettings,
                 icon = Icons.Filled.AutoAwesome,
+                showSpacer = true,
+            )
+
+            ClickableSettingItem(
+                title = stringResource(R.string.schema_files),
+                subtitle = stringResource(R.string.schema_files_desc),
+                onClick = onOpenFiles,
+                icon = Icons.Filled.FolderOpen,
                 showSpacer = true,
             )
 
