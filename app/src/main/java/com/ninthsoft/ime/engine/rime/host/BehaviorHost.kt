@@ -17,6 +17,8 @@ import com.ninthsoft.ime.engine.rime.core.IRimeJob
 import timber.log.Timber
 
 class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
+    private val emptyInput = ""
+    private val symbols = listOf(".", ",", ";")
 
     // 已选择的拼音队列
     private val selectedPinYinQueue = ArrayDeque<CandidatePinYin>()
@@ -29,15 +31,51 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
 
     /**
      * 等同于 fcitx5-android SidePanelKeyboard#updateRimeInput。
-     * 将 buildRimeInput 构造的输入投递给 Rime 引擎（最终调用 RimeApi.setInput）。
+     * 将 buildRimeInput 构造的输入投递给 Rime 引擎。
      */
     private fun updateRimeInput(): Boolean {
         rimeJob.sendJob {
             val input = build()
             Timber.d("newInput %s", input)
-            setInput(input = input)
+            if (input.startsWith("/")) {
+                setInput(input)
+                return@sendJob
+            }
+            val parts = inputParts(input)
+            parts.forEachIndexed { index, item ->
+                val emit = index + 1 == parts.size
+                when (true) {
+                    (item in symbols) -> {
+                        if (index == 0) setInput(emptyInput, false)
+                        simulateKeySequence(sequence = item)
+                    }
+
+                    (index == 0) -> setInput(input = item, emit)
+                    else -> appendInput(input = item, emit)
+                }
+            }
         }
         return true
+    }
+
+    private fun inputParts(input: String): List<String> {
+        if (input.isEmpty()) return listOf(input)
+        val parts = mutableListOf<String>()
+        val text = StringBuilder()
+        for (char in input) {
+            val value = char.toString()
+            if (value in symbols) {
+                if (text.isNotEmpty()) {
+                    parts += text.toString()
+                    text.clear()
+                }
+                parts += value
+            } else {
+                text.append(char)
+            }
+        }
+        if (text.isNotEmpty()) parts += text.toString()
+        return parts
     }
 
     override fun flowed(behavior: IBehavior): Boolean {

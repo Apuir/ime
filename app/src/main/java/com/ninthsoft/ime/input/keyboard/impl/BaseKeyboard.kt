@@ -7,7 +7,7 @@ import android.view.inputmethod.EditorInfo
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.R
-import com.ninthsoft.ime.data.Punctuation
+import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
@@ -54,16 +54,11 @@ abstract class BaseKeyboard(
 
     private var spanPanelViews: List<KeyView> = emptyList()
     private var spaceKeyView: TextKeyView? = null
-    private var periodKeyView: ImageTextKeyView? = null
     private var returnKeyView: ImageKeyView? = null
     private var returnKeyIcon: Int = 0
 
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.mainText?.text = text
-    }
-
-    override fun updatePeriodKeyText(text: String) {
-        periodKeyView?.updateText(text)
     }
 
     protected open fun updateSidePanel(items: List<KeyDef>) {
@@ -204,9 +199,6 @@ abstract class BaseKeyboard(
             }
             if (def.appearance.viewId == KeyView.button_space && this is TextKeyView) {
                 spaceKeyView = this
-            }
-            if (def.appearance.viewId == KeyView.button_peroid && this is ImageTextKeyView) {
-                periodKeyView = this
             }
             borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
             onPressedChanged = { key ->
@@ -447,5 +439,12 @@ abstract class BaseKeyboard(
         returnKeyView?.img?.imageResource = returnKeyIcon
     }
 
-    override fun updatePunctuation(punctuation: Punctuation) {}
+    override fun updatePunctuationMode(mode: PunctuationMode) {
+        keyRows.forEach { row ->
+            for (index in 0 until row.childCount) {
+                (row.getChildAt(index) as? KeyView)?.updateMode(mode)
+            }
+        }
+        spanPanelViews.forEach { it.updateMode(mode) }
+    }
 }

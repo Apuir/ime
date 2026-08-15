@@ -1,6 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
@@ -82,7 +83,6 @@ fun capsLockKey(): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CapsAction),
-        KeyDef.Behavior.LongPress(KeyboardAction.ToggleAscIIAction),
     ),
 )
 
@@ -131,7 +131,7 @@ fun resumeLayoutKey(
     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ResumeAction)),
 )
 
-fun spaceKey(percentWidth: Float = 0.44f): KeyDef = KeyDef(
+fun spaceKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
         displayText = "",
         textSize = 13f,
@@ -272,5 +272,19 @@ fun atKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
         variant = Variant.Alternative,
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CommitAction("@")),
+    )
+)
+
+fun textKey(
+    character: String, percentWidth: Float = 0.23333f,
+    variant: Variant = Variant.Normal,
+    fontSize: Float = 20f,
+) = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = character, textSize = fontSize, variant = variant, percentWidth = percentWidth
+    ), behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
+    ), popups = arrayOf(
+        KeyDef.Popup.Preview(character)
     )
 )

@@ -6,7 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
-import com.ninthsoft.ime.data.Punctuation
+import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
@@ -21,7 +21,6 @@ import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
-import timber.log.Timber
 
 class KeyboardManager(private val context: Context, val parent: ViewGroup) {
 
@@ -121,7 +120,7 @@ class KeyboardManager(private val context: Context, val parent: ViewGroup) {
             attach(name, index)
         }
         currentKeyboard?.updateSpaceKeyText(currentSchema?.name.orEmpty())
-        currentKeyboard?.updatePunctuation(Punctuation.from(currentSchema?.punctuation.orEmpty()))
+        currentKeyboard?.updatePunctuationMode(PunctuationMode.from(currentSchema?.punctuation.orEmpty()))
     }
 
     fun detachCurrent() {

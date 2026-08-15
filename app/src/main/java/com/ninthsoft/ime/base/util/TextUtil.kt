@@ -69,4 +69,51 @@ object TextUtil {
         }
         return result.reversed()
     }
+
+    fun <T> mostSimilarToFirst(
+        list: List<T>,
+        target: String,
+        value: (T) -> String,
+    ): List<T> {
+        if (list.isEmpty()) return list
+        var bestIndex = 0
+        var bestScore = -1.0
+        for (i in list.indices) {
+            val score = similarity(value(list[i]), target)
+            if (score > bestScore) {
+                bestScore = score
+                bestIndex = i
+            }
+        }
+        if (bestIndex == 0) return list
+        return buildList(list.size) {
+            add(list[bestIndex])
+            for (i in list.indices) {
+                if (i != bestIndex) add(list[i])
+            }
+        }
+    }
+
+    fun similarity(a: String, b: String): Double {
+        if (a == b) return 1.0
+        if (a.isEmpty() || b.isEmpty()) return 0.0
+        val distance = levenshtein(a, b)
+        return 1.0 - distance.toDouble() / maxOf(a.length, b.length)
+    }
+
+    fun levenshtein(a: String, b: String): Int {
+        var prev = IntArray(b.length + 1) { it }
+        var curr = IntArray(b.length + 1)
+        for (i in a.indices) {
+            curr[0] = i + 1
+            for (j in b.indices) {
+                curr[j + 1] =
+                    if (a[i] == b[j]) prev[j] else minOf(prev[j + 1], curr[j], prev[j]) + 1
+            }
+            val tmp = prev
+            prev = curr
+            curr = tmp
+        }
+        return prev[b.length]
+    }
 }

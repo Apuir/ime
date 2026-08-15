@@ -258,8 +258,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         preedits.forEachIndexed { index, proto ->
             if (confirmedProto != null) {
                 val cp = confirmedProto
-                if (cp.textSyllableStart >= 0 && cp.textSyllableEnd >= 0 &&
-                    cp.textSyllableStart <= index && index <= cp.textSyllableEnd) {
+                if (cp.textSyllableStart >= 0 && cp.textSyllableEnd >= 0 && cp.textSyllableStart <= index && index <= cp.textSyllableEnd) {
                     return@forEachIndexed
                 }
             }
@@ -278,6 +277,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
                 )
                 return@forEachIndexed
             }
+            var selected = false
             if (normalPart.isNotEmpty()) {
                 items.add(
                     EngineMessage.DynamicPreedit.DynamicPreeditItem(
@@ -285,12 +285,22 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
                         type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
                     )
                 )
+                selected = true
             }
             if (secondaryPart.isNotEmpty()) {
                 items.add(
                     EngineMessage.DynamicPreedit.DynamicPreeditItem(
                         text = secondaryPart,
                         type = EngineMessage.DynamicPreedit.DynamicPreeditType.Secondary
+                    )
+                )
+                selected = true
+            }
+            if (!selected) {
+                items.add(
+                    EngineMessage.DynamicPreedit.DynamicPreeditItem(
+                        text = proto.rawInput,
+                        type = EngineMessage.DynamicPreedit.DynamicPreeditType.Normal
                     )
                 )
             }

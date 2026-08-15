@@ -23,7 +23,7 @@ object PunctuationUtil {
         ';' to '；',
 
         ',' to '，',
-        '.' to '．',
+        '.' to '。',
 
         '?' to '？',
         '/' to '／',

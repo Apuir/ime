@@ -359,7 +359,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private fun restoreCandidates(msg: EngineMessage.Candidates) {
         sendJob {
             val rerankEnabled = CandidateManager.isRerankEnabled(context!!)
-            if (!rerankEnabled){
+            if (!rerankEnabled) {
                 callback(msg)
             }
 
@@ -462,8 +462,8 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 if (words.size >= 5) {
                     val texts = words.map { it.word }
                     val prefers =
-                        AppDatabase.getInstance(this@RimeEngine.context!!).candidatePreferDao().getAllByTextIn(texts)
-                            .associate { it.text to it.count }
+                        AppDatabase.getInstance(this@RimeEngine.context!!).candidatePreferDao()
+                            .getAllByTextIn(texts).associate { it.text to it.count }
                     val candidates = words.mapIndexed { index, it ->
                         val gramScore = gramDb?.query(inputContext, it.word) ?: 0.0
                         val preferCount = prefers[it.word] ?: 0
@@ -491,6 +491,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun reload() {
+        resetState()
         sendJob {
             deploy()
         }

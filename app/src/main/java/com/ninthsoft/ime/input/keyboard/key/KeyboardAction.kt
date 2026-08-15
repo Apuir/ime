@@ -30,8 +30,6 @@ sealed class KeyboardAction {
 
     data object CapsAction : KeyboardAction()
 
-    data object ToggleAscIIAction : KeyboardAction()
-
     data class LayoutSwitchAction(val target: String) : KeyboardAction()
 
     data object ResumeAction : KeyboardAction()

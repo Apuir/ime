@@ -19,6 +19,8 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.data.PunctuationMode
+import com.ninthsoft.ime.data.PunctuationMode.CharacterSet
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
@@ -43,7 +45,9 @@ abstract class KeyView(
     ctx: Context,
     protected val colors: KeyboardColors.ColorScheme,
     val def: KeyDef.Appearance,
-) : CustomGestureView(ctx) {
+) : CustomGestureView(ctx), IPunctuationModeKey {
+
+    override fun updateMode(punctuationMode: PunctuationMode) = Unit
 
     var bordered: Boolean = true
     var borderStroke: Boolean = true
@@ -248,6 +252,14 @@ open class TextKeyView(
 ) : KeyView(ctx, colors, def) {
     override val displayText: String? get() = mainText.text.toString()
 
+    override fun updateMode(punctuationMode: PunctuationMode) {
+        val text = mainText.text.toString()
+        updateText(when (punctuationMode) {
+            PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
+            PunctuationMode.HalfWidth -> CharacterSet.halfWidth(text)
+        })
+    }
+
     val mainText = android.widget.TextView(ctx).apply {
         isClickable = false
         isFocusable = false
@@ -272,6 +284,29 @@ open class TextKeyView(
             add(mainText, lParams(wrapContent, wrapContent) {
                 centerInParent()
             })
+        }
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateMainTextPosition()
+        }
+    }
+
+    private fun updateMainTextPosition() {
+        val text = mainText.text?.toString() ?: return
+        if (text.isEmpty()) {
+            mainText.translationX = 0f
+            return
+        }
+        val rect = Rect()
+        mainText.paint.getTextBounds(text, 0, text.length, rect)
+        val viewCenter = mainText.width / 2f
+        val glyphCenter = (rect.left + rect.right) / 2f
+        mainText.translationX = viewCenter - glyphCenter
+    }
+
+    open fun updateText(text: CharSequence?) {
+        mainText.text = text
+        mainText.doOnPreDraw {
+            updateMainTextPosition()
         }
     }
 }
@@ -300,6 +335,17 @@ class AltTextKeyView(
         applyLayout()
     }
 
+    override fun updateMode(punctuationMode: PunctuationMode) {
+        super.updateMode(punctuationMode)
+        val text = altText.text.toString()
+        updateAltText(
+            when (punctuationMode) {
+                PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
+                PunctuationMode.HalfWidth -> CharacterSet.halfWidth(text)
+            }
+        )
+    }
+
     private fun applyLayout() {
         mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
@@ -307,7 +353,7 @@ class AltTextKeyView(
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.15f
+            verticalBias = 0.2f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
@@ -472,7 +518,7 @@ class ImageTextKeyView(
     }
 
 
-    fun updateText(text: CharSequence?) {
+    override fun updateText(text: CharSequence?) {
         mainText.text = text
         mainText.doOnPreDraw {
             updateTextPosition()

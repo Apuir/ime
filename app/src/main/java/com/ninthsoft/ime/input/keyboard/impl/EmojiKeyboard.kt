@@ -7,7 +7,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
-import com.ninthsoft.ime.data.Punctuation
+import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.Symbol
 import com.ninthsoft.ime.input.keyboard.key.GridKeyboardView
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
@@ -154,8 +154,7 @@ class EmojiKeyboard(
 
     override fun name(): String = NAME
     override fun updateSpaceKeyText(text: String) {}
-    override fun updatePeriodKeyText(text: String) {}
-    override fun updatePunctuation(punctuation: Punctuation) {}
+    override fun updatePunctuationMode(mode: PunctuationMode) {}
     override fun updateEditorInfo(info: EditorInfo, empty: Boolean) {}
 
     override fun setRippleEnabled(enabled: Boolean) {

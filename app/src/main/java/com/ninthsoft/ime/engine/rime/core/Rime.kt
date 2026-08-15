@@ -87,21 +87,22 @@ class Rime : RimeApi, RimeLifecycleOwner {
         isVirtual: Boolean,
     ): Boolean = withRimeContext { processKeyInner(value.value, modifiers.toInt(), isVirtual) }
 
-    override suspend fun simulateKeySequence(sequence: String): Boolean = withRimeContext {
-        if (Companion.simulateKeySequence(sequence)) {
-            val commit = getCommit()
-            val input = Companion.getRawInput()
-            if (!commit.text.isNullOrEmpty() || input.isNotEmpty()) {
-                emitResponse { commit }
-                true
+    override suspend fun simulateKeySequence(sequence: String): Boolean =
+        withRimeContext {
+            if (Companion.simulateKeySequence(sequence)) {
+                val commit = getCommit()
+                val input = Companion.getRawInput()
+                if (!commit.text.isNullOrEmpty() || input.isNotEmpty()) {
+                    emitResponse { commit }
+                    true
+                } else {
+                    emitResponse { CommitProto(sequence) }
+                    false
+                }
             } else {
-                emitResponse { CommitProto(sequence) }
                 false
             }
-        } else {
-            false
         }
-    }
 
     override suspend fun selectCandidate(idx: Int, global: Boolean): Boolean = withRimeContext {
         Companion.selectCandidate(idx, global).also { emitResponse() }
@@ -120,8 +121,20 @@ class Rime : RimeApi, RimeLifecycleOwner {
         emitResponse()
     }
 
-    override suspend fun setInput(input: String) = withRimeContext {
-        Companion.setInput(input).also { emitResponse() }
+    override suspend fun setInput(input: String, emit: Boolean) = withRimeContext {
+        Companion.setInput(input).also {
+            if (emit) {
+                emitResponse()
+            }
+        }
+    }
+
+    override suspend fun appendInput(input: String, emit: Boolean) = withRimeContext {
+        Companion.appendInput(input).also {
+            if (emit) {
+                emitResponse()
+            }
+        }
     }
 
     override suspend fun availableSchemata(): Array<SchemaItem> =
@@ -362,6 +375,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         external fun setInput(keySequence: String): Boolean
+
+        @JvmStatic
+        external fun appendInput(keySequence: String): Boolean
 
         @JvmStatic
         external fun getCaretPos(): Int

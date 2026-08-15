@@ -119,6 +119,10 @@ namespace {
             return api_->set_input(sessionId(), input.c_str());
         }
 
+        bool appendInput(const std::string &input) {
+            return api_->append_input(sessionId(), input.c_str());
+        }
+
         size_t getInputConfirmedPosition() {
             return api_->get_input_confirmed_pos(sessionId());
         }
@@ -434,9 +438,16 @@ Java_com_ninthsoft_ime_engine_rime_core_Rime_getRawInput(JNIEnv *env,
 
 JNIEXPORT jboolean JNICALL
 Java_com_ninthsoft_ime_engine_rime_core_Rime_setInput(JNIEnv *env,
-                                                      jclass, jstring input) {
+                                                       jclass, jstring input) {
     jni::StringChars raw(env, input);
     return RimeEngine::instance().setInput(raw.str());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ninthsoft_ime_engine_rime_core_Rime_appendInput(JNIEnv *env,
+                                                         jclass, jstring input) {
+    jni::StringChars raw(env, input);
+    return RimeEngine::instance().appendInput(raw.str());
 }
 
 

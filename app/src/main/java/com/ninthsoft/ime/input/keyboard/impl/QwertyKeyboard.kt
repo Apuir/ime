@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.util.PunctuationUtil
-import com.ninthsoft.ime.data.Punctuation
+import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
@@ -16,10 +16,10 @@ import com.ninthsoft.ime.input.keyboard.key.alphabetKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.capsLockKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
-import com.ninthsoft.ime.input.keyboard.key.returnKey
-import com.ninthsoft.ime.input.keyboard.key.spaceKey
 import com.ninthsoft.ime.input.keyboard.key.peroidKey
+import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
+import com.ninthsoft.ime.input.keyboard.key.spaceKey
 
 @SuppressLint("ViewConstructor")
 class QwertyKeyboard(
@@ -29,9 +29,7 @@ class QwertyKeyboard(
 
     enum class CapsState { None, Once, Lock }
 
-    var punctuationState: Punctuation = Punctuation.FullWidth
-
-    var asciiPunctuationState: Punctuation? = null
+    var punctuationState: PunctuationMode = PunctuationMode.FullWidth
 
     companion object {
         const val NAME = "Qwerty"
@@ -75,28 +73,24 @@ class QwertyKeyboard(
                 listOf(
                     layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
                     schemaSwitchKey(0.13f),
-                    spaceKey(),
+                    spaceKey(percentWidth = 0.44f),
                     peroidKey(percentWidth = 0.13f),
                     returnKey(percentWidth = 0.15f),
                 ),
             )
         }
-
-
     }
 
-    private var spaceRawText: String = ""
-    private var asciiMode = false
     private var capsState = CapsState.None
     private val letterKeyViews = mutableListOf<TextKeyView>()
     private var capsKeyView: ImageKeyView? = null
 
     init {
-        this.updatePunctuation(punctuationState)
+        this.updatePunctuationMode(punctuationState)
         for (row in keyRows) {
             for (i in 0 until row.childCount) {
                 when (val child = row.getChildAt(i)) {
-                    is TextKeyView -> {
+                    is AltTextKeyView -> {
                         val text = child.mainText.text.toString()
                         if (text.length == 1 && text[0].isLetter()) {
                             letterKeyViews.add(child)
@@ -120,23 +114,10 @@ class QwertyKeyboard(
                 return
             }
 
-            is KeyboardAction.ToggleAscIIAction -> {
-                if (asciiMode) {
-                    asciiPunctuationState?.let { updatePunctuation(it) }
-                    asciiPunctuationState = null
-                } else {
-                    asciiPunctuationState = punctuationState
-                }
-                asciiMode = !asciiMode
-                updateSpaceKeyText(if (asciiMode) "English" else spaceRawText)
-                switchCapsState(CapsState.None)
-                return
-            }
-
             is KeyboardAction.CommitAction -> {
                 KeyboardAction.CommitAction(
                     PunctuationUtil.convert(
-                        action.text, punctuationState == Punctuation.FullWidth
+                        action.text, punctuationState == PunctuationMode.FullWidth
                     )
                 )
             }
@@ -151,12 +132,7 @@ class QwertyKeyboard(
                     } else {
                         action
                     }
-                // 如果 asciiMode 触发，应该使用转换后（transformed）的数据
-                if (asciiMode) {
-                    KeyboardAction.CommitAction(transformed.sequence)
-                } else {
-                    transformed
-                }
+                transformed
             }
 
             else -> action
@@ -166,7 +142,6 @@ class QwertyKeyboard(
 
     override fun onAttach() {
         capsState = CapsState.None
-        asciiMode = false
         updateKeyTextForState(capsState)
     }
 
@@ -181,9 +156,6 @@ class QwertyKeyboard(
             CapsState.Lock -> CapsState.None
         }
         updateKeyTextForState(capsState)
-        if (asciiPunctuationState != null) {
-            updatePunctuation(if (asciiMode) Punctuation.HalfWidth else asciiPunctuationState!!)
-        }
     }
 
 
@@ -191,36 +163,19 @@ class QwertyKeyboard(
         val uppercase = state != CapsState.None
         for (kv in letterKeyViews) {
             val text = kv.mainText.text.toString()
-            kv.mainText.text = if (uppercase) text.uppercase() else text.lowercase()
+            kv.updateText(if (uppercase) text.uppercase() else text.lowercase())
         }
         capsKeyView?.img?.setImageResource(
             when (state) {
-                CapsState.None -> if (!asciiMode) R.drawable.ic_keyboard_capslock_none else R.drawable.ic_keyboard_capslock_none_ascii
-                CapsState.Once -> if (!asciiMode) R.drawable.ic_keyboard_capslock_once else R.drawable.ic_keyboard_capslock_once_ascii
-                CapsState.Lock -> if (!asciiMode) R.drawable.ic_keyboard_capslock_lock else R.drawable.ic_keyboard_capslock_lock_ascii
+                CapsState.None -> R.drawable.ic_keyboard_capslock_none
+                CapsState.Once -> R.drawable.ic_keyboard_capslock_once
+                CapsState.Lock -> R.drawable.ic_keyboard_capslock_lock
             }
         )
     }
 
-    override fun updateSpaceKeyText(text: String) {
-        if (!asciiMode) {
-            spaceRawText = text
-        }
-        super.updateSpaceKeyText(text)
-    }
-
-    override fun updatePunctuation(punctuation: Punctuation) {
-        this@QwertyKeyboard.punctuationState = punctuation
-        this.updatePeriodKeyText(if (punctuation == Punctuation.FullWidth) "。" else ".")
-        for (kv in letterKeyViews) {
-            if (kv is AltTextKeyView) {
-                val altText = kv.altText.text.toString()
-                val altNewText =
-                    PunctuationUtil.convert(altText, punctuation == Punctuation.FullWidth)
-                if (altText != altNewText) {
-                    kv.updateAltText(altNewText)
-                }
-            }
-        }
+    override fun updatePunctuationMode(mode: PunctuationMode) {
+        punctuationState = mode
+        super.updatePunctuationMode(mode)
     }
 }

@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
@@ -82,4 +83,6 @@ class NumberKeyboard(
                 )
             })
     }
+
+    override fun updatePunctuationMode(mode: PunctuationMode)= run { }
 }

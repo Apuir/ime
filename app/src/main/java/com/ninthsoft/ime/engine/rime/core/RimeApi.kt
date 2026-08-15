@@ -68,7 +68,9 @@ interface RimeApi {
 
     suspend fun clearComposition()
 
-    suspend fun setInput(input: String): Boolean
+    suspend fun setInput(input: String, emit: Boolean = true): Boolean
+
+    suspend fun appendInput(input: String, emit: Boolean = true): Boolean
 
     suspend fun freeContext()
 

@@ -108,7 +108,6 @@ fun MainScreen(
                 showSpacer = true,
             )
 
-            Spacer(Modifier.height(8.dp))
             SectionHeader(stringResource(R.string.input_settings))
 
             ClickableSettingItem(
@@ -127,7 +126,6 @@ fun MainScreen(
                 showSpacer = true,
             )
 
-            Spacer(Modifier.height(8.dp))
             SectionHeader(stringResource(R.string.extended_features))
 
             ClickableSettingItem(
@@ -154,7 +152,6 @@ fun MainScreen(
                 showSpacer = true,
             )
 
-            Spacer(Modifier.height(8.dp))
             SectionHeader(stringResource(R.string.about))
 
             ClickableSettingItem(
