@@ -10,10 +10,10 @@ interface ClipboardDao {
     @Insert
     suspend fun insert(record: ClipboardRecord): Long
 
-    @Query("SELECT * FROM clipboard_records WHERE deleted = 0 ORDER BY timestamp DESC")
-    suspend fun getAllActive(): List<ClipboardRecord>
+    @Query("SELECT * FROM clipboard_records WHERE deleted = 0 AND timestamp >= :cutoff ORDER BY timestamp DESC")
+    suspend fun getAllActiveSince(cutoff: Long): List<ClipboardRecord>
 
-    @Query("SELECT * FROM clipboard_records ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM clipboard_records WHERE deleted = 0 ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatest(): ClipboardRecord?
 
     @Query("SELECT COUNT(*) FROM clipboard_records")

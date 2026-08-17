@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -54,6 +55,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
@@ -65,6 +67,39 @@ object ScreenComponent {
     const val SWITCH_SCALE = 0.75f
 
     @Composable
+    fun ProgressButton(progress: Float, extracting: Boolean = false, width: Dp = 72.dp) {
+        val fraction = progress.coerceIn(0f, 1f)
+        val buttonWidth = if (width > 0.dp) width else 72.dp
+        val containerColor = if (extracting) {
+            MaterialTheme.colorScheme.onSecondary
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+        val progressColor = MaterialTheme.colorScheme.onPrimary
+        Box(
+            modifier = Modifier
+                .width(buttonWidth)
+                .height(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(containerColor),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .fillMaxWidth(fraction)
+                    .background(progressColor.copy(alpha = 0.3f)),
+            )
+            Text(
+                text = "${(fraction * 100).toInt()}%",
+                color = progressColor,
+                fontSize = 13.sp,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+    }
+
+    @Composable
     fun SettingsGroup(
         title: String,
         icon: ImageVector? = null,
@@ -73,7 +108,7 @@ object ScreenComponent {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
             ) {
                 if (icon != null) {
                     Icon(
@@ -140,6 +175,46 @@ object ScreenComponent {
                     uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
                 ),
             )
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+    }
+
+    @Composable
+    fun ActionRow(
+        title: String,
+        subtitle: String? = null,
+        trailing: @Composable () -> Unit,
+        showDivider: Boolean = false,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = rowSubFontSize,
+                )
+                if (subtitle != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = rowSubFontSize,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            trailing()
         }
         if (showDivider) {
             HorizontalDivider(
@@ -220,7 +295,7 @@ object ScreenComponent {
     fun SectionHeader(title: String, icon: ImageVector? = null) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
         ) {
             if (icon != null) {
                 Icon(

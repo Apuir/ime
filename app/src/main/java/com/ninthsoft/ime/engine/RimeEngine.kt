@@ -7,11 +7,6 @@ import android.view.KeyEvent.*
 import android.view.inputmethod.InputConnection
 import androidx.core.content.edit
 import com.ninthsoft.ime.ImeApplication
-import com.ninthsoft.ime.base.marisa.Prediction
-import com.ninthsoft.ime.base.ngram.GramDb
-import com.ninthsoft.ime.base.priority.CandidateFeature
-import com.ninthsoft.ime.base.priority.PriorityCalculator
-import com.ninthsoft.ime.base.priority.WeightConfig
 import com.ninthsoft.ime.base.util.TextUtil
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.rime.behavior.Segmentation
@@ -19,10 +14,10 @@ import com.ninthsoft.ime.data.database.AppDatabase
 import com.ninthsoft.ime.data.database.CandidateSorting
 import com.ninthsoft.ime.data.manager.CandidateManager
 import com.ninthsoft.ime.data.manager.SchemaManager
-import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.rime.host.BehaviorHost
 import com.ninthsoft.ime.engine.data.CandidatePinYin
+import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.data.EngineMessage.Candidate
 import com.ninthsoft.ime.engine.rime.behavior.Backspace
 import com.ninthsoft.ime.engine.rime.behavior.InputKey
@@ -40,6 +35,8 @@ import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
 import com.ninthsoft.ime.engine.rime.data.DataManager.modelDir
 import com.ninthsoft.ime.engine.rime.data.DataManager.sharedDataDir
+import com.ninthsoft.ime.engine.manager.CandidateRerankManager
+import com.ninthsoft.ime.engine.manager.PredictionManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +45,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.io.File
+import kotlinx.coroutines.withTimeoutOrNull
 
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
@@ -60,12 +57,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private var context: Context? = null
     private var callback: suspend (EngineMessage) -> Unit = { }
     private var inited: Boolean = false
-    private var gramDb: GramDb? = null;
-    private var inputContext: String = ""
     private var inputConnection: InputConnection? = null
-    private var prediction: Prediction? = null
-    private var lastCandidatesSize = 0
-    private val calculator = PriorityCalculator()
+    private val rerankManager by lazy { CandidateRerankManager(context!!) }
+    private val predictionManager by lazy { PredictionManager(context!!) }
+    private var showPredictionCandidates = false
+    private var notEmitNextEmptyCandidates = false
 
     override fun initialize(context: Context) {
         this.context = context
@@ -105,9 +101,9 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             }
             val currentSchema = currentSchema()
             RimeConfig.openSchema(currentSchema.schemaId).use { config ->
-                config.getString("grammar/language")?.let { initGramdb(it) }
+                val language = config.getString("grammar/language")
+                predictionManager.loadModels(modelDir, sharedDataDir, language)
             }
-            //预热一下
             processKey(KeyMapping.Key_Delete, 0U, false)
             (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.DONE)
         }
@@ -116,7 +112,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     override fun finalize() {
         jobs.close()
         scope.cancel()
-        prediction?.destroy()
+        predictionManager.destroy()
         daemon.destroySession(javaClass.name)
     }
 
@@ -132,17 +128,26 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     when (key.keyCode) {
                         KEYCODE_SPACE -> {
                             if (getRawInput().isEmpty()) {
-                                service.currentInputConnection.commitText(" ", 1)
+                                callback(EngineMessage.Commit(" "))
                                 return@sendJob
                             }
                         }
 
                         KEYCODE_DEL -> {
+                            if (showPredictionCandidates) {
+                                showPredictionCandidates = false
+                                callback(EngineMessage.Candidates(emptyList(), 0, 0))
+                                return@sendJob
+                            }
+                            val ic = service.currentInputConnection
                             if (getRawInput().isEmpty()) {
-                                service.currentInputConnection?.let { ic ->
-                                    val before = ic.getTextBeforeCursor(1, 0)
-                                    if (!before.isNullOrEmpty()) {
-                                        ic.deleteSurroundingText(1, 0)
+                                if (!ic?.getSelectedText(0).isNullOrEmpty()) {
+                                    callback(EngineMessage.Commit(""))
+                                    return@sendJob
+                                }
+                                ic?.let {
+                                    if (!it.getTextBeforeCursor(1, 0).isNullOrEmpty()) {
+                                        it.deleteSurroundingText(1, 0)
                                     }
                                 }
                                 return@sendJob
@@ -158,13 +163,16 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
                         KEYCODE_ENTER -> {
                             if (getRawInput().isEmpty()) {
-                                service.currentInputConnection.commitText("\n", 1)
+                                callback(EngineMessage.Commit("\n"))
                                 return@sendJob
                             }
                         }
                     }
-                    val modifiers = key.modifiers.toInt()
-                    this@RimeEngine.flowed(InputKey(key.keyCode, modifiers, key.isVirtual))
+                    this@RimeEngine.flowed(
+                        InputKey(
+                            key.keyCode, key.modifiers.toInt(), key.isVirtual
+                        )
+                    )
                     return@sendJob
                 }
             }
@@ -172,17 +180,17 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun selectCandidate(candidate: Candidate) {
-        if (candidate.type == Candidate.CandidateType.Prediction) {
-            sendJob {
-                callback(EngineMessage.Commit(candidate.text))
-            }
-            return
-        }
         sendJob {
+            if (candidate.type == Candidate.CandidateType.Prediction) {
+                callback(EngineMessage.Commit(candidate.text))
+                this@RimeEngine.predict(candidate.text)
+                return@sendJob
+            }
             val ctx = context ?: return@sendJob
-            val db = AppDatabase.getInstance(ctx)
-            db.candidatePreferDao().upsert(candidate.text, inputContext)
+            val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "")
+            AppDatabase.getInstance(ctx).candidatePreferDao().upsert(candidate.text, inputContext)
         }
+        notEmitNextEmptyCandidates = true
         this@RimeEngine.flowed(Selection(candidate.index))
     }
 
@@ -219,16 +227,14 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         sendJob {
             val preedit = getRawInput().replace("'", " ")
             if (preedit.isNotEmpty()) {
-                val ids = candidates.map { it.index }
-                db.candidateSortingDao().saveSorting(CandidateSorting(preedit, ids))
+                db.candidateSortingDao()
+                    .saveSorting(CandidateSorting(preedit, candidates.map { it.index }))
             }
         }
     }
 
     override fun deleteCandidate(index: Int) {
-        sendJob {
-            deleteCandidate(index, global = true)
-        }
+        sendJob { deleteCandidate(index, global = true) }
     }
 
     private fun sendCombinationKeyEvent(
@@ -263,10 +269,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         )
     }
 
-    override fun flowed(behavior: IBehavior): Boolean {
-        return behaviorHosted?.flowed(behavior) == true
-    }
-
+    override fun flowed(behavior: IBehavior): Boolean = behaviorHosted?.flowed(behavior) == true
     override fun resetState() {
         behaviorHosted?.resetState()
     }
@@ -294,14 +297,16 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                         return@observeMessages
                     }
 
+                    is EngineMessage.Commit -> {
+                        notEmitNextEmptyCandidates = true
+                        this@RimeEngine.predict(msg.text)
+                    }
+
                     is EngineMessage.Candidates -> {
-                        val predictionEnabled = CandidateManager.isPredictionEnabled(context!!)
-                        if (predictionEnabled && msg.list.isEmpty() && this@RimeEngine.lastCandidatesSize > 0) {
-                            this@RimeEngine.lastCandidatesSize = 0
-                            this@RimeEngine.onInputChanged()
+                        if (notEmitNextEmptyCandidates && msg.list.isEmpty()) {
+                            notEmitNextEmptyCandidates = false
                             return@observeMessages
                         }
-                        this@RimeEngine.lastCandidatesSize = msg.list.size
                         restoreCandidates(msg)
                         return@observeMessages
                     }
@@ -325,9 +330,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun clear(service: InputMethodService) {
         sendJob {
-            if (compositionCached.preedit?.isNotEmpty() ?: false) {
+            if (compositionCached.preedit?.isNotEmpty() == true) {
                 this@RimeEngine.resetComposition()
             } else {
+                if (showPredictionCandidates) {
+                    showPredictionCandidates = false
+                    callback(EngineMessage.Candidates(emptyList(), 0, 0))
+                }
                 service.currentInputConnection?.let {
                     val p0 = it.getTextBeforeCursor(Int.MAX_VALUE, 0)?.length ?: 0
                     val p1 = it.getTextAfterCursor(Int.MAX_VALUE, 0)?.length ?: 0
@@ -353,7 +362,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         if (!result.isSuccess) {
             deferred.complete(defaultValue)
         }
-        return deferred.await()
+        return withTimeoutOrNull(AWAIT_JOB_TIMEOUT_MS) { deferred.await() } ?: defaultValue
+    }
+
+    private companion object {
+        const val AWAIT_JOB_TIMEOUT_MS = 2000L
     }
 
     private fun restoreCandidates(msg: EngineMessage.Candidates) {
@@ -361,76 +374,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             val rerankEnabled = CandidateManager.isRerankEnabled(context!!)
             if (!rerankEnabled) {
                 callback(msg)
-            }
-
-            val restoreStart = 1
-            val restoreEnd = minOf(25, msg.list.size)
-            if (restoreEnd <= restoreStart) {
-                callback(msg)
                 return@sendJob
             }
-
-            val texts = msg.list.subList(restoreStart, restoreEnd).map { it.text }
-            val prefers =
-                AppDatabase.getInstance(context!!).candidatePreferDao().getAllByTextIn(texts)
-                    .associate { it.text to it.count }
-
-            val cfg = WeightConfig()
-            val restored = ArrayList<Candidate>(restoreEnd - restoreStart)
-
-            for (index in restoreStart until restoreEnd) {
-                val it = msg.list[index]
-                var candidateCount = 0
-                prediction?.predictNextWords(it.text, restoreEnd)?.forEach { prediction ->
-                    candidateCount += prediction.count
-                }
-
-                val gramScore = if (inputContext.isNotEmpty()) {
-                    gramDb?.query(inputContext, it.text) ?: 0.0
-                } else {
-                    0.0
-                }
-
-                val preferCount = prefers[it.text] ?: 0
-                val textLen = it.text.codePointCount(0, it.text.length)
-                val score = calculator.calculate(
-                    CandidateFeature(
-                        frequency = preferCount.toLong(),
-                        wordLength = textLen,
-                        candidateCount = candidateCount,
-                        baseScore = gramScore
-                    ), cfg
-                )
-                restored.add(
-                    Candidate(
-                        index = index,
-                        text = it.text,
-                        type = Candidate.CandidateType.Engine,
-                        score = score
-                    )
-                )
-            }
-            restored.sortByDescending { it.score }
-
-            val candidates = ArrayList<Candidate>(msg.list.size)
-            candidates.add(msg.list[0])
-            candidates.addAll(restored)
-            for (index in restoreEnd until msg.list.size) {
-                candidates.add(msg.list[index])
-            }
-            callback(EngineMessage.Candidates(candidates, 0, 0))
-        }
-    }
-
-    private suspend fun initGramdb(language: String) {
-        val gram = File(sharedDataDir, "$language.gram")
-        if (gram.isFile) {
-            gramDb = GramDb(gram.absolutePath)
-            val predictGram = File(modelDir, "predict.marisa")
-            if (predictGram.isFile) {
-                prediction = Prediction(predictGram)
-                prediction?.load()
-            }
+            val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "")
+            val sortedList = rerankManager.rerank(msg.list, inputContext, null)
+            callback(EngineMessage.Candidates(sortedList, 0, 0))
         }
     }
 
@@ -442,58 +390,29 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         inputConnection = ic
     }
 
-    override fun onInputChanged() {
+    override fun predict(commit: String) {
         if (!CandidateManager.isPredictionEnabled(context!!)) return
-        inputContext = inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: ""
+        val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "") + commit
         sendJob {
-            if (compositionCached.preedit?.isNotEmpty() == true) {
-                return@sendJob
+            var candidates = emptyList<Candidate>()
+            if (!inputContext.isEmpty() && !TextUtil.isSymbol(inputContext.last())) {
+                candidates = predictionManager.makePredictions(inputContext)
             }
-            if (inputContext.isEmpty() || TextUtil.isSymbol(inputContext.last())) {
-                callback(EngineMessage.Candidates(emptyList(), 0, 0))
-                return@sendJob
-            }
-            val prediction = prediction ?: return@sendJob
-            val possiables = TextUtil.contextSubstrings(inputContext)
-            val cfg = WeightConfig()
-            for (context in possiables) {
-                if (context.isEmpty()) continue
-                val words = prediction.predictNextWords(context)
-                if (words.size >= 5) {
-                    val texts = words.map { it.word }
-                    val prefers =
-                        AppDatabase.getInstance(this@RimeEngine.context!!).candidatePreferDao()
-                            .getAllByTextIn(texts).associate { it.text to it.count }
-                    val candidates = words.mapIndexed { index, it ->
-                        val gramScore = gramDb?.query(inputContext, it.word) ?: 0.0
-                        val preferCount = prefers[it.word] ?: 0
-                        val textLen = it.word.codePointCount(0, it.word.length)
-                        val score = calculator.calculate(
-                            CandidateFeature(
-                                frequency = preferCount.toLong(),
-                                wordLength = textLen,
-                                candidateCount = 1,
-                                baseScore = gramScore
-                            ), cfg
-                        )
-                        Candidate(
-                            index = index,
-                            text = it.word,
-                            type = Candidate.CandidateType.Prediction,
-                            score = score
-                        )
-                    }.sortedByDescending { it.score }
-                    callback(EngineMessage.Candidates(candidates.take(25), 0, 0))
-                    return@sendJob
-                }
-            }
+            showPredictionCandidates = candidates.isNotEmpty()
+            callback(EngineMessage.Candidates(candidates, 0, 0))
         }
     }
 
     override fun reload() {
         resetState()
+        sendJob { deploy() }
+    }
+
+    //前端提交
+    override fun commit(text: String) {
         sendJob {
-            deploy()
+            callback(EngineMessage.Commit(text))
+            this@RimeEngine.predict(text)
         }
     }
 }

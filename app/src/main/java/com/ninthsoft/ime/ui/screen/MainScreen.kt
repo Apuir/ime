@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,6 +52,7 @@ fun MainScreen(
     onOpenKeyboardSettings: () -> Unit,
     onOpenClipboard: () -> Unit,
     onOpenModelSettings: () -> Unit,
+    onOpenVoiceSettings: () -> Unit,
     onOpenFiles: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -94,9 +96,9 @@ fun MainScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
 
             SectionHeader(stringResource(R.string.basic_settings))
 
@@ -141,6 +143,14 @@ fun MainScreen(
                 subtitle = stringResource(R.string.prediction_candidates_desc),
                 onClick = onOpenModelSettings,
                 icon = Icons.Filled.AutoAwesome,
+                showSpacer = true,
+            )
+
+            ClickableSettingItem(
+                title = stringResource(R.string.voice_settings),
+                subtitle = stringResource(R.string.voice_settings_desc),
+                onClick = onOpenVoiceSettings,
+                icon = Icons.Filled.Mic,
                 showSpacer = true,
             )
 

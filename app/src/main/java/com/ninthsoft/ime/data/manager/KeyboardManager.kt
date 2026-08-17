@@ -34,6 +34,9 @@ object KeyboardManager {
         const val KEY_HEIGHT_LANDSCAPE = "$PREFIX.height_landscape"
         const val KEY_IGNORE_INSETS = "$PREFIX.ignore_insets"
         const val KEY_THEME = "$PREFIX.theme"
+        const val KEY_FOLLOW_SYSTEM = "$PREFIX.follow_system"
+        const val KEY_LIGHT_THEME = "$PREFIX.light_theme"
+        const val KEY_DARK_THEME = "$PREFIX.dark_theme"
 
         fun getHeightPercent(context: Context): Int {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -70,12 +73,12 @@ object KeyboardManager {
 
         fun getFollowSystem(context: Context): Boolean {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean("$PREFIX.follow_system", false)
+                .getBoolean(KEY_FOLLOW_SYSTEM, false)
         }
 
         fun setFollowSystem(context: Context, followSystem: Boolean) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                putBoolean("$PREFIX.follow_system", followSystem)
+                putBoolean(KEY_FOLLOW_SYSTEM, followSystem)
             }
         }
 
@@ -92,25 +95,25 @@ object KeyboardManager {
 
         fun getLightThemeId(context: Context): String {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString("$PREFIX.light_theme", KeyboardTheme.LIGHT_DEFAULT.id)
+                .getString(KEY_LIGHT_THEME, KeyboardTheme.LIGHT_DEFAULT.id)
                     ?: KeyboardTheme.LIGHT_DEFAULT.id
         }
 
         fun setLightThemeId(context: Context, themeId: String) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                putString("$PREFIX.light_theme", themeId)
+                putString(KEY_LIGHT_THEME, themeId)
             }
         }
 
         fun getDarkThemeId(context: Context): String {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString("$PREFIX.dark_theme", KeyboardTheme.DARK_DEFAULT.id)
+                .getString(KEY_DARK_THEME, KeyboardTheme.DARK_DEFAULT.id)
                     ?: KeyboardTheme.DARK_DEFAULT.id
         }
 
         fun setDarkThemeId(context: Context, themeId: String) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                putString("$PREFIX.dark_theme", themeId)
+                putString(KEY_DARK_THEME, themeId)
             }
         }
 

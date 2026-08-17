@@ -34,7 +34,6 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
-import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,10 +41,8 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 fun ClipboardScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    var cloudSync by remember { mutableStateOf(ClipboardManager.isCloudSyncEnabled(context)) }
     var maxEntries by remember { mutableFloatStateOf(ClipboardManager.getMaxEntries(context).toFloat()) }
     var retentionDays by remember { mutableFloatStateOf(ClipboardManager.getRetentionDays(context).toFloat()) }
-    var showTimestamp by remember { mutableStateOf(ClipboardManager.isShowTimestamp(context)) }
 
     Scaffold(
         topBar = {
@@ -83,17 +80,6 @@ fun ClipboardScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(4.dp))
 
-            SettingsGroup(title = stringResource(R.string.clipboard_sync)) {
-                SwitchRow(
-                    title = stringResource(R.string.clipboard_cloud_sync),
-                    checked = cloudSync,
-                    onCheckedChange = {
-                        cloudSync = it
-                        ClipboardManager.setCloudSyncEnabled(context, it)
-                    },
-                )
-            }
-
             SettingsGroup(title = stringResource(R.string.clipboard_history)) {
                 Spacer(Modifier.height(4.dp))
                 SliderRow(
@@ -115,15 +101,6 @@ fun ClipboardScreen(onBack: () -> Unit) {
                         retentionDays = it
                         ClipboardManager.setRetentionDays(context, it.toInt())
                     },
-                )
-                SwitchRow(
-                    title = stringResource(R.string.clipboard_show_timestamp),
-                    checked = showTimestamp,
-                    onCheckedChange = {
-                        showTimestamp = it
-                        ClipboardManager.setShowTimestamp(context, it)
-                    },
-                    showDivider = false,
                 )
             }
 

@@ -15,7 +15,7 @@ fun alphabetKey(
     appearance = KeyDef.Appearance.AltText(
         displayText = character,
         altText = punctuation,
-        textSize = 23f,
+        textSize = 22f,
         altTextTranslationY = altTextTranslationY,
         mainTextTranslationY = mainTextTranslationY,
         variant = Variant.Normal
@@ -224,7 +224,7 @@ fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
         textSize = 16f,
         percentWidth = percentWidth,
         mainTextTranslationY = 4,
-        altTextTranslationY = 6
+        altTextTranslationY = 3
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(

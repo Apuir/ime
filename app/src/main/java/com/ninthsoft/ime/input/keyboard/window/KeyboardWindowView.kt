@@ -28,6 +28,7 @@ import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.panel.component.TextEditView
 import com.ninthsoft.ime.input.pinner.PreeditPinner
 import com.ninthsoft.ime.input.speech.SpeechOverlayView
+import com.ninthsoft.ime.base.speech.ModelProvider
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.speech.SpeechUiBridge
 import com.ninthsoft.ime.input.ImeInputMethodService
@@ -37,6 +38,7 @@ import kotlin.math.roundToInt
 @SuppressLint("ViewConstructor")
 class KeyboardWindowView(
     context: Context,
+    private val keyboardStateManager: KeyboardStateManager,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
     onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
@@ -54,8 +56,6 @@ class KeyboardWindowView(
     }
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
-
-    private val keyboardManager = KeyboardManager(context, this)
 
     val panel = KawaiiPanel(
         context = context,
@@ -88,9 +88,9 @@ class KeyboardWindowView(
     private var isVoiceRecording = false
 
     var keyActionListener: KeyActionListener
-        get() = keyboardManager.keyActionListener
+        get() = keyboardStateManager.keyActionListener
         set(value) {
-            keyboardManager.keyActionListener = KeyActionListener { action ->
+            keyboardStateManager.keyActionListener = KeyActionListener { action ->
                 transformed(action)?.let { value.onKeyAction(it) }
             }
         }
@@ -98,27 +98,27 @@ class KeyboardWindowView(
     fun transformed(action: KeyboardAction): KeyboardAction? {
         val transformed: KeyboardAction? = when (action) {
             is KeyboardAction.RotateSchema -> {
-                val schemeId = keyboardManager.rotateSchema()
+                val schemeId = keyboardStateManager.rotateSchema()
                 return KeyboardAction.SelectSchema(schemeId)
             }
 
             is KeyboardAction.LayoutSwitchAction -> {
-                keyboardManager.switchTo(action.target)
+                keyboardStateManager.switchTo(action.target)
                 null
             }
 
             is KeyboardAction.ResumeAction -> {
-                keyboardManager.resume()
+                keyboardStateManager.resume()
                 null
             }
 
             is KeyboardAction.ShowInputMethodPickerAction -> {
                 val dialog = SchemaPickerDialog.build(
                     context = context,
-                    schemas = keyboardManager.getSchemas(),
-                    currentSchemaId = keyboardManager.getCurrentSchema()?.id,
+                    schemas = keyboardStateManager.getSchemas(),
+                    currentSchemaId = keyboardStateManager.getCurrentSchema()?.id,
                     colors = cachedColors,
-                    onSchemaSelected = { schemaId -> keyboardManager.selectSchema(schemaId) })
+                    onSchemaSelected = { schemaId -> keyboardStateManager.selectSchema(schemaId) })
                 (context as ImeInputMethodService).showDialog(dialog)
                 null
             }
@@ -171,7 +171,7 @@ class KeyboardWindowView(
 
     fun onConfigChanged(key: String) {
         when (key) {
-            SchemaManager.KEY_ENABLED_IDS -> keyboardManager.onConfigChanged(key)
+            SchemaManager.KEY_ENABLED_IDS -> keyboardStateManager.onConfigChanged(key)
             KeyboardManager.Keyboard.KEY_HEIGHT, KeyboardManager.Keyboard.KEY_HEIGHT_LANDSCAPE, KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL, KeyboardManager.Keyboard.Padding.KEY_BOTTOM, KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
                 panel.view.updateHorizontalPadding(
                     KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat()
@@ -179,10 +179,10 @@ class KeyboardWindowView(
                 requestLayout()
             }
 
-            KeyboardManager.Keyboard.KeyRadius.KEY, KeyboardManager.Keyboard.KEY_THEME, KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL, KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
+            KeyboardManager.Keyboard.KeyRadius.KEY, KeyboardManager.Keyboard.KEY_THEME, KeyboardManager.Keyboard.KEY_FOLLOW_SYSTEM, KeyboardManager.Keyboard.KEY_LIGHT_THEME, KeyboardManager.Keyboard.KEY_DARK_THEME, KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL, KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
 
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {
-                keyboardManager.setRippleEnabled(
+                keyboardStateManager.setRippleEnabled(
                     KeyboardManager.Keyboard.RippleEffect.isEnabled(context)
                 )
             }
@@ -194,6 +194,7 @@ class KeyboardWindowView(
     private var cachedBottomInset = 0
 
     init {
+        keyboardStateManager.attachTo(this)
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
             val bottom = maxOf(
                 insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
@@ -327,7 +328,7 @@ class KeyboardWindowView(
     fun onStartInput(info: EditorInfo) {
         panel.view.setExpanded(false)
         panel.onStartInputView()
-        keyboardManager.startInput(info)
+        keyboardStateManager.startInput(info)
     }
 
     fun refreshColors() {
@@ -336,7 +337,7 @@ class KeyboardWindowView(
         setBackgroundColor(cachedColors.background)
         panel.refreshTheme()
         preeditPinner.refreshTheme(context)
-        keyboardManager.rebuild(cachedColors)
+        keyboardStateManager.rebuild(cachedColors)
         voiceOverlay.applyColors(
             cachedColors.background,
             cachedColors.specialKeyBackground,
@@ -353,7 +354,7 @@ class KeyboardWindowView(
 
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         panel.onPossibleCandidatePinYin(pinyins)
-        keyboardManager.onPossibleCandidatePinYin(pinyins)
+        keyboardStateManager.onPossibleCandidatePinYin(pinyins)
     }
 
     fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
@@ -417,7 +418,7 @@ class KeyboardWindowView(
         return if (resId > 0) resources.getDimensionPixelSize(resId) else 0
     }
 
-    override fun onAttach() {}
+    override fun onAttach() = keyboardStateManager.onAttach()
 
     override fun onDetach() {
         if (isVoiceRecording) {
@@ -425,7 +426,7 @@ class KeyboardWindowView(
             SherpaSpeechClient.stopHoldSession()
             voiceOverlay.hide()
         }
-        keyboardManager.detachCurrent()
+        keyboardStateManager.onDetach()
     }
 
     private fun ensureRecordAudioPermission(): Boolean {
@@ -443,12 +444,40 @@ class KeyboardWindowView(
         panel.confirmOverlay.confirm(
             message = context.getString(R.string.voice_permission_message),
             onConfirm = {
-                val intent =
-                    Intent(context, com.ninthsoft.ime.base.speech.SpeechPermissionActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
+                val intent = Intent(
+                    context, com.ninthsoft.ime.base.speech.SpeechPermissionActivity::class.java
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
                 runCatching { context.startActivity(intent) }
             },
+            centerHorizontal = true,
+            centerVertical = true,
+        )
+    }
+
+    private fun showModelDownloadPrompt(provider: ModelProvider) {
+        if (!isVoiceRecording) return
+        val label = when (provider) {
+            ModelProvider.QNN -> "QNN"
+            ModelProvider.CPU -> "CPU"
+        }
+        panel.confirmOverlay.confirm(
+            message = context.getString(R.string.voice_model_missing_message),
+            onConfirm = {
+                isVoiceRecording = false
+                val intent = Intent(
+                    context, com.ninthsoft.ime.ui.VoiceSettingsActivity::class.java
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(
+                        com.ninthsoft.ime.ui.VoiceSettingsActivity.EXTRA_AUTO_DOWNLOAD,
+                        true,
+                    )
+                }
+                runCatching { context.startActivity(intent) }
+            },
+            onCancel = null,
             centerHorizontal = true,
             centerVertical = true,
         )
@@ -468,12 +497,12 @@ class KeyboardWindowView(
         if (voiceOverlay.parent == null) {
             addView(voiceOverlay)
         }
-        voiceOverlay.show()
-        voiceOverlay.bringToFront()
 
         SpeechUiBridge.clear()
         SpeechUiBridge.onRecordingStarted = {
-            // recording started
+            // 依赖就绪、录音真正开始后才展示动画，避免未就绪时一闪而过导致抖动
+            voiceOverlay.show()
+            voiceOverlay.bringToFront()
         }
         SpeechUiBridge.onAmplitude = { amp ->
             voiceOverlay.updateAmplitude(amp)
@@ -484,6 +513,11 @@ class KeyboardWindowView(
                 voiceOverlay.hide()
             }
         }
+        SpeechUiBridge.onFailed = {
+            isVoiceRecording = false
+            voiceOverlay.hide()
+        }
+        SpeechUiBridge.onModelMissing = { provider -> showModelDownloadPrompt(provider) }
 
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
     }
@@ -521,12 +555,13 @@ class KeyboardWindowView(
         if (voiceOverlay.parent == null) {
             addView(voiceOverlay)
         }
-        voiceOverlay.show()
-        voiceOverlay.bringToFront()
         voiceOverlay.setDragLocked()
 
         SpeechUiBridge.clear()
-        SpeechUiBridge.onRecordingStarted = {}
+        SpeechUiBridge.onRecordingStarted = {
+            voiceOverlay.show()
+            voiceOverlay.bringToFront()
+        }
         SpeechUiBridge.onAmplitude = { amp ->
             voiceOverlay.updateAmplitude(amp)
         }
@@ -536,6 +571,11 @@ class KeyboardWindowView(
                 voiceOverlay.hide()
             }
         }
+        SpeechUiBridge.onFailed = {
+            isVoiceRecording = false
+            voiceOverlay.hide()
+        }
+        SpeechUiBridge.onModelMissing = { provider -> showModelDownloadPrompt(provider) }
 
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
     }
@@ -546,8 +586,8 @@ class KeyboardWindowView(
             voiceOverlay.hide()
         }
         panel.onInputChanged(text)
-        return keyboardManager.onInputChanged(info, text)
+        return keyboardStateManager.onInputChanged(info, text)
     }
 
-    fun switchKeyboard(name: String) = keyboardManager.switchTo(name)
+    fun switchKeyboard(name: String) = keyboardStateManager.switchTo(name)
 }

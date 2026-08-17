@@ -6,8 +6,8 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
 object EngineFactory {
-
     private val instances = ConcurrentHashMap<KClass<out IEngine>, IEngine>()
+    private val instancesLock = Any()
 
     @Volatile
     private var currentEngine: IEngine? = null
@@ -31,8 +31,8 @@ object EngineFactory {
         context: Context,
         clazz: KClass<T>,
     ): T {
-        return instances.getOrPut(clazz) {
-            create(context, clazz)
+        @Suppress("UNCHECKED_CAST") return synchronized(instancesLock) {
+            instances[clazz] ?: create(context, clazz).also { instances[clazz] = it }
         } as T
     }
 
@@ -43,7 +43,7 @@ object EngineFactory {
     ): T {
         val engine = getOrCreate(context, clazz)
         currentEngine = engine
-        SingletonRegistry.register(IEngine::class,engine)
+        SingletonRegistry.register(IEngine::class, engine)
         return engine
     }
 

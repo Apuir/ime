@@ -245,7 +245,11 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         val items = mutableListOf<EngineMessage.DynamicPreedit.DynamicPreeditItem>()
         val composition = data.composition
         val preedits = composition.syllables
-        if (preedits.isEmpty() && composition.preedit?.isNotEmpty() == true) {
+        val spelling = composition.syllables.joinToString { it.spelling }
+        if (preedits.isEmpty() || spelling.all { it.isDigit() }){
+            if (composition.preedit.isNullOrBlank()){
+                return EngineMessage.DynamicPreedit(items)
+            }
             items.add(
                 EngineMessage.DynamicPreedit.DynamicPreeditItem(
                     text = composition.preedit,
@@ -254,6 +258,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
             )
             return EngineMessage.DynamicPreedit(items)
         }
+
         var confirmedProto: SyllableProto? = null
         preedits.forEachIndexed { index, proto ->
             if (confirmedProto != null) {

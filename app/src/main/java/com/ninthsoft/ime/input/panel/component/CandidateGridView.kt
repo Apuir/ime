@@ -667,7 +667,11 @@ class CandidateGridView(
     private fun mES(size: Int, mode: Int) = MeasureSpec.makeMeasureSpec(size, mode)
 
     fun refreshTheme(context: Context) {
-        gridCanvas.updateColors(KeyboardColors.resolve(context).panel)
+        val colors = KeyboardColors.resolve(context)
+        refreshTheme(colors)
+
+        gridCanvas.updateColors(colors.panel)
+        sidePanelKey.refreshTheme(colors)
         invalidate()
     }
 

@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 
 abstract class KeyView(
     ctx: Context,
-    protected val colors: KeyboardColors.ColorScheme,
+    protected var colors: KeyboardColors.ColorScheme,
     val def: KeyDef.Appearance,
 ) : CustomGestureView(ctx), IPunctuationModeKey {
 
@@ -102,7 +102,7 @@ abstract class KeyView(
     private var pressedLayerAlpha = 0
     private var bgAnimator: Animator? = null
 
-    private fun setupBackgroundWithPress() {
+    protected fun setupBackgroundWithPress() {
         val bkgColor = when (def.variant) {
             Variant.Normal, Variant.AltForeground -> colors.keyBackground
             Variant.Alternative -> colors.specialKeyBackground
@@ -245,7 +245,7 @@ abstract class KeyView(
 }
 
 @SuppressLint("ViewConstructor")
-open class TextKeyView(
+class TextKeyView(
     ctx: Context,
     colors: KeyboardColors.ColorScheme,
     def: KeyDef.Appearance.Text,
@@ -264,6 +264,7 @@ open class TextKeyView(
         isClickable = false
         isFocusable = false
         background = null
+        includeFontPadding = false
         text = def.displayText
         setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
         gravity = android.view.Gravity.CENTER
@@ -281,33 +282,14 @@ open class TextKeyView(
 
     init {
         appearanceView.apply {
-            add(mainText, lParams(wrapContent, wrapContent) {
+            add(mainText, lParams(matchParent, matchParent) {
                 centerInParent()
             })
         }
-        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateMainTextPosition()
-        }
     }
 
-    private fun updateMainTextPosition() {
-        val text = mainText.text?.toString() ?: return
-        if (text.isEmpty()) {
-            mainText.translationX = 0f
-            return
-        }
-        val rect = Rect()
-        mainText.paint.getTextBounds(text, 0, text.length, rect)
-        val viewCenter = mainText.width / 2f
-        val glyphCenter = (rect.left + rect.right) / 2f
-        mainText.translationX = viewCenter - glyphCenter
-    }
-
-    open fun updateText(text: CharSequence?) {
+    fun updateText(text: CharSequence?) {
         mainText.text = text
-        mainText.doOnPreDraw {
-            updateMainTextPosition()
-        }
     }
 }
 
@@ -316,59 +298,100 @@ class AltTextKeyView(
     ctx: Context,
     colors: KeyboardColors.ColorScheme,
     def: KeyDef.Appearance.AltText,
-) : TextKeyView(ctx, colors, def) {
+) : KeyView(ctx, colors, def) {
+
+    override val displayText: String? get() = mainText.text.toString()
+
+    override fun updateMode(punctuationMode: PunctuationMode) {
+        val text = mainText.text.toString()
+        updateText(when (punctuationMode) {
+            PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
+            PunctuationMode.HalfWidth -> CharacterSet.halfWidth(text)
+        })
+        val altStr = altText.text.toString()
+        updateAltText(when (punctuationMode) {
+            PunctuationMode.FullWidth -> CharacterSet.fullWidth(altStr)
+            PunctuationMode.HalfWidth -> CharacterSet.halfWidth(altStr)
+        })
+    }
+
+    val mainText = android.widget.TextView(ctx).apply {
+        isClickable = false
+        isFocusable = false
+        background = null
+        includeFontPadding = false
+        text = def.displayText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        gravity = android.view.Gravity.CENTER
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
+        setTypeface(typeface, def.textStyle)
+        setTextColor(
+            when (def.variant) {
+                Variant.Normal, Variant.AltForeground -> colors.keyText
+                Variant.Alternative -> colors.specialKeyText
+                Variant.Accent -> colors.accentKeyText
+                Variant.None -> colors.keyText
+            },
+        )
+    }
 
     val altText = android.widget.TextView(ctx).apply {
         isClickable = false
         isFocusable = false
+        background = null
+        includeFontPadding = false
         setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.altTextSize)
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText
         setTextColor(colors.altText)
         gravity = android.view.Gravity.CENTER
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
     }
 
     init {
         appearanceView.apply {
+            add(mainText, lParams(wrapContent, wrapContent))
             add(altText, lParams(wrapContent, wrapContent))
         }
         applyLayout()
-    }
 
-    override fun updateMode(punctuationMode: PunctuationMode) {
-        super.updateMode(punctuationMode)
-        val text = altText.text.toString()
-        updateAltText(
-            when (punctuationMode) {
-                PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
-                PunctuationMode.HalfWidth -> CharacterSet.halfWidth(text)
-            }
-        )
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateMainTextPosition()
+            updateAltTextPosition()
+        }
     }
 
     private fun applyLayout() {
-        mainText.id = generateViewId()
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.2f
+            verticalBias = 0.25f
         }
         altText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.80f
+            verticalBias = 0.8f
         }
 
         val altDef = def as KeyDef.Appearance.AltText
         mainText.translationY = dp(altDef.mainTextTranslationY).toFloat()
         altText.translationY = dp(altDef.altTextTranslationY).toFloat()
+    }
 
-        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+    fun updateText(text: CharSequence?) {
+        mainText.text = text
+        mainText.doOnPreDraw {
             updateMainTextPosition()
+        }
+    }
+
+    fun updateAltText(text: CharSequence?) {
+        altText.text = text
+        altText.doOnPreDraw {
             updateAltTextPosition()
         }
     }
@@ -397,13 +420,6 @@ class AltTextKeyView(
         val viewCenter = altText.width / 2f
         val glyphCenter = (rect.left + rect.right) / 2f
         altText.translationX = viewCenter - glyphCenter
-    }
-
-    fun updateAltText(text: CharSequence?) {
-        altText.text = text
-        altText.doOnPreDraw {
-            updateAltTextPosition()
-        }
     }
 }
 
@@ -442,7 +458,6 @@ class SidePanelKeyView(
     }
 }
 
-
 @SuppressLint("ViewConstructor")
 class ImageKeyView(
     ctx: Context,
@@ -477,7 +492,38 @@ class ImageTextKeyView(
     ctx: Context,
     colors: KeyboardColors.ColorScheme,
     def: KeyDef.Appearance.ImageText,
-) : TextKeyView(ctx, colors, def) {
+) : KeyView(ctx, colors, def) {
+
+    override val displayText: String? get() = mainText.text.toString()
+
+    override fun updateMode(punctuationMode: PunctuationMode) {
+        val text = mainText.text.toString()
+        updateText(when (punctuationMode) {
+            PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
+            PunctuationMode.HalfWidth -> CharacterSet.halfWidth(text)
+        })
+    }
+
+    val mainText = android.widget.TextView(ctx).apply {
+        isClickable = false
+        isFocusable = false
+        background = null
+        includeFontPadding = false
+        text = def.displayText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        gravity = android.view.Gravity.CENTER
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
+        setTypeface(typeface, def.textStyle)
+        setTextColor(
+            when (def.variant) {
+                Variant.Normal, Variant.AltForeground -> colors.keyText
+                Variant.Alternative -> colors.specialKeyText
+                Variant.Accent -> colors.accentKeyText
+                Variant.None -> colors.keyText
+            },
+        )
+    }
+
     val img = imageView {
         isClickable = false
         isFocusable = false
@@ -495,21 +541,27 @@ class ImageTextKeyView(
     init {
         appearanceView.apply {
             id = if (def.viewId > 0) def.viewId else generateViewId()
+            // 使用 wrapContent，并加上适当的上下间距
             add(img, lParams(dp(16), dp(16)))
+            add(mainText, lParams(wrapContent, wrapContent))
         }
-        mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            startToStart = parentId
-            endToEnd = parentId
-            topToTop = parentId
-            bottomToBottom = parentId
-            verticalBias = 0.7f
-        }
+
+        // 让图片偏上，但不贴顶（通过 verticalBias = 0.35 并在上方留出空间）
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             startToStart = parentId
             endToEnd = parentId
             topToTop = parentId
             bottomToBottom = parentId
-            verticalBias = 0.3f
+            verticalBias = 0.3f // 稍微靠上
+        }
+
+        // 让文字偏下，但不贴底
+        mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
+            startToStart = parentId
+            endToEnd = parentId
+            topToTop = parentId
+            bottomToBottom = parentId
+            verticalBias = 0.75f // 稍微靠下，与图标拉开距离
         }
 
         addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -517,14 +569,12 @@ class ImageTextKeyView(
         }
     }
 
-
-    override fun updateText(text: CharSequence?) {
+    fun updateText(text: CharSequence?) {
         mainText.text = text
         mainText.doOnPreDraw {
             updateTextPosition()
         }
     }
-
 
     private fun updateTextPosition() {
         val text = mainText.text?.toString() ?: return

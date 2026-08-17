@@ -13,6 +13,7 @@ import com.ninthsoft.ime.input.panel.component.TextEditView
 
 class KeyboardWindow(
     service: ImeInputMethodService,
+    keyboardStateManager: KeyboardStateManager,
     onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
     onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
     onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
@@ -23,12 +24,13 @@ class KeyboardWindow(
     onCopyTextCommit: ((String) -> Unit)? = null,
     onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
     onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
-) : IManagedView {
+) {
 
     var currentEditorInfo: EditorInfo? = null
 
     val view: KeyboardWindowView = KeyboardWindowView(
         context = service,
+        keyboardStateManager = keyboardStateManager,
         onCandidateSelected = onCandidateSelected,
         onToolbarAction = onToolbarAction,
         onSidePanelAction = onSidePanelAction,
@@ -81,9 +83,9 @@ class KeyboardWindow(
         panel.onFinishInputView(finishingInput)
     }
 
-    override fun onAttach() = view.onAttach()
+    fun onWindowShown() = view.onAttach()
 
-    override fun onDetach() = view.onDetach()
+    fun onWindowHidden() = view.onDetach()
 
     fun onConfigChanged(key: String) = view.onConfigChanged(key)
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,12 +42,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +59,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,19 +69,27 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.base.ngram.GramModelDownloader
+import com.ninthsoft.ime.engine.rime.core.RimeConfig
+import com.ninthsoft.ime.engine.rime.core.IRimeJob
+import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.rime.core.SchemaItem
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
-import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableSettingItem
+import com.ninthsoft.ime.ui.screen.ScreenComponent.ActionRow
+import com.ninthsoft.ime.ui.screen.ScreenComponent.ProgressButton
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
-import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 import com.ninthsoft.ime.ui.theme.ExpressiveShapes
 import kotlin.math.roundToInt
 import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +100,14 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
     val enabledSchemas = remember { mutableStateListOf<SchemaItem>() }
     val availableSchemas = remember { mutableStateListOf<SchemaItem>() }
     var loaded by remember { mutableStateOf(false) }
+    var grammarLanguage by remember { mutableStateOf<String?>(null) }
+    var grammarReady by remember { mutableStateOf(false) }
+    var grammarDownloading by remember { mutableStateOf(false) }
+    var grammarProgress by remember { mutableFloatStateOf(0f) }
+    var grammarFailed by remember { mutableStateOf(false) }
+    var grammarButtonWidth by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
 
     val allSchemas = EngineFactory.current()?.schemasList() ?: emptyList()
     if (!loaded && allSchemas.isNotEmpty()) {
@@ -98,6 +121,48 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
         availableSchemas.clear()
         availableSchemas.addAll(allItems.filter { it.id !in seen })
         loaded = true
+    }
+
+    fun downloadGrammar(language: String) {
+        if (grammarDownloading) return
+        grammarDownloading = true
+        grammarFailed = false
+        grammarProgress = 0f
+        scope.launch {
+            val success = GramModelDownloader.download(language) { downloaded, total ->
+                scope.launch(Dispatchers.Main.immediate) {
+                    grammarProgress = if (total > 0L) {
+                        downloaded.toFloat() / total.toFloat()
+                    } else {
+                        0f
+                    }
+                }
+            }
+            grammarDownloading = false
+            grammarReady = success && File(DataManager.sharedDataDir, "$language.gram").isFile
+            grammarFailed = !success
+            if (grammarReady) {
+                // The grammar database is loaded during engine startup.
+                EngineFactory.current()?.reload()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val language = withContext(Dispatchers.IO) {
+            runCatching {
+                (EngineFactory.current() as? IRimeJob)?.awaitJob<String?>(null) {
+                    val currentSchema = currentSchema()
+                    RimeConfig.openSchema(currentSchema.schemaId).use { config ->
+                        config.getString("grammar/language")?.trim()?.takeIf { it.isNotEmpty() }
+                    }
+                }
+            }.getOrNull()
+        }
+        grammarLanguage = language
+        if (language != null) {
+            grammarReady = File(DataManager.sharedDataDir, "$language.gram").isFile
+        }
     }
 
     Scaffold(
@@ -136,7 +201,43 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(4.dp))
 
-            Spacer(Modifier.height(8.dp))
+            SettingsGroup(title = stringResource(R.string.schema_model)) {
+                ActionRow(
+                    title = stringResource(R.string.schema_model_grammar),
+                    subtitle = when {
+                        grammarLanguage == null -> stringResource(R.string.schema_grammar_model_unavailable)
+                        grammarReady -> stringResource(R.string.schema_grammar_model_ready)
+                        grammarFailed -> stringResource(R.string.schema_grammar_model_failed)
+                        else -> stringResource(R.string.schema_grammar_model_desc)
+                    },
+                    trailing = {
+                        when {
+                            grammarReady -> Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp),
+                            )
+
+                            grammarDownloading -> ProgressButton(grammarProgress, width = grammarButtonWidth)
+
+                            grammarLanguage != null -> Button(
+                                onClick = { downloadGrammar(grammarLanguage!!) },
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .onSizeChanged {
+                                        grammarButtonWidth = with(density) { it.width.toDp() }
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            ) {
+                                Text(stringResource(R.string.download), fontSize = rowSubFontSize)
+                            }
+                        }
+                    },
+                )
+            }
+
             SectionHeader(stringResource(R.string.enabled_schemas))
             Card(
                 modifier = Modifier.fillMaxWidth(),

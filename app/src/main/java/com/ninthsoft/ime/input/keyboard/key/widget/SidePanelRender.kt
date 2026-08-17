@@ -19,15 +19,22 @@ import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import kotlin.math.max
 import androidx.core.graphics.withSave
+import timber.log.Timber
 
 abstract class SidePanelRender(
-    protected val theme: KeyboardColors.ColorScheme,
+    protected var theme: KeyboardColors.ColorScheme,
     private val density: Float,
     visibleItemCount: Int,
     protected val appearance: KeyDef.Appearance,
-    val style: Style = Style.fromTheme(theme, appearance),
+    var style: Style = Style.fromTheme(theme, appearance),
 ) {
+
+    fun updateTheme(theme: KeyboardColors.ColorScheme) {
+        this.theme = theme
+        this.style = Style.fromTheme(theme, appearance)
+    }
     data class Style(
+        @ColorInt val backgroundColor: Int,
         @ColorInt val panelColor: Int,
         @ColorInt val pressedItemColor: Int,
         @ColorInt val scrollbarColor: Int,
@@ -40,11 +47,12 @@ abstract class SidePanelRender(
     ) {
         companion object {
             fun fromTheme(theme: KeyboardColors.ColorScheme, appearance: KeyDef.Appearance) = Style(
+                backgroundColor = theme.background,
                 panelColor = when (appearance.variant) {
                     Variant.Normal, Variant.AltForeground -> theme.keyBackground
                     Variant.Alternative -> theme.specialKeyBackground
                     Variant.Accent -> theme.accentKeyBackground
-                    Variant.None -> Color.TRANSPARENT
+                    Variant.None -> theme.background
                 }, pressedItemColor = when (appearance.variant) {
                     Variant.Normal, Variant.AltForeground -> theme.keyPressed
                     Variant.Alternative -> theme.specialKeyPressed
@@ -112,8 +120,19 @@ abstract class SidePanelRender(
         selectedIndex: Int = -1,
     ) {
         if (panel.isEmpty) return
+        drawPanel(canvas, panel)
         drawItems(canvas, panel, scrollOffset, pressedIndex, stretch, pressedAlpha, selectedIndex)
         drawScrollbar(canvas, panel, scrollOffset)
+    }
+
+    private fun drawPanel(canvas: Canvas, panel: RectF) {
+        val radius = cornerRadius()
+        panelPaint.color = style.panelColor
+        if (radius > 0f) {
+            canvas.drawRoundRect(panel, radius, radius, panelPaint)
+        } else {
+            canvas.drawRect(panel, panelPaint)
+        }
     }
 
     protected open fun cornerRadius(): Float = dp(style.cornerRadiusDp)

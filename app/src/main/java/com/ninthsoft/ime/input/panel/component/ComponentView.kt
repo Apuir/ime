@@ -10,12 +10,17 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 @SuppressLint("ViewConstructor")
 open class ComponentView(
     context: Context,
-    protected val colors: KeyboardColors.ColorScheme,
+    protected var colors: KeyboardColors.ColorScheme,
 ) : FrameLayout(context) {
 
     init {
         visibility = View.GONE
         setBackgroundColor(colors.panel.background)
+    }
+
+    open fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        colors = newColors
+        setBackgroundColor(newColors.panel.background)
     }
 
     open fun show() {

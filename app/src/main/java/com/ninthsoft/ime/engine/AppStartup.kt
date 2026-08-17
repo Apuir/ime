@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.base.util.ResourceExtractor
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,7 @@ object AppStartup {
             extractResourcesIfNeeded(context, app)
             EngineFactory.switchTo(context, RimeEngine::class)
             setupSound(context)
+            SherpaSpeechClient.preStartSync(context)
             initialized = true
         }
     }

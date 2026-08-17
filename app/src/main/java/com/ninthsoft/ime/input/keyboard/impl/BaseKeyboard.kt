@@ -58,7 +58,7 @@ abstract class BaseKeyboard(
     private var returnKeyIcon: Int = 0
 
     override fun updateSpaceKeyText(text: String) {
-        spaceKeyView?.mainText?.text = text
+        spaceKeyView?.updateText(text)
     }
 
     protected open fun updateSidePanel(items: List<KeyDef>) {
@@ -407,10 +407,10 @@ abstract class BaseKeyboard(
         keyActionListener?.onKeyAction(transformed)
     }
 
-    override fun onAttach() {}
+    override fun onAttach() = Timber.d("onAttach")
 
     override fun onDetach() {
-        Timber.d("onDetached")
+        Timber.d("onDetach")
         rippleView.cancelRipple()
         resetSidePanelPosition()
         previewPopup.dismiss()

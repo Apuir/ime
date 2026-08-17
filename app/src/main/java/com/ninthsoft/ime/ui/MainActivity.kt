@@ -82,6 +82,11 @@ class MainActivity : ComponentActivity() {
                             Intent(this@MainActivity, PredictionSettingsActivity::class.java)
                         )
                     },
+                    onOpenVoiceSettings = {
+                        startActivity(
+                            Intent(this@MainActivity, VoiceSettingsActivity::class.java)
+                        )
+                    },
                     onOpenFiles = {
                         startActivity(
                             Intent(

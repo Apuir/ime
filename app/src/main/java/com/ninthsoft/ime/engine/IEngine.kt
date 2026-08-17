@@ -22,10 +22,11 @@ interface IEngine {
     fun segement()
     fun undo(service: InputMethodService)
     fun redo(service: InputMethodService)
+    fun commit(text: String)
     fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
     fun deleteCandidate(index: Int): Unit?
-    fun onInputChanged()
+    fun predict(commit: String = "")
+    fun reload()
     fun onStartInputView(ic: InputConnection)
     fun onFinishInputView()
-    fun reload()
 }

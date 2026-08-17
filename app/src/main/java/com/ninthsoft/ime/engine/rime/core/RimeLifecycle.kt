@@ -7,6 +7,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
@@ -62,13 +64,22 @@ suspend fun <T> RimeLifecycle.whenReady(block: suspend CoroutineScope.() -> T): 
     }
     val registry = this as? RimeLifecycleRegistry
         ?: throw IllegalStateException("whenReady requires a RimeLifecycleRegistry")
-    var cont: Continuation<Unit>? = null
+    val signalled = AtomicBoolean(false)
+    val continuation = AtomicReference<Continuation<Unit>?>()
     val observer = LifecycleObserver { s ->
-        if (s == RimeLifecycle.State.READY) cont?.resume(Unit)
+        if (s == RimeLifecycle.State.READY) {
+            signalled.set(true)
+            continuation.getAndSet(null)?.resume(Unit)
+        }
     }
     registry.addObserver(observer)
     try {
-        suspendCancellableCoroutine { cont = it }
+        suspendCancellableCoroutine { cont ->
+            continuation.set(cont)
+            if (signalled.get() && continuation.compareAndSet(cont, null)) {
+                cont.resume(Unit)
+            }
+        }
         return block(lifecycleScope)
     } finally {
         registry.removeObserver(observer)

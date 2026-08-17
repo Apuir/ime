@@ -17,6 +17,7 @@ import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyView
+import splitties.dimensions.dp
 import splitties.views.dsl.core.add
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
@@ -33,6 +34,8 @@ abstract class SidePanelView(
 
     protected abstract val render: SidePanelRender
 
+    private var rawItems: List<KeyDef> = emptyList()
+
     private val contentView = SidePanelCanvasView(ctx)
 
     var selectedIndex: Int = -1
@@ -48,8 +51,22 @@ abstract class SidePanelView(
     }
 
     fun updateItems(items: List<KeyDef>) {
+        rawItems = items
         render.updateItems(items.mapNotNull(render::toItem))
         contentView.resetPosition(true)
+    }
+
+    fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        colors = newColors
+        radius = dp(newColors.cornerRadius)
+        hMargin = dp(newColors.keyHMargin).toInt()
+        vMargin = dp(newColors.keyVMargin).toInt()
+        setupBackgroundWithPress()
+        render.updateTheme(newColors)
+        if (rawItems.isNotEmpty()) {
+            render.updateItems(rawItems.mapNotNull(render::toItem))
+        }
+        contentView.invalidate()
     }
 
     fun updateVisibleItemCount(count: Int) {
@@ -134,6 +151,8 @@ abstract class SidePanelView(
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            // 填充整个侧边面板容器（panel 之外的外边距区域），避免透明露出底层
+            canvas.drawColor(render.style.backgroundColor)
 
             panel.set(
                 hMargin.toFloat(),

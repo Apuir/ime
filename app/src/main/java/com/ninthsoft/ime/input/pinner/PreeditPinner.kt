@@ -26,10 +26,16 @@ class PreeditPinner(context: Context) : IPinner {
 
     override fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
         view.preeditItems = items
+        view.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
     }
 
     fun show(context: Context, windowManager: WindowManager, anchorView: View, hPad: Int) {
+        if (view.preeditItems.isEmpty()) {
+            hide(windowManager)
+            return
+        }
         val pinnerView = view
+        pinnerView.visibility = View.VISIBLE
         val density = context.resources.displayMetrics.density
         val screenWidth = context.resources.displayMetrics.widthPixels
         val rightMargin = (8f * density).toInt()
@@ -75,6 +81,8 @@ class PreeditPinner(context: Context) : IPinner {
     }
 
     fun hide(windowManager: WindowManager) {
+        view.preeditItems = emptyList()
+        view.visibility = View.GONE
         if (!shown) return
         try {
             windowManager.removeView(view)

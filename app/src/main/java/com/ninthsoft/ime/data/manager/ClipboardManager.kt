@@ -18,26 +18,13 @@ object ClipboardManager {
     var onContentChanged: (() -> Unit)? = null
 
     private const val PREFS_NAME = "clipboard_settings"
-    private const val KEY_CLOUD_SYNC = "cloud_sync"
     private const val KEY_MAX_ENTRIES = "max_entries"
     private const val KEY_RETENTION_DAYS = "retention_days"
-    private const val KEY_SHOW_TIMESTAMP = "show_timestamp"
 
     private const val DEFAULT_MAX_ENTRIES = 100
     private const val DEFAULT_RETENTION_DAYS = 30
 
     // ── 设置读写 ──
-
-    fun isCloudSyncEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_CLOUD_SYNC, false)
-    }
-
-    fun setCloudSyncEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            putBoolean(KEY_CLOUD_SYNC, enabled)
-        }
-    }
 
     fun getMaxEntries(context: Context): Int {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -56,19 +43,9 @@ object ClipboardManager {
     }
 
     fun setRetentionDays(context: Context, days: Int) {
+        val value = days.coerceIn(1, 365)
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            putInt(KEY_RETENTION_DAYS, days.coerceIn(1, 365))
-        }
-    }
-
-    fun isShowTimestamp(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_SHOW_TIMESTAMP, true)
-    }
-
-    fun setShowTimestamp(context: Context, show: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-            putBoolean(KEY_SHOW_TIMESTAMP, show)
+            putInt(KEY_RETENTION_DAYS, value)
         }
     }
 
@@ -81,7 +58,8 @@ object ClipboardManager {
     )
 
     fun getEntries(context: Context): List<Entry> = db(context) { db ->
-        db.clipboardDao().getAllActive().map { Entry(it.text, it.timestamp, it.cloud) }
+        val cutoff = System.currentTimeMillis() - getRetentionDays(context) * 86400000L
+        db.clipboardDao().getAllActiveSince(cutoff).map { Entry(it.text, it.timestamp, it.cloud) }
     }
 
     fun addEntry(context: Context, text: String, notify: Boolean = true) {
@@ -91,7 +69,7 @@ object ClipboardManager {
         db(context) { db ->
             val dao = db.clipboardDao()
             dao.deleteByText(text)
-            dao.insert(ClipboardRecord(text = text, timestamp = now, cloud = isCloudSyncEnabled(context)))
+            dao.insert(ClipboardRecord(text = text, timestamp = now, cloud = false))
             trimExcess(dao, getMaxEntries(context))
             dao.deleteOlderThan(now - getRetentionDays(context) * 86400000L)
         }

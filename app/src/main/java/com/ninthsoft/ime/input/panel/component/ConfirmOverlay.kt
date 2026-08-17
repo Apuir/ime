@@ -172,6 +172,21 @@ class ConfirmOverlay(
         card.translationX = 0f
         card.translationY = 0f
     }
+
+    override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        // 不调用 super：父类会把整块背景设为 panel.background，导致刷新主题后罩住全屏。
+        // ConfirmOverlay 仅居中显示小卡片，背景必须保持透明。
+        colors = newColors
+        messageView.setTextColor(newColors.panel.toolbarText)
+        confirmBtn.setTextColor(newColors.accentKeyText)
+        confirmBtn.background =
+            PillBg(newColors.accentKeyBackground, newColors.accentKeyBorderStroke, pillR)
+        cancelBtn.setTextColor(newColors.panel.toolbarText)
+        cancelBtn.background =
+            PillBg(newColors.keyBackground, newColors.keyBorderStroke, pillR)
+        card.background =
+            PillBg(newColors.panel.background, newColors.keyBorderStroke, pillR)
+    }
 }
 
 private class PillBg(

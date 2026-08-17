@@ -475,5 +475,7 @@ class KawaiiPanel(
     override fun refreshTheme() {
         view.refreshTheme()
         candidateGrid.refreshTheme(context)
+        menuGrid.refreshTheme(KeyboardColors.resolve(context))
+        confirmOverlay.refreshTheme(KeyboardColors.resolve(context))
     }
 }

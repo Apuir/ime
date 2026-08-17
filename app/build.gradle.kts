@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -14,7 +15,7 @@ plugins {
         //noinspection OldTargetApi
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -29,6 +30,12 @@ plugins {
                 arguments += "-DALSO_LOG_TO_STDERR=OFF"
                 arguments += "-DCMAKE_BUILD_TYPE=Release"
             }
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
@@ -70,6 +77,8 @@ dependencies {
     // implementation(libs.tokenizer)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.timber)
+    implementation(libs.okhttp)
+    implementation(libs.commons.compress)
     implementation(libs.kotlinpoet)
     implementation(libs.kotlinpoet.ksp)
     implementation(libs.splitties.bitflags)

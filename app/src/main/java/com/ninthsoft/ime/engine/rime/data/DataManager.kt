@@ -36,8 +36,10 @@ object DataManager {
         open(DATA_CHECKSUMS_NAME).bufferedReader().use { it.readText() }
             .let { deserializeDataSum(it) }
 
+    var downloadDir =  File(appContext.getExternalFilesDir(null), "download").also { it.mkdirs() }
     val sharedDataDir = File(appContext.getExternalFilesDir(null), "shared").also { it.mkdirs() }
     val modelDir = File(appContext.getExternalFilesDir(null), "model").also { it.mkdirs() }
+    val speechModelDir = File(appContext.getExternalFilesDir(null), "model/speech").also { it.mkdirs() }
     val userDataDir
         get() = File(appContext.getExternalFilesDir(null), "user").also { it.mkdirs() }
     val prebuiltDataDir = File(sharedDataDir, "build")

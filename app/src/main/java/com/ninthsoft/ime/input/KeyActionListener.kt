@@ -29,7 +29,7 @@ class KeyActionListener(
             }
 
             is KeyboardAction.CommitAction -> {
-                service.currentInputConnection?.commitText(action.text, 1)
+                engine?.commit(action.text)
             }
 
             is KeyboardAction.BackspaceAction, KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {

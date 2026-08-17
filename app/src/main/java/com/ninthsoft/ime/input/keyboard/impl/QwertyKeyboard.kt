@@ -82,7 +82,7 @@ class QwertyKeyboard(
     }
 
     private var capsState = CapsState.None
-    private val letterKeyViews = mutableListOf<TextKeyView>()
+    private val letterKeyViews = mutableListOf<AltTextKeyView>()
     private var capsKeyView: ImageKeyView? = null
 
     init {
@@ -141,6 +141,7 @@ class QwertyKeyboard(
     }
 
     override fun onAttach() {
+        super.onAttach()
         capsState = CapsState.None
         updateKeyTextForState(capsState)
     }

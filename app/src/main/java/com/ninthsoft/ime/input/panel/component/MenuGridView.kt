@@ -2,17 +2,18 @@ package com.ninthsoft.ime.input.panel.component
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.compose.ui.geometry.Size
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.view.size
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.panel.KawaiiPanel
@@ -39,103 +40,268 @@ class MenuGridView(
         val action: KawaiiPanel.Action,
     )
 
-    private val items = listOf(
-        MenuItem(context.getString(R.string.menu_emoji), R.drawable.ic_keyboard_emoticon, KawaiiPanel.Action.EmojiKeyboard),
-        MenuItem(context.getString(R.string.menu_clipboard), R.drawable.ic_keyboard_clipboard, KawaiiPanel.Action.Clipboard),
-        MenuItem(context.getString(R.string.menu_voice), R.drawable.ic_keyboard_voice, KawaiiPanel.Action.ToggleVoice),
-        MenuItem(context.getString(R.string.menu_cursor), R.drawable.ic_keyboard_cursor_move, KawaiiPanel.Action.CursorMove),
-        MenuItem(context.getString(R.string.menu_settings), R.drawable.ic_keyboard_setting, KawaiiPanel.Action.Settings),
-        MenuItem(context.getString(R.string.menu_schema), R.drawable.ic_keyboard_tune, KawaiiPanel.Action.SchemaSettings),
-        MenuItem(context.getString(R.string.menu_theme), R.drawable.ic_keyboard_palette, KawaiiPanel.Action.Palette),
-        MenuItem(context.getString(R.string.menu_reload_engine), R.drawable.ic_keyboard_reload, KawaiiPanel.Action.ReloadEngine),
+    // Each inner array is one horizontally scrollable page.
+    private val items = arrayOf(
+        arrayOf(
+            MenuItem(
+                context.getString(R.string.menu_emoji),
+                R.drawable.ic_keyboard_emoticon,
+                KawaiiPanel.Action.EmojiKeyboard
+            ),
+            MenuItem(
+                context.getString(R.string.menu_clipboard),
+                R.drawable.ic_keyboard_clipboard,
+                KawaiiPanel.Action.Clipboard
+            ),
+            MenuItem(
+                context.getString(R.string.menu_voice),
+                R.drawable.ic_keyboard_voice,
+                KawaiiPanel.Action.ToggleVoice
+            ),
+            MenuItem(
+                context.getString(R.string.menu_cursor),
+                R.drawable.ic_keyboard_cursor_move,
+                KawaiiPanel.Action.CursorMove
+            ),
+            MenuItem(
+                context.getString(R.string.menu_settings),
+                R.drawable.ic_keyboard_setting,
+                KawaiiPanel.Action.Settings
+            ),
+            MenuItem(
+                context.getString(R.string.menu_schema),
+                R.drawable.ic_keyboard_tune,
+                KawaiiPanel.Action.SchemaSettings
+            ),
+            MenuItem(
+                context.getString(R.string.menu_theme),
+                R.drawable.ic_keyboard_palette,
+                KawaiiPanel.Action.Palette
+            ),
+            MenuItem(
+                context.getString(R.string.menu_reload_engine),
+                R.drawable.ic_keyboard_reload,
+                KawaiiPanel.Action.ReloadEngine
+            ),
+        ),
+        arrayOf(
+            MenuItem(
+                context.getString(R.string.menu_settings),
+                R.drawable.ic_keyboard_setting,
+                KawaiiPanel.Action.Settings
+            ),
+            MenuItem(
+                context.getString(R.string.menu_schema),
+                R.drawable.ic_keyboard_tune,
+                KawaiiPanel.Action.SchemaSettings
+            ),
+            MenuItem(
+                context.getString(R.string.menu_theme),
+                R.drawable.ic_keyboard_palette,
+                KawaiiPanel.Action.Palette
+            ),
+            MenuItem(
+                context.getString(R.string.menu_reload_engine),
+                R.drawable.ic_keyboard_reload,
+                KawaiiPanel.Action.ReloadEngine
+            ),
+            MenuItem(
+                context.getString(R.string.menu_emoji),
+                R.drawable.ic_keyboard_emoticon,
+                KawaiiPanel.Action.EmojiKeyboard
+            ),
+            MenuItem(
+                context.getString(R.string.menu_clipboard),
+                R.drawable.ic_keyboard_clipboard,
+                KawaiiPanel.Action.Clipboard
+            ),
+            MenuItem(
+                context.getString(R.string.menu_voice),
+                R.drawable.ic_keyboard_voice,
+                KawaiiPanel.Action.ToggleVoice
+            ),
+            MenuItem(
+                context.getString(R.string.menu_cursor),
+                R.drawable.ic_keyboard_cursor_move,
+                KawaiiPanel.Action.CursorMove
+            ),
+        ),
     )
 
     private val columns = 4
     private val radius = dp(16).toFloat()
     private val iconSize = dp(28)
+    private val indicatorSize = dp(6)
+    private val indicatorGap = dp(6)
 
-    var gap: Int = dp(12)
+    var gap: Int = dp(10)
         private set
 
-    var pad: Int = dp(24)
+    var pad: Int = dp(16)
         private set
 
     var itemSize: Int = 0
         private set
 
+    private val pager = object : HorizontalScrollView(context) {
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            val handled = super.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                postDelayed({ snapToPage() }, 120L)
+            }
+            return handled
+        }
+    }.apply {
+        isHorizontalScrollBarEnabled = false
+        isFillViewport = true
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+
+    private val pages = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+    }
+
+    private val indicators = LinearLayout(context).apply {
+        gravity = Gravity.CENTER
+        orientation = LinearLayout.HORIZONTAL
+    }
+
+    private var currentPage = 0
+
     init {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LayoutParams(matchParent, wrapContent)
         }
+        pager.addView(pages, ViewGroup.LayoutParams(matchParent, wrapContent))
+        root.addView(
+            pager,
+            LinearLayout.LayoutParams(matchParent, 0).apply { weight = 1f },
+        )
+        root.addView(
+            indicators,
+            LinearLayout.LayoutParams(matchParent, dp(18)),
+        )
+        addView(root, LayoutParams(matchParent, matchParent))
 
-        val rows = (items.size + columns - 1) / columns
-        for (rowIndex in 0 until rows) {
+        items.forEach { pageItems -> pages.addView(createPage(pageItems)) }
+        repeat(items.size) { index ->
+            indicators.addView(createIndicator(index))
+        }
+        updateIndicators()
+        pager.setOnScrollChangeListener { _, scrollX, _, _, _ ->
+            val width = pager.width
+            if (width > 0) {
+                val page = ((scrollX + width / 2) / width).coerceIn(0, items.lastIndex)
+                if (page != currentPage) {
+                    currentPage = page
+                    updateIndicators()
+                }
+            }
+        }
+    }
+
+    private fun snapToPage() {
+        val width = pager.width
+        if (width <= 0 || items.isEmpty()) return
+        val targetPage = ((pager.scrollX + width / 2) / width).coerceIn(0, items.lastIndex)
+        pager.smoothScrollTo(targetPage * width, 0)
+    }
+
+    private fun createPage(pageItems: Array<MenuItem>): LinearLayout {
+        val page = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        val rows = (pageItems.size + columns - 1) / columns
+        repeat(rows) { rowIndex ->
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(matchParent, wrapContent).apply {
-                    setPadding(
-                        pad,
-                        if (rowIndex == 0) pad else gap,
-                        pad,
-                        if (rowIndex == rows - 1) pad else 0,
+                layoutParams = LinearLayout.LayoutParams(matchParent, wrapContent)
+                setPadding(
+                    pad,
+                    if (rowIndex == 0) pad else gap,
+                    pad,
+                    if (rowIndex == rows - 1) pad else 0,
+                )
+            }
+            repeat(columns) { colIndex ->
+                val itemIndex = rowIndex * columns + colIndex
+                if (itemIndex < pageItems.size) {
+                    row.addView(
+                        createItemView(pageItems[itemIndex]),
+                        LinearLayout.LayoutParams(0, 0).apply {
+                            if (colIndex < columns - 1) marginEnd = gap
+                        },
                     )
                 }
             }
-            for (colIndex in 0 until columns) {
-                val itemIndex = rowIndex * columns + colIndex
-                if (itemIndex < items.size) {
-                    row.addView(
-                        createItemView(items[itemIndex]), LinearLayout.LayoutParams(0, 0).apply {
-                            if (colIndex < columns - 1) marginEnd = gap
-                        })
-                }
-            }
-            root.addView(row)
+            page.addView(row)
         }
+        return page
+    }
 
-        addView(root)
+    private fun createIndicator(index: Int): View = View(context).apply {
+        layoutParams = LinearLayout.LayoutParams(indicatorSize, indicatorSize).apply {
+            if (index > 0) marginStart = indicatorGap
+        }
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+        }
+    }
+
+    private fun updateIndicators() {
+        for (index in 0 until indicators.childCount) {
+            val indicator = indicators.getChildAt(index)
+            val color = if (index == currentPage) {
+                colors.panel.toolbarIcon
+            } else {
+                colors.panel.toolbarIcon and 0x66FFFFFF
+            }
+            (indicator.background as GradientDrawable).setColor(color)
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val v = visibility
+        val oldVisibility = visibility
         visibility = VISIBLE
 
         val totalWidth = MeasureSpec.getSize(widthMeasureSpec)
         val totalHeight = MeasureSpec.getSize(heightMeasureSpec)
-        val root = getChildAt(0) as ViewGroup
-        val rows = root.childCount
-        if (rows <= 0) {
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-            visibility = v
-            return
+        val indicatorHeight = dp(18)
+        val pageHeight = (totalHeight - indicatorHeight).coerceAtLeast(0)
+        val rows = items.maxOfOrNull { (it.size + columns - 1) / columns } ?: 0
+        if (rows > 0) {
+            val widthBased = (totalWidth - pad * 2 - gap * (columns - 1)) / columns
+            val heightBased = (pageHeight - pad * 2 - gap * (rows - 1)) / rows
+            itemSize = minOf(widthBased, heightBased).coerceAtLeast(0)
         }
 
-        val widthBased = (totalWidth - pad * 2 - gap * (columns - 1)) / columns
-        val heightBased = (totalHeight - pad * 2 - gap * (rows - 1)) / rows
-        itemSize = minOf(widthBased, heightBased).coerceAtLeast(0)
-
-        for (i in 0 until rows) {
-            val row = root.getChildAt(i) as ViewGroup
-            row.setPadding(
-                pad,
-                if (i == 0) pad else gap,
-                pad,
-                if (i == rows - 1) pad else 0,
-            )
-            for (j in 0 until row.childCount) {
-                val child = row.getChildAt(j)
-                val lp = child.layoutParams
-                lp.width = itemSize
-                lp.height = itemSize
-                child.layoutParams = lp
-                (lp as? LinearLayout.LayoutParams)?.marginEnd = if (j < columns - 1) gap else 0
+        pager.layoutParams = pager.layoutParams.apply { height = pageHeight }
+        indicators.layoutParams = indicators.layoutParams.apply { height = indicatorHeight }
+        for (pageIndex in 0 until pages.childCount) {
+            val page = pages.getChildAt(pageIndex) as ViewGroup
+            page.layoutParams = page.layoutParams.apply { width = totalWidth; height = pageHeight }
+            for (rowIndex in 0 until page.childCount) {
+                val row = page.getChildAt(rowIndex) as ViewGroup
+                row.setPadding(
+                    pad,
+                    if (rowIndex == 0) pad else gap,
+                    pad,
+                    if (rowIndex == page.childCount - 1) pad else 0,
+                )
+                for (itemIndex in 0 until row.childCount) {
+                    val item = row.getChildAt(itemIndex)
+                    item.layoutParams = item.layoutParams.apply {
+                        width = itemSize
+                        height = itemSize
+                    }
+                }
             }
         }
 
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        visibility = v
+        visibility = oldVisibility
     }
 
     private fun createItemView(item: MenuItem): View {
@@ -143,9 +309,7 @@ class MenuGridView(
             setColor(this@MenuGridView.colors.keyBackground)
             cornerRadius = radius
         }
-
         val parentId = View.generateViewId()
-
         return constraintLayout {
             id = parentId
             background = bg
@@ -156,8 +320,7 @@ class MenuGridView(
             val icon = imageView {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setImageResource(item.icon.takeIf { it != 0 } ?: android.R.drawable.ic_menu_help)
-                imageTintList =
-                    android.content.res.ColorStateList.valueOf(this@MenuGridView.colors.panel.toolbarIcon)
+                imageTintList = ColorStateList.valueOf(this@MenuGridView.colors.panel.toolbarIcon)
             }
             add(icon, lParams(iconSize, iconSize) {
                 centerHorizontally()
@@ -170,6 +333,7 @@ class MenuGridView(
                 text = item.label
                 textSize = 12f
                 setTextColor(this@MenuGridView.colors.panel.toolbarText)
+                typeface = Typeface.DEFAULT
                 gravity = Gravity.CENTER
             }
             add(label, lParams(wrapContent, wrapContent) {
@@ -179,5 +343,28 @@ class MenuGridView(
                 verticalBias = 0.85f
             })
         }
+    }
+
+    override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        super.refreshTheme(newColors)
+        for (pageIndex in 0 until pages.childCount) {
+            val page = pages.getChildAt(pageIndex) as ViewGroup
+            for (rowIndex in 0 until page.childCount) {
+                val row = page.getChildAt(rowIndex) as ViewGroup
+                for (itemIndex in 0 until row.childCount) {
+                    val item = row.getChildAt(itemIndex) as ViewGroup
+                    (item.background as? GradientDrawable)?.setColor(newColors.keyBackground)
+                    for (childIndex in 0 until item.childCount) {
+                        when (val child = item.getChildAt(childIndex)) {
+                            is ImageView -> child.imageTintList =
+                                ColorStateList.valueOf(newColors.panel.toolbarIcon)
+
+                            is TextView -> child.setTextColor(newColors.panel.toolbarText)
+                        }
+                    }
+                }
+            }
+        }
+        updateIndicators()
     }
 }

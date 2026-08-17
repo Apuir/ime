@@ -7,6 +7,7 @@ import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.OpenCCDictManager
 import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.base.util.isStorageAvailable
+import com.ninthsoft.ime.engine.data.EngineMessage
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -87,22 +88,21 @@ class Rime : RimeApi, RimeLifecycleOwner {
         isVirtual: Boolean,
     ): Boolean = withRimeContext { processKeyInner(value.value, modifiers.toInt(), isVirtual) }
 
-    override suspend fun simulateKeySequence(sequence: String): Boolean =
-        withRimeContext {
-            if (Companion.simulateKeySequence(sequence)) {
-                val commit = getCommit()
-                val input = Companion.getRawInput()
-                if (!commit.text.isNullOrEmpty() || input.isNotEmpty()) {
-                    emitResponse { commit }
-                    true
-                } else {
-                    emitResponse { CommitProto(sequence) }
-                    false
-                }
+    override suspend fun simulateKeySequence(sequence: String): Boolean = withRimeContext {
+        if (Companion.simulateKeySequence(sequence)) {
+            val commit = getCommit()
+            val input = Companion.getRawInput()
+            if (!commit.text.isNullOrEmpty() || input.isNotEmpty()) {
+                emitResponse { commit }
+                true
             } else {
+                emitResponse { CommitProto(sequence) }
                 false
             }
+        } else {
+            false
         }
+    }
 
     override suspend fun selectCandidate(idx: Int, global: Boolean): Boolean = withRimeContext {
         Companion.selectCandidate(idx, global).also { emitResponse() }
@@ -209,17 +209,42 @@ class Rime : RimeApi, RimeLifecycleOwner {
             handleMessage(RimeMessage.MessageType.Commit.ordinal, arrayOf(c))
         }
         val context = getContext()
-        handlePreedit(context.composition)
+        //候选词列表
+        if (context.menu.pageSize <= 0 && context.input.isNotEmpty()) {
+            var commitText = ""
+            var confirmedProto: SyllableProto? = null
+            context.composition.syllables.forEachIndexed { index, proto ->
+                if (confirmedProto != null) {
+                    val cp = confirmedProto
+                    if (cp.textSyllableStart >= 0 && cp.textSyllableEnd >= 0 && cp.textSyllableStart <= index && index <= cp.textSyllableEnd) {
+                        return@forEachIndexed
+                    }
+                }
+                if (proto.text.isNotEmpty()) {
+                    confirmedProto = proto
+                    commitText += proto.text
+                    return@forEachIndexed
+                }
+                commitText += proto.rawInput
+            }
+            Companion.clearComposition()
+            handleMessage(
+                RimeMessage.MessageType.Commit.ordinal, arrayOf(CommitProto(commitText))
+            )
+            handleComposition(CompositionProto())
+            handleMessage(RimeMessage.MessageType.Candidate.ordinal, getBulkCandidates())
+            return
+        }
+        handleComposition(context.composition)
         handleMessage(RimeMessage.MessageType.Candidate.ordinal, getBulkCandidates())
     }
 
-    private fun handlePreedit(composition: CompositionProto) {
+    private fun handleComposition(composition: CompositionProto) {
         handleMessage(
             RimeMessage.MessageType.InlinePreedit.ordinal, arrayOf(composition.preedit ?: "")
         )
         handleMessage(
-            RimeMessage.MessageType.DynamicPreedit.ordinal,
-            arrayOf(composition)
+            RimeMessage.MessageType.DynamicPreedit.ordinal, arrayOf(composition)
         )
         handleMessage(RimeMessage.MessageType.Composition.ordinal, arrayOf(composition))
     }
@@ -414,7 +439,6 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         fun handleMessage(type: Int, params: Array<Any>) {
-            val t = params[0]
             val message = RimeMessage.nativeCreate(type, params)
             rimeMessageHandlers.forEach { it.invoke(message) }
             messageFlow_.tryEmit(message)
