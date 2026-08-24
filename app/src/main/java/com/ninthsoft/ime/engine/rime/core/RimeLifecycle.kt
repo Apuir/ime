@@ -34,6 +34,7 @@ internal fun interface LifecycleObserver {
 
 class RimeLifecycleRegistry : RimeLifecycle {
     private val observers = ConcurrentLinkedQueue<LifecycleObserver>()
+    @Volatile
     private var state = RimeLifecycle.State.STOPPED
 
     override val currentState: RimeLifecycle.State
@@ -74,6 +75,11 @@ suspend fun <T> RimeLifecycle.whenReady(block: suspend CoroutineScope.() -> T): 
     }
     registry.addObserver(observer)
     try {
+        // READY may have been emitted between the initial check and observer registration.
+        if (currentState == RimeLifecycle.State.READY) {
+            signalled.set(true)
+            continuation.getAndSet(null)?.resume(Unit)
+        }
         suspendCancellableCoroutine { cont ->
             continuation.set(cont)
             if (signalled.get() && continuation.compareAndSet(cont, null)) {

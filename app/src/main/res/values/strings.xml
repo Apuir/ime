@@ -1,7 +1,6 @@
 <resources>
     <string name="app_name">简意输入法</string>
     <string name="done">done</string>
-    <string name="rime_daemon">Rime守护进程</string>
     <string name="rime_deploy_finish">引擎部署完成</string>
     <string name="rime_deploy_failure">引擎部署失败</string>
     <string name="deploy_progress">引擎部署进度</string>
@@ -90,9 +89,13 @@
     <string name="update_latest">当前已是最新版本</string>
     <string name="update_check_failed">检查更新失败</string>
     <string name="update_open_failed">无法打开更新地址</string>
+    <string name="app_logs">运行日志</string>
+    <string name="copy_logs">复制日志</string>
+    <string name="clear_logs">清空日志</string>
     <string name="clipboard_history">历史记录</string>
     <string name="clipboard_max_entries">记录数量上限</string>
     <string name="clipboard_retention_days">保留天数</string>
+    <string name="clipboard_poll_interval">读取剪切板间隔</string>
     <string name="schema_model">模型管理</string>
     <string name="schema_model_grammar">语法模型</string>
     <string name="schema_grammar_model_desc">启用语法模型以提升整句输入准确率</string>

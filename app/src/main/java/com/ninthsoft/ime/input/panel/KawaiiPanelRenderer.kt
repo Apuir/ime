@@ -67,7 +67,7 @@ class ComposingRenderer(
         val pills = mutableListOf<PillRect>()
         var x = hPad
         for ((i, c) in candidates.withIndex()) {
-            val indexStr = if (showIndex && !borderless) "${i + 1}. " else ""
+            val indexStr = if (showIndex) "${i + 1}. " else ""
             val indexW = paints.candidateIndexPaint.measureText(indexStr)
             val textW = paints.candidateTextPaint.measureText(c.text)
             val commentStr = if (showComment && c.comment.isNotEmpty()) " ${c.comment}" else ""
@@ -123,7 +123,7 @@ class ComposingRenderer(
                         )
                     }
 
-                    val drawIndex = showIndex && !borderless
+                    val drawIndex = showIndex
                     if (drawIndex) {
                         drawText(
                             "${i + 1}. ", pill.left + pillPad, textY, layout.indexPaint,

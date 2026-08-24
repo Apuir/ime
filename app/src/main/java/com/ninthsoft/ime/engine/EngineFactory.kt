@@ -1,7 +1,6 @@
 package com.ninthsoft.ime.engine
 
 import android.content.Context
-import com.ninthsoft.ime.base.registry.SingletonRegistry
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
@@ -19,7 +18,6 @@ object EngineFactory {
         return try {
             clazz.java.getDeclaredConstructor().newInstance().also {
                 it.initialize(context)
-                SingletonRegistry.registerIfAbsent(clazz, it)
             }
         } catch (e: Exception) {
             throw e
@@ -32,7 +30,9 @@ object EngineFactory {
         clazz: KClass<T>,
     ): T {
         @Suppress("UNCHECKED_CAST") return synchronized(instancesLock) {
-            instances[clazz] ?: create(context, clazz).also { instances[clazz] = it }
+            instances[clazz] ?: create(context, clazz).also {
+                instances[clazz] = it
+            }
         } as T
     }
 
@@ -43,7 +43,6 @@ object EngineFactory {
     ): T {
         val engine = getOrCreate(context, clazz)
         currentEngine = engine
-        SingletonRegistry.register(IEngine::class, engine)
         return engine
     }
 

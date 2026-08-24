@@ -84,48 +84,6 @@ class MenuGridView(
                 KawaiiPanel.Action.ReloadEngine
             ),
         ),
-        arrayOf(
-            MenuItem(
-                context.getString(R.string.menu_settings),
-                R.drawable.ic_keyboard_setting,
-                KawaiiPanel.Action.Settings
-            ),
-            MenuItem(
-                context.getString(R.string.menu_schema),
-                R.drawable.ic_keyboard_tune,
-                KawaiiPanel.Action.SchemaSettings
-            ),
-            MenuItem(
-                context.getString(R.string.menu_theme),
-                R.drawable.ic_keyboard_palette,
-                KawaiiPanel.Action.Palette
-            ),
-            MenuItem(
-                context.getString(R.string.menu_reload_engine),
-                R.drawable.ic_keyboard_reload,
-                KawaiiPanel.Action.ReloadEngine
-            ),
-            MenuItem(
-                context.getString(R.string.menu_emoji),
-                R.drawable.ic_keyboard_emoticon,
-                KawaiiPanel.Action.EmojiKeyboard
-            ),
-            MenuItem(
-                context.getString(R.string.menu_clipboard),
-                R.drawable.ic_keyboard_clipboard,
-                KawaiiPanel.Action.Clipboard
-            ),
-            MenuItem(
-                context.getString(R.string.menu_voice),
-                R.drawable.ic_keyboard_voice,
-                KawaiiPanel.Action.ToggleVoice
-            ),
-            MenuItem(
-                context.getString(R.string.menu_cursor),
-                R.drawable.ic_keyboard_cursor_move,
-                KawaiiPanel.Action.CursorMove
-            ),
-        ),
     )
 
     private val columns = 4

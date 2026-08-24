@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,7 +19,12 @@ class AboutActivity : ComponentActivity() {
 
         setContent {
             ImeTheme(themeMode = themeMode) {
-                AboutScreen(onBack = { finish() })
+                AboutScreen(
+                    onBack = { finish() },
+                    onOpenLogs = {
+                        startActivity(Intent(this@AboutActivity, LogActivity::class.java))
+                    },
+                )
             }
         }
     }

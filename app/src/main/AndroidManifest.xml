@@ -89,6 +89,12 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.LogActivity"
+            android:exported="false"
+            android:label="@string/app_logs"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name=".ui.PredictionSettingsActivity"
             android:exported="false"
             android:label="@string/prediction_candidates"

@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import splitties.systemservices.notificationManager
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -80,6 +81,9 @@ object RimeDaemon {
         }
     }
 
+    suspend fun awaitMessage(predicate: (RimeMessage<*>) -> Boolean): RimeMessage<*> =
+        realRime.messageFlow.first(predicate)
+
     suspend fun observeMessages(onMessage: suspend (RimeMessage<*>) -> Unit) {
         realRime.messageFlow.collect { onMessage(it) }
     }
@@ -91,7 +95,7 @@ object RimeDaemon {
     init {
         createNotificationChannel(
             CHANNEL_ID,
-            appContext.getString(R.string.rime_daemon),
+            appContext.getString(R.string.app_name),
         )
         appScope.launch {
             realRime.messageFlow.collect {
@@ -105,7 +109,7 @@ object RimeDaemon {
         buildAction: NotificationCompat.Builder.() -> Unit,
     ) {
         val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setContentTitle(appContext.getString(R.string.rime_daemon))
+            .setContentTitle(appContext.getString(R.string.app_name))
         builder.buildAction()
         builder.build().let { notificationManager.notify(id, it) }
     }
@@ -117,7 +121,7 @@ object RimeDaemon {
         val id = restartId++
         if (!fullCheck) {
             sendNotification(id) {
-                setContentTitle(appContext.getString(R.string.rime_daemon))
+                setContentTitle(appContext.getString(R.string.app_name))
                 setContentText(appContext.getString(R.string.rime_restarting))
                 setOngoing(true)
                 setSmallIcon(R.mipmap.ic_launcher_round)

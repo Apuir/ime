@@ -16,8 +16,6 @@ import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
-import com.ninthsoft.ime.engine.RimeEngine
-import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
@@ -62,7 +60,7 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        engine = EngineFactory.switchTo(this, RimeEngine::class)
+        engine = EngineFactory.current()
         keyboardStateManager = KeyboardStateManager(this)
         themePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         schemaPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -70,8 +68,7 @@ class ImeInputMethodService : InputMethodService() {
             service = this,
             engine = engine,
         )
-        engine?.observe(scope!!) { keyboardWindow?.handleEngineMessage(it) }
-        ClipboardManager.startMonitoring(this)
+        engine?.observeMessage(scope!!) { keyboardWindow?.handleEngineMessage(it) }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -183,12 +180,14 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onWindowHidden() {
         keyboardWindow?.onWindowHidden()
+        ClipboardManager.stopMonitoring(this)
         super.onWindowHidden()
     }
 
     override fun onWindowShown() {
         super.onWindowShown()
         keyboardWindow?.onWindowShown()
+        ClipboardManager.startMonitoring(this)
     }
 
     override fun onDestroy() {
@@ -326,5 +325,6 @@ class ImeInputMethodService : InputMethodService() {
         var text = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString() ?: ""
         text += currentInputConnection.getTextAfterCursor(1, 0)?.toString() ?: ""
         keyboardWindow?.onInputChanged(text)
+        if (text.isEmpty()) engine?.onInputCleared()
     }
 }

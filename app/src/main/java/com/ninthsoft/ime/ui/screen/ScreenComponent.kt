@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,6 +60,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
+import com.ninthsoft.ime.ui.theme.SuccessDark
+import com.ninthsoft.ime.ui.theme.SuccessLight
 
 object ScreenComponent {
     val barFontSize = 18.sp
@@ -71,7 +74,7 @@ object ScreenComponent {
         val fraction = progress.coerceIn(0f, 1f)
         val buttonWidth = if (width > 0.dp) width else 72.dp
         val containerColor = if (extracting) {
-            MaterialTheme.colorScheme.onSecondary
+            if (isSystemInDarkTheme()) SuccessDark else SuccessLight
         } else {
             MaterialTheme.colorScheme.primary
         }

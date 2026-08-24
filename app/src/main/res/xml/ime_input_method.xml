@@ -6,9 +6,4 @@
         android:languageTag="zh-CN"
         android:imeSubtypeLocale="zh_CN"
         android:imeSubtypeMode="keyboard" />
-    <subtype
-        android:label="@string/app_name"
-        android:languageTag="en-US"
-        android:imeSubtypeLocale="en_US"
-        android:imeSubtypeMode="keyboard" />
 </input-method>

@@ -5,7 +5,6 @@ import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.KeyEvent.*
 import android.view.inputmethod.InputConnection
-import androidx.core.content.edit
 import com.ninthsoft.ime.ImeApplication
 import com.ninthsoft.ime.base.util.TextUtil
 import com.ninthsoft.ime.engine.behavior.IBehavior
@@ -13,12 +12,13 @@ import com.ninthsoft.ime.engine.rime.behavior.Segmentation
 import com.ninthsoft.ime.data.database.AppDatabase
 import com.ninthsoft.ime.data.database.CandidateSorting
 import com.ninthsoft.ime.data.manager.CandidateManager
-import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.rime.host.BehaviorHost
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.data.EngineMessage.Candidate
+import com.ninthsoft.ime.engine.event.EngineEvent
+import com.ninthsoft.ime.engine.event.EngineEvent.DepolyEvent.State.*
 import com.ninthsoft.ime.engine.rime.behavior.Backspace
 import com.ninthsoft.ime.engine.rime.behavior.InputKey
 import com.ninthsoft.ime.engine.rime.behavior.InputString
@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,8 +51,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val daemon by lazy { RimeDaemon }
     private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
-    private val boot by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
-    private val jobs by lazy { Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED) }
+    private val msgJobs by lazy { Channel<suspend RimeApi.() -> Unit>(Channel.UNLIMITED) }
+    private val eventJobs = Channel<EngineEvent>(Channel.UNLIMITED)
     private var session: RimeSession? = null
     private var behaviorHosted: BehaviorHost? = null
     private var context: Context? = null
@@ -64,59 +65,59 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private var notEmitNextEmptyCandidates = false
 
     override fun initialize(context: Context) {
-        this.context = context
-        (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.STARTING_ENGINE)
-        boot.launch {
-            daemon.observeMessages {
-                if (it is RimeMessage.DeployMessage && it.state == RimeMessage.DeployMessage.State.Success) {
-                    inited = true
-                    boot.cancel()
+        val appContext = context.applicationContext
+        val app = appContext as ImeApplication
+        this.context = appContext
+
+        app.notifyState(ImeApplication.InitState.STARTING_ENGINE)
+        // Install the collector before createSession() can start Rime. SharedFlow has no replay.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            daemon.observeMessages { it ->
+                if (it is RimeMessage.DeployMessage) {
+                    if (it.state == RimeMessage.DeployMessage.State.Success) {
+                        sendJob {
+                            val ids = enabledSchemata().map { it.id }.toSet()
+                            eventJobs.trySend(EngineEvent.DepolyEvent(Success, ids.toList()))
+
+                            if (!this@RimeEngine.inited) {
+                                val currentSchema = currentSchema()
+                                RimeConfig.openSchema(currentSchema.schemaId).use { config ->
+                                    config.getString("grammar/language")?.let {
+                                        predictionManager.loadModels(modelDir, sharedDataDir, it)
+                                    }
+                                }
+                                processKey(KeyMapping.Key_Delete, 0U, false)
+                                app.notifyState(ImeApplication.InitState.DONE)
+                                this@RimeEngine.inited = true
+                            }
+                        }
+                    }
+                    if (it.state == RimeMessage.DeployMessage.State.Failure) {
+                        eventJobs.trySend(EngineEvent.DepolyEvent(Fail, emptyList()))
+                    }
                 }
             }
         }
+
         session = daemon.createSession(javaClass.name)
         scope.launch {
-            for (job in jobs) {
+            for (job in msgJobs) {
                 session?.runOnReady(job)
             }
         }
         behaviorHosted = BehaviorHost(this)
-        sendJob {
-            val prefs = context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE)
-            val enabledIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
-                ?.filter { it.isNotBlank() }
-            var index = 0
-            while (index < 300) {
-                index++
-                if (!inited) {
-                    Thread.sleep(1000)
-                    continue
-                }
-                val schemas = enabledSchemata()
-                if (enabledIds.isNullOrEmpty()) {
-                    val ids = schemas.joinToString(",") { it.id }
-                    prefs.edit { putString(SchemaManager.KEY_ENABLED_IDS, ids) }
-                }
-                break
-            }
-            val currentSchema = currentSchema()
-            RimeConfig.openSchema(currentSchema.schemaId).use { config ->
-                val language = config.getString("grammar/language")
-                predictionManager.loadModels(modelDir, sharedDataDir, language)
-            }
-            processKey(KeyMapping.Key_Delete, 0U, false)
-            (context.applicationContext as ImeApplication).notifyState(ImeApplication.InitState.DONE)
-        }
     }
 
     override fun finalize() {
-        jobs.close()
+        msgJobs.close()
+        eventJobs.close()
         scope.cancel()
         predictionManager.destroy()
         daemon.destroySession(javaClass.name)
     }
 
     override fun processKey(service: InputMethodService, key: KeyEvent) {
+        if (!this@RimeEngine.inited) return
         sendJob {
             when (key) {
                 is KeyEvent.SequenceEvent -> {
@@ -283,7 +284,15 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
     }
 
-    override fun observe(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
+    override fun observeEvent(scope: CoroutineScope, on: suspend (EngineEvent) -> Unit) {
+        scope.launch {
+            for (event in eventJobs) {
+                on(event)
+            }
+        }
+    }
+
+    override fun observeMessage(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit) {
         callback = on
         scope.launch {
             daemon.observeMessages { message ->
@@ -328,6 +337,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
     }
 
+
     override fun clear(service: InputMethodService) {
         sendJob {
             if (compositionCached.preedit?.isNotEmpty() == true) {
@@ -347,12 +357,12 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun sendJob(block: suspend RimeApi.() -> Unit) {
-        jobs.trySend(block)
+        msgJobs.trySend(block)
     }
 
     override suspend fun <T> awaitJob(defaultValue: T, block: suspend RimeApi.() -> T): T {
         val deferred = CompletableDeferred<T>()
-        val result = jobs.trySend {
+        val result = msgJobs.trySend {
             try {
                 deferred.complete(block())
             } catch (_: Throwable) {
@@ -395,7 +405,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "") + commit
         sendJob {
             var candidates = emptyList<Candidate>()
-            if (!inputContext.isEmpty() && !TextUtil.isSymbol(inputContext.last())) {
+            if (!inputContext.isEmpty() && !TextUtil.isSymbol(inputContext.last()) && !TextUtil.isAlphabet(
+                    inputContext.last()
+                )
+            ) {
                 candidates = predictionManager.makePredictions(inputContext)
             }
             showPredictionCandidates = candidates.isNotEmpty()
@@ -405,7 +418,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun reload() {
         resetState()
-        sendJob { deploy() }
+        sendJob {
+            this@RimeEngine.inited = false
+            deploy()
+        }
     }
 
     //前端提交
@@ -413,6 +429,15 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         sendJob {
             callback(EngineMessage.Commit(text))
             this@RimeEngine.predict(text)
+        }
+    }
+
+    override fun onInputCleared() {
+        if (showPredictionCandidates) {
+            sendJob {
+                showPredictionCandidates = false
+                callback(EngineMessage.Candidates(emptyList(), 0, 0))
+            }
         }
     }
 }

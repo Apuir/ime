@@ -7,6 +7,7 @@ import com.ninthsoft.ime.engine.rime.data.DataManager
 import com.ninthsoft.ime.engine.rime.data.opencc.OpenCCDictManager
 import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.base.util.isStorageAvailable
+import com.ninthsoft.ime.engine.data.CommandSymbol
 import com.ninthsoft.ime.engine.data.EngineMessage
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -210,7 +211,10 @@ class Rime : RimeApi, RimeLifecycleOwner {
         }
         val context = getContext()
         //候选词列表
-        if (context.menu.pageSize <= 0 && context.input.isNotEmpty()) {
+        if (context.menu.pageSize <= 0 && context.input.isNotEmpty() && !context.input.startsWith(
+                CommandSymbol
+            )
+        ) {
             var commitText = ""
             var confirmedProto: SyllableProto? = null
             context.composition.syllables.forEachIndexed { index, proto ->

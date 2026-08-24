@@ -2,6 +2,7 @@ package com.ninthsoft.ime.engine
 
 import android.content.Context
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.log.AppLogBuffer
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.base.util.ResourceExtractor
@@ -35,7 +36,7 @@ object AppStartup {
             if (initialized) return
             val app = context.applicationContext as? ImeApplication
                 ?: throw IllegalStateException("ImeApplication is not created!")
-            setupLogger()
+            setupLogger(context)
             extractResourcesIfNeeded(context, app)
             EngineFactory.switchTo(context, RimeEngine::class)
             setupSound(context)
@@ -44,7 +45,8 @@ object AppStartup {
         }
     }
 
-    private fun setupLogger() {
+    private fun setupLogger(context: Context) {
+        AppLogBuffer.install(context)
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
@@ -60,7 +62,6 @@ object AppStartup {
         app.notifyState(ImeApplication.InitState.EXTRACTING)
         runBlocking(Dispatchers.IO) {
             ResourceExtractor.extract(context, RESOURCE_ASSET, destDir)
-            Thread.sleep(1000)
         }
     }
 }

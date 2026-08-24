@@ -9,6 +9,8 @@ import com.ninthsoft.ime.base.priority.WeightConfig
 import com.ninthsoft.ime.base.util.TextUtil
 import com.ninthsoft.ime.data.database.AppDatabase
 import com.ninthsoft.ime.engine.data.EngineMessage.Candidate
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 class PredictionManager(private val context: Context) {
@@ -16,19 +18,35 @@ class PredictionManager(private val context: Context) {
     private var gramDb: GramDb? = null
     private val calculator = PriorityCalculator()
 
-    suspend fun loadModels(modelDir: File, sharedDataDir: File, language: String?) {
-        if (language.isNullOrEmpty()) return
-        val gram = File(sharedDataDir, "$language.gram")
-        if (gram.isFile) {
-            gramDb = GramDb(gram.absolutePath)
-            val predictGram = File(modelDir, "predict.marisa")
-            if (predictGram.isFile) {
-                prediction = Prediction(predictGram).apply { load() }
+    // 引入 Mutex 锁，防止并发重复加载导致冲突
+    private val mutex = Mutex()
+
+    suspend fun loadModels(modelDir: File, sharedDataDir: File, language: String?) =
+        mutex.withLock {
+            destroyLocked()
+
+            if (language.isNullOrEmpty()) return@withLock
+            val gram = File(sharedDataDir, "$language.gram")
+            if (gram.isFile) {
+                gramDb = GramDb(gram.absolutePath)
+                val predictGram = File(modelDir, "predict.marisa")
+                if (predictGram.isFile) {
+                    prediction = Prediction(predictGram).apply { load() }
+                }
+            }
+        }
+
+    fun destroy() {
+        // 同步锁保护销毁过程
+        kotlinx.coroutines.runBlocking {
+            mutex.withLock {
+                destroyLocked()
             }
         }
     }
 
-    fun destroy() {
+    // 内部私有的安全销毁方法
+    private fun destroyLocked() {
         prediction?.destroy()
         prediction = null
         gramDb = null

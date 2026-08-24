@@ -52,6 +52,10 @@ object TextUtil {
         }
     }
 
+    fun isAlphabet(char: Char): Boolean {
+        return char in 'a'..'z' || char in 'A'..'Z'
+    }
+
     /**
      * 判断字符串是否全部由符号组成（或者针对单个字符的重载）
      */
