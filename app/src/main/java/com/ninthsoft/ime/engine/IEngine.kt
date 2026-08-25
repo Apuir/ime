@@ -8,12 +8,11 @@ import com.ninthsoft.ime.engine.event.EngineEvent
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.event.KeyEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.ReceiveChannel
 
 interface IEngine {
     fun initialize(context: Context)
-    fun observeEvent(scope: CoroutineScope, on: suspend (EngineEvent) -> Unit)
-    fun observeMessage(scope: CoroutineScope, on: suspend (EngineMessage) -> Unit)
     fun finalize()
     fun processKey(service: InputMethodService, key: KeyEvent): Unit?
     fun selectCandidate(candidate: EngineMessage.Candidate)
@@ -33,4 +32,5 @@ interface IEngine {
     fun onStartInputView(ic: InputConnection)
     fun onFinishInputView()
     fun onInputCleared()
+    fun observeMessages(scope: CoroutineScope, onMessage: suspend (EngineMessage) -> Unit): Job
 }

@@ -244,7 +244,7 @@ object SherpaSpeechClient {
 
     fun preStartSync(context: Context) {
         val app = context.applicationContext as? com.ninthsoft.ime.ImeApplication ?: return
-        app.coroutineScope.launch(Dispatchers.IO) {
+        app.applicationScope.launch(Dispatchers.IO) {
             runCatching { initEngine(app, silent = true) }.onFailure {
                 Timber.w(it, "Sherpa QNN prewarm failed")
             }
@@ -253,7 +253,7 @@ object SherpaSpeechClient {
 
     fun initialize(context: Context) {
         val app = context.applicationContext as? com.ninthsoft.ime.ImeApplication ?: return
-        app.coroutineScope.launch(Dispatchers.IO) {
+        app.applicationScope.launch(Dispatchers.IO) {
             runCatching { initEngine(app, silent = true) }
         }
     }

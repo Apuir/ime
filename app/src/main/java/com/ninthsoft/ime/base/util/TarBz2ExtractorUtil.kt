@@ -13,7 +13,7 @@ import java.io.OutputStream
 /**
  * .tar.bz2 解包工具：针对 BZip2 的流特性进行了多层缓存优化，大幅提升解压速度。
  */
-object TarBz2Extractor {
+object TarBz2ExtractorUtil {
 
     private const val BUFFER = 64 * 1024
     private const val STREAM_BUFFER = 256 * 1024

@@ -1,6 +1,5 @@
 package com.ninthsoft.ime.input
 
-import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
@@ -11,38 +10,30 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import com.ninthsoft.ime.ImeApplication
 import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
-import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.window.KeyboardWindow
 import com.ninthsoft.ime.input.keyboard.window.KeyboardStateManager
-import com.ninthsoft.ime.input.panel.KawaiiPanel
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.CloseKeyboard
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Palette
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Redo
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.SwitchKeyboard
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.ToggleVoice
-import com.ninthsoft.ime.input.panel.KawaiiPanel.Action.Undo
 import com.ninthsoft.ime.input.panel.component.TextEditView
-import com.ninthsoft.ime.ui.AboutActivity
-import com.ninthsoft.ime.ui.KeyboardSettingsActivity
-import com.ninthsoft.ime.ui.MainActivity
-import com.ninthsoft.ime.ui.SchemaSettingsActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class ImeInputMethodService : InputMethodService() {
-    private var engine: IEngine? = null
-    private var keyboardWindow: KeyboardWindow? = null
-    private lateinit var keyboardStateManager: KeyboardStateManager
-    private lateinit var keyActionListener: KeyActionListener
-    var scope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val engine: IEngine? get() = EngineFactory.current()
+    internal var keyboardWindow: KeyboardWindow? = null
+    internal lateinit var keyActionListener: KeyActionListener
+    var scope: CoroutineScope? = null
+    var messageObserveJob: Job? = null
     private var showingDialog: android.app.Dialog? = null
     private var lastSelectionStart = 0
     private var lastSelectionEnd = 0
@@ -60,15 +51,24 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        engine = EngineFactory.current()
-        keyboardStateManager = KeyboardStateManager(this)
+        //service scope & message subscribe
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main).apply {
+            launch {
+                val app = applicationContext as? ImeApplication
+                // 监听应用状态，当引擎启动的时候时开始绑定消息
+                app?.state?.collectLatest { state ->
+                    if (state == ImeApplication.AppState.EngineStarting) {
+                        messageObserveJob = engine?.observeMessages(this) { message ->
+                            keyboardWindow?.handleEngineMessage(message)
+                        }
+                    }
+                }
+            }
+        }
+        // KeyActionListener & prefrece change listenter
+        keyActionListener = KeyActionListener(service = this)
         themePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         schemaPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
-        keyActionListener = KeyActionListener(
-            service = this,
-            engine = engine,
-        )
-        engine?.observeMessage(scope!!) { keyboardWindow?.handleEngineMessage(it) }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -83,80 +83,10 @@ class ImeInputMethodService : InputMethodService() {
             (it.view.parent as? ViewGroup)?.removeView(it.view)
             return it.view
         }
-
         val window = KeyboardWindow(
             service = this,
-            keyboardStateManager = keyboardStateManager,
-            onCandidateSelected = { candidate -> engine?.selectCandidate(candidate) },
-            onToolbarAction = { action ->
-                when (action) {
-                    CloseKeyboard -> requestHideSelf(0)
-                    SwitchKeyboard -> keyboardWindow?.view?.toggleMenu()
-                    KawaiiPanel.Action.EmojiKeyboard -> keyboardWindow?.view?.switchKeyboard(
-                        EmojiKeyboard.NAME
-                    )
-
-                    KawaiiPanel.Action.ReloadEngine -> engine?.reload()
-                    Undo -> engine?.undo(this)
-                    Redo -> engine?.redo(this)
-
-                    Palette -> startActivity(
-                        Intent(
-                            this, KeyboardSettingsActivity::class.java
-                        ).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
-
-                    ToggleVoice -> keyboardWindow?.toggleVoiceLocked()
-
-                    KawaiiPanel.Action.Settings -> startActivity(
-                        Intent(
-                            this, MainActivity::class.java
-                        ).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
-
-                    KawaiiPanel.Action.SchemaSettings -> startActivity(
-                        Intent(
-                            this, SchemaSettingsActivity::class.java
-                        ).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
-
-                    KawaiiPanel.Action.About -> startActivity(
-                        Intent(
-                            this, AboutActivity::class.java
-                        ).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
-
-                    else -> {}
-                }
-            },
-            onSidePanelAction = { action -> keyActionListener.onKeyAction(action) },
-            onTextEditingAction = { action -> handleTextEditingAction(action) },
-            onClipboardItemClick = { entry ->
-                keyActionListener.onKeyAction(
-                    KeyboardAction.CommitAction(
-                        entry.text
-                    )
-                )
-            },
-            onClipboardClear = { ClipboardManager.clearAll(this) },
-            onClipboardItemDelete = { entry -> ClipboardManager.removeEntry(this, entry.text) },
-            onCopyTextCommit = { text ->
-                keyActionListener.onKeyAction(
-                    KeyboardAction.CommitAction(
-                        text
-                    )
-                )
-            },
-            onCandidateGridDragComplete = { candidates ->
-                engine?.resortCandidates(candidates)
-            },
-            onCandidateForget = { candidate ->
-                engine?.deleteCandidate(candidate.index)
-            },
+            keyboardStateManager = KeyboardStateManager,
+            panelActionListener = PanelActionListener(this),
         )
         keyboardWindow = window
         window.setKeyActionListener(keyActionListener)
@@ -188,15 +118,24 @@ class ImeInputMethodService : InputMethodService() {
         super.onWindowShown()
         keyboardWindow?.onWindowShown()
         ClipboardManager.startMonitoring(this)
+        if (messageObserveJob == null) {
+            messageObserveJob = scope?.let { scope ->
+                engine?.observeMessages(scope) {
+                    keyboardWindow?.handleEngineMessage(it)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
-        themePrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        schemaPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        messageObserveJob?.cancel()
         scope?.cancel()
         scope = null
         keyboardWindow = null
+
         ClipboardManager.stopMonitoring(this)
+        themePrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        schemaPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         super.onDestroy()
     }
 
@@ -258,7 +197,7 @@ class ImeInputMethodService : InputMethodService() {
         if (shift) up(KeyEvent.KEYCODE_SHIFT_LEFT)
     }
 
-    private fun handleTextEditingAction(action: TextEditView.Action) {
+    internal fun handleTextEditingAction(action: TextEditView.Action) {
         val ic = currentInputConnection
         when (action) {
             is TextEditView.Action.MoveLeft -> sendCombinationKeyEvent(

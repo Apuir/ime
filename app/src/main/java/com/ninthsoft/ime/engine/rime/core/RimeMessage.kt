@@ -246,8 +246,8 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
         val composition = data.composition
         val preedits = composition.syllables
         val spelling = composition.syllables.joinToString { it.spelling }
-        if (preedits.isEmpty() || spelling.all { it.isDigit() }){
-            if (composition.preedit.isNullOrBlank()){
+        if (preedits.isEmpty() || spelling.all { it.isDigit() }) {
+            if (composition.preedit.isNullOrBlank()) {
                 return EngineMessage.DynamicPreedit(items)
             }
             items.add(
@@ -321,6 +321,15 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
 
     is SchemaMessage -> {
         EngineMessage.Schema(data.id, data.name, data.layout, data.punctuation)
+    }
+
+    is RimeMessage.DeployMessage -> {
+        val deployState = when (data) {
+            RimeMessage.DeployMessage.State.Start -> EngineMessage.Depoly.State.Start
+            RimeMessage.DeployMessage.State.Success -> EngineMessage.Depoly.State.Success
+            RimeMessage.DeployMessage.State.Failure -> EngineMessage.Depoly.State.Failure
+        }
+        EngineMessage.Depoly(deployState)
     }
 
     is RimeMessage.OptionMessage -> {

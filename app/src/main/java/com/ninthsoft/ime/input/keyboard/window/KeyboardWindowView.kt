@@ -8,9 +8,13 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.util.TypedValue
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
+import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.ISidePanelKeyboard
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -22,6 +26,11 @@ import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
+import com.ninthsoft.ime.input.keyboard.impl.EmojiKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.KawaiiPanel
@@ -39,16 +48,7 @@ import kotlin.math.roundToInt
 class KeyboardWindowView(
     context: Context,
     private val keyboardStateManager: KeyboardStateManager,
-    onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
-    onSidePanelAction: ((KeyboardAction) -> Unit)? = null,
-    onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
-    onClipboardItemClick: ((ClipboardManager.Entry) -> Unit)? = null,
-    onClipboardClear: (() -> Unit)? = null,
-    onClipboardItemDelete: ((ClipboardManager.Entry) -> Unit)? = null,
-    onCopyTextCommit: ((String) -> Unit)? = null,
-    onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
-    onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
+    private val panelListener: KawaiiPanel.Listener? = null,
 ) : FrameLayout(context), IManagedView {
 
     companion object {
@@ -59,16 +59,7 @@ class KeyboardWindowView(
 
     val panel = KawaiiPanel(
         context = context,
-        onCandidateSelected = onCandidateSelected,
-        onToolbarAction = onToolbarAction,
-        onSidePanelAction = onSidePanelAction,
-        onTextEditingAction = onTextEditingAction,
-        onClipboardItemClick = onClipboardItemClick,
-        onClipboardClear = onClipboardClear,
-        onClipboardItemDelete = onClipboardItemDelete,
-        onCopyTextCommit = onCopyTextCommit,
-        onCandidateGridDragComplete = onCandidateGridDragComplete,
-        onCandidateForget = onCandidateForget,
+        listener = panelListener,
     )
 
     private val preeditPinner = PreeditPinner(context)
@@ -193,8 +184,54 @@ class KeyboardWindowView(
 
     private var cachedBottomInset = 0
 
+    fun addKeyboardView(keyboard: IKeyboard) {
+        val view = keyboard as View
+        (view.parent as? ViewGroup)?.removeView(view)
+        if (view.parent == null) {
+            addView(
+                view, 0, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+    }
+
+    fun removeKeyboardView(keyboard: IKeyboard) {
+        val view = keyboard as View
+        (view.parent as? ViewGroup)?.removeView(view)
+    }
+
+    private fun createKeyboard(name: String): IKeyboard {
+        val b = when (name) {
+            T9Keyboard.NAME -> T9Keyboard(context, cachedColors)
+            SymbolKeyboard.NAME -> SymbolKeyboard(context, cachedColors)
+            EmojiKeyboard.NAME -> EmojiKeyboard(context, cachedColors)
+            NumberKeyboard.NAME -> NumberKeyboard(context, cachedColors)
+            else -> QwertyKeyboard(context, cachedColors)
+        }
+        b.setRippleEnabled(KeyboardManager.Keyboard.RippleEffect.isEnabled(context))
+        return b
+    }
+
+    private val keyboardFactory: (String) -> IKeyboard = { name -> createKeyboard(name) }
+
+    fun onShowKeyboard(keyboard: IKeyboard) {
+        currentKeyboard = keyboard
+        addKeyboardView(keyboard)
+    }
+
+    fun onHideKeyboard(keyboard: IKeyboard) {
+        removeKeyboardView(keyboard)
+        if (currentKeyboard === keyboard) currentKeyboard = null
+    }
+
+    fun onKeyboardChanged(keyboard: IKeyboard) {
+        currentKeyboard = keyboard
+        addKeyboardView(keyboard)
+    }
+
     init {
-        keyboardStateManager.attachTo(this)
+        keyboardStateManager.setKeyboardFactory(keyboardFactory)
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
             val bottom = maxOf(
                 insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
@@ -337,7 +374,7 @@ class KeyboardWindowView(
         setBackgroundColor(cachedColors.background)
         panel.refreshTheme()
         preeditPinner.refreshTheme(context)
-        keyboardStateManager.rebuild(cachedColors)
+        keyboardStateManager.rebuild()
         voiceOverlay.applyColors(
             cachedColors.background,
             cachedColors.specialKeyBackground,
@@ -350,11 +387,13 @@ class KeyboardWindowView(
 
     fun refreshLayout() = requestLayout()
 
+    private var currentKeyboard: IKeyboard? = null
+
     fun setCandidates(list: List<EngineMessage.Candidate>) = panel.setCandidates(list)
 
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         panel.onPossibleCandidatePinYin(pinyins)
-        keyboardStateManager.onPossibleCandidatePinYin(pinyins)
+        (currentKeyboard as? ISidePanelKeyboard)?.onPossibleCandidatePinYin(pinyins)
     }
 
     fun updateDynamicPreedit(items: List<EngineMessage.DynamicPreedit.DynamicPreeditItem>) {
@@ -586,8 +625,10 @@ class KeyboardWindowView(
             voiceOverlay.hide()
         }
         panel.onInputChanged(text)
-        return keyboardStateManager.onInputChanged(info, text)
+        keyboardStateManager.onInputChanged(info, text)
+        return Unit
     }
 
     fun switchKeyboard(name: String) = keyboardStateManager.switchTo(name)
+    fun onDepolyFinished() = keyboardStateManager.refreshSchemas()
 }

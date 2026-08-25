@@ -15,22 +15,36 @@ import com.ninthsoft.ime.input.panel.component.ClipboardView
 import com.ninthsoft.ime.input.panel.component.ConfirmOverlay
 import com.ninthsoft.ime.input.panel.component.MenuGridView
 import com.ninthsoft.ime.input.panel.component.TextEditView
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.toolbar.IdleRenderer
 import timber.log.Timber
 
 class KawaiiPanel(
     val context: Context,
-    var onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    var onToolbarAction: ((Action) -> Unit)? = null,
-    var onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
-    var onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
-    var onClipboardItemClick: ((ClipboardManager.Entry) -> Unit)? = null,
-    var onClipboardClear: (() -> Unit)? = null,
-    var onClipboardItemDelete: ((ClipboardManager.Entry) -> Unit)? = null,
-    var onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
-    var onCopyTextCommit: ((String) -> Unit)? = null,
-    var onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
+    var listener: Listener? = null,
 ) : IPanel {
+
+    interface Listener {
+        fun onCandidateSelected(candidate: EngineMessage.Candidate) {}
+
+        fun onToolbarAction(action: Action) {}
+
+        fun onSidePanelAction(action: KeyboardAction) {}
+
+        fun onTextEditingAction(action: TextEditView.Action) {}
+
+        fun onClipboardItemClick(entry: ClipboardManager.Entry) {}
+
+        fun onClipboardClear() {}
+
+        fun onClipboardItemDelete(entry: ClipboardManager.Entry) {}
+
+        fun onCopyTextCommit(text: String) {}
+
+        fun onCandidateGridDragComplete(candidates: List<EngineMessage.Candidate>) {}
+
+        fun onCandidateForget(candidate: EngineMessage.Candidate) {}
+    }
 
     sealed class Action {
         data object SwitchKeyboard : Action()
@@ -177,7 +191,7 @@ class KawaiiPanel(
         onCandidateSelected = { candidate ->
             view.onTap?.invoke(TouchResult.SelectCandidate(candidate))
         },
-        onSidePanelAction = onSidePanelAction,
+        onSidePanelAction = { listener?.onSidePanelAction(it) },
     ).apply {
         /*onWordForget = { candidate, x, y ->
             confirmOverlay.confirm(
@@ -192,7 +206,7 @@ class KawaiiPanel(
         }*/
         onDragComplete = { candidates ->
             (view.currentRenderer as? ComposingRenderer)?.candidates = candidates
-            this@KawaiiPanel.onCandidateGridDragComplete?.invoke(candidates)
+            this@KawaiiPanel.listener?.onCandidateGridDragComplete(candidates)
         }
     }
 
@@ -210,7 +224,7 @@ class KawaiiPanel(
         context = context,
         colors = resolvedColors,
     ).apply {
-        onAction = { action -> onTextEditingAction?.invoke(action) }
+        onAction = { action -> listener?.onTextEditingAction(action) }
     }
 
     val confirmOverlay = ConfirmOverlay(
@@ -224,7 +238,7 @@ class KawaiiPanel(
     )
 
     init {
-        clipboardView.onItemClick = { entry -> onClipboardItemClick?.invoke(entry) }
+        clipboardView.onItemClick = { entry -> listener?.onClipboardItemClick(entry) }
         clipboardView.onItemLongClick = { entry, x, y ->
             Timber.d("clipboard longClick: cardX=$x cardY=$y")
             confirmOverlay.confirm(
@@ -250,17 +264,17 @@ class KawaiiPanel(
     }
 
     private fun handleClipboardClear() {
-        onClipboardClear?.invoke()
+        listener?.onClipboardClear()
         clipboardView.show(ClipboardManager.getEntries(context))
     }
 
     private fun handleClipboardDelete(entry: ClipboardManager.Entry) {
-        onClipboardItemDelete?.invoke(entry)
+        listener?.onClipboardItemDelete(entry)
         clipboardView.show(ClipboardManager.getEntries(context))
     }
 
     private fun handleCandidateForget(candidate: EngineMessage.Candidate) {
-        onCandidateForget?.invoke(candidate)
+        listener?.onCandidateForget(candidate)
     }
 
     fun onSelectionUpdate(start: Int, end: Int) {
@@ -310,18 +324,18 @@ class KawaiiPanel(
                         Action.SwitchKeyboard -> {
                             when (state) {
                                 State.TextEditing, State.Clipboard, State.Copy -> state = State.Idle
-                                else -> onToolbarAction?.invoke(result.action)
+                                else -> listener?.onToolbarAction(result.action)
                             }
                         }
 
-                        else -> onToolbarAction?.invoke(result.action)
+                        else -> listener?.onToolbarAction(result.action)
                     }
                 }
 
                 is TouchResult.SelectCandidate -> {
                     InputFeedbacks.hapticFeedback(view)
                     InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
-                    onCandidateSelected?.invoke(result.candidate)
+                    listener?.onCandidateSelected(result.candidate)
                 }
 
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
@@ -342,7 +356,7 @@ class KawaiiPanel(
 
                 null -> {
                     if (state == State.Copy && copyText != null) {
-                        onCopyTextCommit?.invoke(copyText ?: "")
+                        listener?.onCopyTextCommit(copyText ?: "")
                         state = State.Idle
                     }
                 }

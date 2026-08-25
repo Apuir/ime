@@ -2,28 +2,18 @@ package com.ninthsoft.ime.input.keyboard.window
 
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.ImeInputMethodService
+import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.panel.IPanel
 import com.ninthsoft.ime.input.panel.KawaiiPanel
-import com.ninthsoft.ime.input.panel.component.TextEditView
 
 class KeyboardWindow(
     service: ImeInputMethodService,
     keyboardStateManager: KeyboardStateManager,
-    onCandidateSelected: ((EngineMessage.Candidate) -> Unit)? = null,
-    onToolbarAction: ((KawaiiPanel.Action) -> Unit)? = null,
-    onSidePanelAction: ((com.ninthsoft.ime.input.keyboard.key.KeyboardAction) -> Unit)? = null,
-    onTextEditingAction: ((TextEditView.Action) -> Unit)? = null,
-    onClipboardItemClick: ((ClipboardManager.Entry) -> Unit)? = null,
-    onClipboardClear: (() -> Unit)? = null,
-    onClipboardItemDelete: ((ClipboardManager.Entry) -> Unit)? = null,
-    onCopyTextCommit: ((String) -> Unit)? = null,
-    onCandidateGridDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null,
-    onCandidateForget: ((EngineMessage.Candidate) -> Unit)? = null,
+    panelActionListener: KawaiiPanel.Listener? = null,
 ) {
 
     var currentEditorInfo: EditorInfo? = null
@@ -31,16 +21,7 @@ class KeyboardWindow(
     val view: KeyboardWindowView = KeyboardWindowView(
         context = service,
         keyboardStateManager = keyboardStateManager,
-        onCandidateSelected = onCandidateSelected,
-        onToolbarAction = onToolbarAction,
-        onSidePanelAction = onSidePanelAction,
-        onTextEditingAction = onTextEditingAction,
-        onClipboardItemClick = onClipboardItemClick,
-        onClipboardClear = onClipboardClear,
-        onClipboardItemDelete = onClipboardItemDelete,
-        onCopyTextCommit = onCopyTextCommit,
-        onCandidateGridDragComplete = onCandidateGridDragComplete,
-        onCandidateForget = onCandidateForget,
+        panelListener = panelActionListener,
     )
 
     val colors: KeyboardColors.ColorScheme get() = KeyboardColors.resolve(view.context)
@@ -48,6 +29,22 @@ class KeyboardWindow(
     val panel: IPanel get() = view.panel
 
     private val messageHandler = MessageHandler(service).also { it.attach(this) }
+
+    init {
+        keyboardStateManager.callback = object : KeyboardStateManager.Callback {
+            override fun onShowKeyboard(keyboard: IKeyboard) {
+                view.onShowKeyboard(keyboard)
+            }
+
+            override fun onHideKeyboard(keyboard: IKeyboard) {
+                view.onHideKeyboard(keyboard)
+            }
+
+            override fun onKeyboardChanged(keyboard: IKeyboard) {
+                view.onKeyboardChanged(keyboard)
+            }
+        }
+    }
 
     fun setKeyActionListener(listener: KeyActionListener) {
         view.keyActionListener = listener
@@ -92,4 +89,6 @@ class KeyboardWindow(
     fun toggleVoiceLocked() = view.toggleVoiceLocked()
 
     fun onInputChanged(text: String) = view.onInputChanged(currentEditorInfo, text)
+
+    fun onDepolyFinished() = view.onDepolyFinished()
 }

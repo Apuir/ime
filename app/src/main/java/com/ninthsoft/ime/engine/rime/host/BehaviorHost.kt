@@ -1,6 +1,6 @@
 package com.ninthsoft.ime.engine.rime.host
 
-import com.ninthsoft.ime.base.util.PinYin
+import com.ninthsoft.ime.base.util.PinYinUtil
 import com.ninthsoft.ime.engine.IBehaviorHost
 import com.ninthsoft.ime.engine.behavior.IBehavior
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -212,7 +212,7 @@ class BehaviorHost(val rimeJob: IRimeJob) : IBehaviorHost {
         val position = nextSequencePosition(len)
         if (position < 0) return emptyList()
         val sequence = inputStringQueue.joinToString("").substring(position)
-        return PinYin.possibleCombinations(sequence).map { pinYin ->
+        return PinYinUtil.possibleCombinations(sequence).map { pinYin ->
             var raw = sequence.substring(0, pinYin.length)
             // 如果候选拼音以分词标记结束，必须把分词标记加入 raw
             if (segmentKeyChar == sequence.getOrNull(pinYin.length)) {

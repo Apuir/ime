@@ -5,7 +5,8 @@ import com.ninthsoft.ime.ImeApplication
 import com.ninthsoft.ime.base.log.AppLogBuffer
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
-import com.ninthsoft.ime.base.util.ResourceExtractor
+import com.ninthsoft.ime.base.util.ResourceExtractorUtil
+import com.ninthsoft.ime.input.keyboard.window.KeyboardStateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import splitties.views.dsl.core.BuildConfig
@@ -31,17 +32,18 @@ object AppStartup {
     private val lock = Any()
 
     fun initialize(context: Context) {
-        if (initialized) return
         synchronized(lock) {
-            if (initialized) return
-            val app = context.applicationContext as? ImeApplication
-                ?: throw IllegalStateException("ImeApplication is not created!")
-            setupLogger(context)
-            extractResourcesIfNeeded(context, app)
-            EngineFactory.switchTo(context, RimeEngine::class)
-            setupSound(context)
-            SherpaSpeechClient.preStartSync(context)
-            initialized = true
+            if (!initialized) {
+                val funcs = listOf(
+                    ::setupLogger,
+                    ::releaseResourcesIfNeeded,
+                    ::setupInputFeedbacks,
+                    ::setupEngine,
+                    ::setupSherpaSpeech,
+                )
+                funcs.forEach { it(context) }
+                initialized = true
+            }
         }
     }
 
@@ -52,16 +54,33 @@ object AppStartup {
         }
     }
 
-    private fun setupSound(context: Context) {
+    private fun setupEngine(context: Context) {
+        val app = context.applicationContext as ImeApplication
+        val engine = EngineFactory.switchTo(context, RimeEngine::class)
+        engine.observeMessages(app.applicationScope) {
+            KeyboardStateManager.handleEngineMessage(it)
+        }
+        engine.initialize(context)
+    }
+
+    private fun setupSherpaSpeech(context: Context) {
+        SherpaSpeechClient.preStartSync(context)
+    }
+
+    private fun setupInputFeedbacks(context: Context) {
         InputFeedbacks.initSoundPool(context)
     }
 
-    private fun extractResourcesIfNeeded(context: Context, app: ImeApplication) {
+    private fun releaseResourcesIfNeeded(context: Context) {
         val destDir = context.getExternalFilesDir(null) ?: context.filesDir
-        if (File(destDir, VERSION_FILE).exists()) return
-        app.notifyState(ImeApplication.InitState.EXTRACTING)
+        if (File(destDir, VERSION_FILE).exists()) {
+            return
+        }
+
+        val app = context.applicationContext as ImeApplication
+        app.notifyState(ImeApplication.AppState.ResourcePreparing)
         runBlocking(Dispatchers.IO) {
-            ResourceExtractor.extract(context, RESOURCE_ASSET, destDir)
+            ResourceExtractorUtil.extract(context, RESOURCE_ASSET, destDir)
         }
     }
 }

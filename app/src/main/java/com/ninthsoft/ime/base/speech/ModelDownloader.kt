@@ -2,7 +2,7 @@ package com.ninthsoft.ime.base.speech
 
 import android.content.Context
 import com.ninthsoft.ime.base.net.HttpUtil
-import com.ninthsoft.ime.base.util.TarBz2Extractor
+import com.ninthsoft.ime.base.util.TarBz2ExtractorUtil
 import com.ninthsoft.ime.engine.rime.data.DataManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -123,7 +123,7 @@ object ModelDownloader {
             stageDir.deleteRecursively()
             check(stageDir.mkdirs()) { "Failed to create staging directory: ${stageDir.absolutePath}" }
             Timber.i("Extracting speech model: %s", archiveFile.name)
-            TarBz2Extractor.extract(archiveFile, stageDir, onExtract, ::shouldExtract)
+            TarBz2ExtractorUtil.extract(archiveFile, stageDir, onExtract, ::shouldExtract)
             val model = findModel(stageDir) ?: error("Speech model is incomplete")
             Timber.i(
                 "Model files located: tokens=%s encoder=%s decoder=%s joiner=%s",

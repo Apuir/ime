@@ -8,7 +8,7 @@ import androidx.core.content.edit
 import timber.log.Timber
 import java.io.File
 
-class AssetExtractionProvider : ContentProvider() {
+class AssetExtractionProviderUtil : ContentProvider() {
 
     private val prefs by lazy {
         context?.getSharedPreferences("asset_extract_prefs", android.content.Context.MODE_PRIVATE)

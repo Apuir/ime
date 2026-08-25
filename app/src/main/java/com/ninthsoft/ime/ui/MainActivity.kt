@@ -40,8 +40,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val initState = ImeApplication.getInstance().initState.value
-        if (initState != ImeApplication.InitState.DONE) {
+        val initState = ImeApplication.getInstance().state.value
+        if (initState != ImeApplication.AppState.Finished) {
             initLauncher.launch(Intent(this, InitActivity::class.java))
         } else if (!isImeConfigured()) {
             setupImeLauncher.launch(Intent(this, SetupActivity::class.java))

@@ -24,6 +24,10 @@ sealed class EngineMessage {
         val id: String, val name: String, val layout: String = "", val punctuation: String = ""
     ) : EngineMessage()
 
+    data class Depoly(val state: State) : EngineMessage() {
+        enum class State { Start,Success, Failure }
+    }
+
     data class PossibleCandidatePinYin(val possibleCandidatePinYins: List<CandidatePinYin>) :
         EngineMessage()
 

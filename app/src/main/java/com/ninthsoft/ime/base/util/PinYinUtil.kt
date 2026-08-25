@@ -1,6 +1,6 @@
 package com.ninthsoft.ime.base.util
 
-object PinYin {
+object PinYinUtil {
 
     private val t9KeyMap = mapOf(
         // 字母映射

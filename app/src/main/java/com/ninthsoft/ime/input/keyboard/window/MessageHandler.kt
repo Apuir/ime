@@ -1,6 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.window
 
 import android.inputmethodservice.InputMethodService
+import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.data.EngineMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,28 +19,28 @@ class MessageHandler(
     suspend fun handle(message: EngineMessage) {
         when (message) {
             is EngineMessage.Commit -> {
-                withContext(Dispatchers.Main) {
-                    service.currentInputConnection?.commitText(message.text, 1)
-                }
+                service.currentInputConnection?.commitText(message.text, 1)
             }
 
             is EngineMessage.Candidates -> {
-                withContext(Dispatchers.Main) {
-                    window?.setCandidates(message.list)
+                window?.setCandidates(message.list)
+            }
+
+            is EngineMessage.Depoly -> {
+                Timber.d("EngineMessage.Depoly")
+                if (message.state == EngineMessage.Depoly.State.Success) {
+                    window?.onDepolyFinished()
                 }
             }
 
             is EngineMessage.PossibleCandidatePinYin -> {
-                withContext(Dispatchers.Main) {
-                    window?.onPossibleCandidatePinYin(message.possibleCandidatePinYins)
-                }
+                window?.onPossibleCandidatePinYin(message.possibleCandidatePinYins)
             }
 
             is EngineMessage.DynamicPreedit -> {
-                withContext(Dispatchers.Main) {
-                    window?.updateDynamicPreedit(message.preedits)
-                }
+                window?.updateDynamicPreedit(message.preedits)
             }
+
             else -> {}
         }
     }

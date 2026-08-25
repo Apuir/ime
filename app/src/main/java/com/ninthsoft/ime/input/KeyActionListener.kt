@@ -3,20 +3,24 @@ package com.ninthsoft.ime.input
 import android.annotation.SuppressLint
 import android.inputmethodservice.InputMethodService
 import android.view.inputmethod.EditorInfo
+import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.IEngine
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.event.KeyModifiers
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import timber.log.Timber
 
 class KeyActionListener(
     private val service: InputMethodService,
-    private val engine: IEngine?,
 ) : KeyActionListener {
+
+    private val engine: IEngine? get() = EngineFactory.current()
 
     override fun onKeyAction(action: KeyboardAction) {
         when (action) {
             is KeyboardAction.KeySequenceAction -> {
+                Timber.d("yyyy %s ",engine == null)
                 engine?.processKey(service, action.asKeyEvent())
             }
 

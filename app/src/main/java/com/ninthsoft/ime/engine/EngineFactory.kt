@@ -16,9 +16,7 @@ object EngineFactory {
         clazz: KClass<T>,
     ): T {
         return try {
-            clazz.java.getDeclaredConstructor().newInstance().also {
-                it.initialize(context)
-            }
+            clazz.java.getDeclaredConstructor().newInstance()
         } catch (e: Exception) {
             throw e
         }

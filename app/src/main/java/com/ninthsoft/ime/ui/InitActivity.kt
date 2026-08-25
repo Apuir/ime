@@ -48,9 +48,9 @@ class InitActivity : ComponentActivity() {
         val app = ImeApplication.getInstance()
 
         setContent {
-            val initState by app.initState.collectAsState()
+            val initState by app.state.collectAsState()
 
-            if (initState == ImeApplication.InitState.DONE) {
+            if (initState == ImeApplication.AppState.Finished) {
                 LaunchedEffect(Unit) {
                     setResult(RESULT_OK)
                     finish()
@@ -59,8 +59,8 @@ class InitActivity : ComponentActivity() {
 
             ImeTheme(themeMode = 0) {
                 val (titleRes, descRes) = when (initState) {
-                    ImeApplication.InitState.EXTRACTING -> R.string.initializing to R.string.initializing_desc
-                    ImeApplication.InitState.STARTING_ENGINE -> R.string.starting_engine to R.string.starting_engine_desc
+                    ImeApplication.AppState.ResourcePreparing -> R.string.initializing to R.string.initializing_desc
+                    ImeApplication.AppState.EngineStarting -> R.string.starting_engine to R.string.starting_engine_desc
                     else -> R.string.initializing to R.string.initializing_desc
                 }
 

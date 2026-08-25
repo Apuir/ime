@@ -7,7 +7,7 @@ import java.io.InputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
-object ResourceExtractor {
+object ResourceExtractorUtil {
 
     private val SKIP_PATTERNS = listOf(
         "__MACOSX",
