@@ -6,6 +6,7 @@ import com.ninthsoft.ime.engine.data.EngineMessage
 
 interface IPanel {
     val view: View
+    var recording: Boolean
     fun setCandidates(list: List<EngineMessage.Candidate>)
     fun refreshTheme()
     fun onFinishInputView(finishingInput: Boolean)

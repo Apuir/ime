@@ -3,14 +3,13 @@ package com.ninthsoft.ime.input
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
-import android.os.SystemClock
-import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.ImeApplication
+import com.ninthsoft.ime.base.util.InputConnectionUtil
 import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
@@ -163,38 +162,7 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     private fun sendCombinationKeyEvent(keyCode: Int, shift: Boolean) {
-        val ic = currentInputConnection ?: return
-        val downTime = SystemClock.uptimeMillis()
-        val device = KeyCharacterMap.VIRTUAL_KEYBOARD
-        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-        val metaShift = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-
-        fun down(code: Int, meta: Int = 0) {
-            ic.sendKeyEvent(
-                KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, code, 0, meta, device, 0, flags)
-            )
-        }
-
-        fun up(code: Int, meta: Int = 0) {
-            ic.sendKeyEvent(
-                KeyEvent(
-                    downTime,
-                    SystemClock.uptimeMillis(),
-                    KeyEvent.ACTION_UP,
-                    code,
-                    0,
-                    meta,
-                    device,
-                    0,
-                    flags
-                )
-            )
-        }
-
-        if (shift) down(KeyEvent.KEYCODE_SHIFT_LEFT)
-        down(keyCode, if (shift) metaShift else 0)
-        up(keyCode, if (shift) metaShift else 0)
-        if (shift) up(KeyEvent.KEYCODE_SHIFT_LEFT)
+        InputConnectionUtil.sendCombinationKeyEvent(this, keyCode, shift = shift)
     }
 
     internal fun handleTextEditingAction(action: TextEditView.Action) {

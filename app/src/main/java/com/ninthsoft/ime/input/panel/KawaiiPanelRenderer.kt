@@ -21,7 +21,12 @@ class ComposingRenderer(
     var showComment: Boolean = true,
     var borderless: Boolean = false,
     var expandBorderless: Boolean = false,
+    var recording: Boolean = false,
 ) : IRenderer {
+
+    private fun dimColor(color: Int): Int {
+        return if (recording) (color and 0x00FFFFFF) or 0x5A000000.toInt() else color
+    }
 
     private data class PillRect(val left: Float, val right: Float, val index: Int)
 
@@ -34,6 +39,15 @@ class ComposingRenderer(
     ) {
         lastPills = emptyList()
         if (width <= 0 || height <= 0 || candidates.isEmpty()) return
+
+        val savedBg = paints.candidateBgPaint.color
+        val savedText = paints.candidateTextPaint.color
+        val savedIndex = paints.candidateIndexPaint.color
+        if (recording) {
+            paints.candidateBgPaint.color = dimColor(savedBg)
+            paints.candidateTextPaint.color = dimColor(savedText)
+            paints.candidateIndexPaint.color = dimColor(savedIndex)
+        }
 
         val pillH = 34f * density
         val pillY = (height - pillH) / 2f
@@ -182,6 +196,12 @@ class ComposingRenderer(
             } else {
                 d.draw(canvas)
             }
+        }
+
+        if (recording) {
+            paints.candidateBgPaint.color = savedBg
+            paints.candidateTextPaint.color = savedText
+            paints.candidateIndexPaint.color = savedIndex
         }
     }
 

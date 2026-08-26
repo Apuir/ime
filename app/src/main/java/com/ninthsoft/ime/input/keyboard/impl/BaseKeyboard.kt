@@ -383,34 +383,30 @@ abstract class BaseKeyboard(
     }
 
     protected open fun onAction(action: KeyboardAction) {
-        val transformed = when (action) {
-            is KeyboardAction.ReturnAction -> {
+        val transformed = if (action is KeyboardAction.ReturnAction) {
+            if (action.force) {
+                action
+            } else {
                 when (returnKeyIcon) {
-                    R.drawable.ic_keyboard_send -> {
-                        KeyboardAction.MultiReturnAction("SEND")
-                    }
-
-                    R.drawable.ic_keyboard_search -> {
-                        KeyboardAction.MultiReturnAction("SEARCH")
-                    }
-
-                    R.drawable.ic_keyboard_arrow_right -> {
-                        KeyboardAction.MultiReturnAction("GO")
-                    }
-
+                    R.drawable.ic_keyboard_send -> KeyboardAction.MultiReturnAction("SEND")
+                    R.drawable.ic_keyboard_search -> KeyboardAction.MultiReturnAction("SEARCH")
+                    R.drawable.ic_keyboard_go -> KeyboardAction.MultiReturnAction("GO")
+                    R.drawable.ic_keyboard_arrow_right -> KeyboardAction.MultiReturnAction("NEXT")
+                    R.drawable.ic_keyboard_done -> KeyboardAction.MultiReturnAction("DONE")
+                    R.drawable.ic_keyboard_arrow_left -> KeyboardAction.MultiReturnAction("PREVIOUS")
                     else -> action
                 }
             }
-
-            else -> action
+        } else {
+            action
         }
         keyActionListener?.onKeyAction(transformed)
     }
 
-    override fun onAttach() = Timber.d("onAttach")
+    override fun onAttach() = Timber.d("Keyboard onAttach")
 
     override fun onDetach() {
-        Timber.d("onDetach")
+        Timber.d("Keyboard onDetach")
         rippleView.cancelRipple()
         resetSidePanelPosition()
         previewPopup.dismiss()
@@ -430,7 +426,10 @@ abstract class BaseKeyboard(
         returnKeyIcon = when (action) {
             EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_keyboard_search
             EditorInfo.IME_ACTION_SEND -> R.drawable.ic_keyboard_send
-            EditorInfo.IME_ACTION_GO -> R.drawable.ic_keyboard_arrow_right
+            EditorInfo.IME_ACTION_GO -> R.drawable.ic_keyboard_go
+            EditorInfo.IME_ACTION_PREVIOUS -> R.drawable.ic_keyboard_arrow_left
+            EditorInfo.IME_ACTION_NEXT -> R.drawable.ic_keyboard_arrow_right
+            EditorInfo.IME_ACTION_DONE -> R.drawable.ic_keyboard_done
             else -> R.drawable.ic_keyboard_return
         }
         if (empty) {

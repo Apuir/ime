@@ -162,13 +162,11 @@ class Rime : RimeApi, RimeLifecycleOwner {
         withRimeContext { Companion.commitComposition().also { if (it) emitResponse() } }
 
     override suspend fun clearComposition() = withRimeContext {
-        Companion.clearComposition()
-        emitResponse()
+        Companion.clearComposition().also { emitResponse() }
     }
 
     override suspend fun freeContext() = withRimeContext {
-        Companion.freeContext()
-        emitResponse()
+        Companion.freeContext().also { emitResponse() }
     }
 
     override suspend fun getRawInput(): String = withRimeContext { Companion.getRawInput() }

@@ -49,20 +49,22 @@ object KeyboardStateManager {
 
     fun getSchemas(): List<EngineMessage.Schema> = schemas
     fun getCurrentSchema(): EngineMessage.Schema? = currentSchema
-    fun getCurrentKeyboardName(): String? = currentKeyboardName
     fun get(name: String): IKeyboard? = keyboards[name]
 
-    init {
-        refreshSchemas()
-    }
 
     fun onAttach() {
+        if (schemas.isEmpty()) refreshSchemas()
         if (currentKeyboardName == null) {
             switchTo(currentSchema?.layout ?: defaultKeyboardName)
             return
         }
         if (keyboardAttached) return
-        currentKeyboardName?.let { keyboards[it]?.let { kb -> callback?.onShowKeyboard(kb) } }
+        currentKeyboardName?.let { name ->
+            keyboards[name]?.let { kb ->
+                kb.onAttach()
+                callback?.onShowKeyboard(kb)
+            }
+        }
         keyboardAttached = true
     }
 

@@ -26,6 +26,11 @@ class IdleRenderer(
     var textEditingMode: Boolean = false
     var clipboardMode: Boolean = false
     var copyText: String? = null
+    var recording: Boolean = false
+
+    private fun dimColor(color: Int): Int {
+        return if (recording) (color and 0x00FFFFFF) or 0x5A000000.toInt() else color
+    }
 
     private val centerButtons = listOf(
         ImageButton(undoRightDrawable, KawaiiPanel.Action.Undo, iconScale = iconScale),
@@ -71,7 +76,7 @@ class IdleRenderer(
         if (menuDrawable != null) {
             val d = if (clipboardMode || textEditingMode || copyText != null || showArrow) arrowDrawable else menuDrawable
             if (d != null) {
-                d.setTint(paints.toolbarIconColor)
+                d.setTint(dimColor(paints.toolbarIconColor))
                 val iw = d.intrinsicWidth.toFloat() * iconScale
                 val ih = d.intrinsicHeight.toFloat() * iconScale
                 d.setBounds(
@@ -84,10 +89,12 @@ class IdleRenderer(
 
         if (copyText != null) {
             val t = copyText!!
-            val textPaint = paints.candidateTextPaint
+            val textPaint = if (recording) Paint(paints.candidateTextPaint).apply {
+                color = dimColor(paints.candidateTextPaint.color)
+            } else paints.candidateTextPaint
             val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
-                color = paints.candidateBgPaint.color
+                color = dimColor(paints.candidateBgPaint.color)
             }
             val pillR = 6f * density
             val pillH = 34f * density
@@ -100,13 +107,20 @@ class IdleRenderer(
             val iconH = (clipboardDrawable?.intrinsicHeight?.toFloat()?.times(iconScale)?.toInt() ?: 0)
             val iconAvail = if (clipboardDrawable != null) iconW + gap else 0f
             val availW = clipRight - clipLeft
-            val ellipsized = if (textPaint.measureText(t) > availW - iconAvail - pillPad * 2) {
-                var s = t
-                while (s.isNotEmpty() && textPaint.measureText(s + "…") > availW - iconAvail - pillPad * 2) {
-                    s = s.dropLast(1)
+            val maxTextW = availW - iconAvail - pillPad * 2
+            val src = if (t.length > 256) t.take(256) else t
+            val ellipsized = if (textPaint.measureText(src) <= maxTextW) {
+                src
+            } else {
+                var lo = 0
+                var hi = src.length
+                while (lo < hi) {
+                    val mid = (lo + hi) / 2
+                    if (textPaint.measureText(src.take(mid) + "…") <= maxTextW) lo = mid + 1
+                    else hi = mid
                 }
-                s + "…"
-            } else t
+                src.take((lo - 1).coerceAtLeast(0)) + "…"
+            }
             val textW = textPaint.measureText(ellipsized)
             val totalW = iconAvail + textW
             val contentLeft = clipLeft + (availW - totalW) / 2f
@@ -117,7 +131,7 @@ class IdleRenderer(
             canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBottom, pillR, pillR, bgPaint)
             var drawX = contentLeft
             if (clipboardDrawable != null) {
-                clipboardDrawable.setTint(paints.toolbarIconColor)
+                clipboardDrawable.setTint(dimColor(paints.toolbarIconColor))
                 val iconTop = (textCenterY - iconH / 2f).toInt()
                 clipboardDrawable.setBounds(drawX.toInt(), iconTop, drawX.toInt() + iconW, iconTop + iconH)
                 clipboardDrawable.draw(canvas)
@@ -129,7 +143,7 @@ class IdleRenderer(
             val otherW = centerAreaW / centerButtons.size
             for ((i, btn) in centerButtons.withIndex()) {
                 val savedColor = paints.toolbarIconColor
-                val disabled = (clipboardMode || textEditingMode) && i >= 2
+                val disabled = ((clipboardMode || textEditingMode) && i >= 2) || recording
                 if (disabled) {
                     paints.toolbarIconColor = (savedColor and 0x00FFFFFF) or 0x62000000.toInt()
                 }
@@ -147,8 +161,6 @@ class IdleRenderer(
         val expandCenter = expandLeft + fixedW / 2f
         val expandIcon = when {
             clipboardMode -> clearDrawable
-            textEditingMode -> clipboardDrawable
-            copyText != null -> expandDrawable
             else -> expandDrawable
         }
         if (expandIcon != null) {
@@ -187,7 +199,6 @@ class IdleRenderer(
                 return KawaiiPanel.TouchResult.ToolbarAction(
                     when {
                         clipboardMode -> KawaiiPanel.Action.ClearClipboard
-                        textEditingMode -> KawaiiPanel.Action.Clipboard
                         else -> KawaiiPanel.Action.CloseKeyboard
                     },
                     tapX = x,

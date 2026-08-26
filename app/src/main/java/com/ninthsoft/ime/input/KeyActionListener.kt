@@ -20,7 +20,6 @@ class KeyActionListener(
     override fun onKeyAction(action: KeyboardAction) {
         when (action) {
             is KeyboardAction.KeySequenceAction -> {
-                Timber.d("yyyy %s ",engine == null)
                 engine?.processKey(service, action.asKeyEvent())
             }
 
@@ -36,10 +35,10 @@ class KeyActionListener(
                 engine?.commit(action.text)
             }
 
-            is KeyboardAction.BackspaceAction, KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {
+            is KeyboardAction.BackspaceAction, is KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {
                 val character = when (action) {
                     KeyboardAction.BackspaceAction -> "DEL"
-                    KeyboardAction.ReturnAction -> "ENTER"
+                    is KeyboardAction.ReturnAction -> "ENTER"
                     KeyboardAction.SpaceAction -> "SPACE"
                 }
                 engine?.processKey(
@@ -73,6 +72,9 @@ class KeyActionListener(
                         "GO" -> EditorInfo.IME_ACTION_GO
                         "SEND" -> EditorInfo.IME_ACTION_SEND
                         "SEARCH" -> EditorInfo.IME_ACTION_SEARCH
+                        "NEXT" -> EditorInfo.IME_ACTION_NEXT
+                        "PREVIOUS" -> EditorInfo.IME_ACTION_PREVIOUS
+                        "DONE" -> EditorInfo.IME_ACTION_DONE
                         else -> EditorInfo.IME_ACTION_NONE
                     }
                 )

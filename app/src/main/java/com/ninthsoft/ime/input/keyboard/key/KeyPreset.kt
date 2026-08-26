@@ -1,5 +1,7 @@
 package com.ninthsoft.ime.input.keyboard.key
 
+import android.graphics.Typeface
+import android.view.KeyEvent
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
@@ -107,7 +109,7 @@ fun layoutSwitchKey(
 ): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
         displayText = displayText, textSize = 15f,
-        textStyle = android.graphics.Typeface.BOLD,
+        textStyle = Typeface.BOLD,
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
@@ -124,7 +126,7 @@ fun resumeLayoutKey(
 ): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
         displayText = displayText, textSize = 15f,
-        textStyle = android.graphics.Typeface.BOLD,
+        textStyle = Typeface.BOLD,
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
@@ -193,8 +195,10 @@ fun returnKey(percentWidth: Float): KeyDef = KeyDef(
         percentWidth = percentWidth,
         variant = Variant.Accent,
         border = Border.Special,
-    ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
+    ), behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.ReturnAction()),
+        KeyDef.Behavior.LongPress(KeyboardAction.ReturnAction(true)),
+    )
 )
 
 fun prevPageKey(percentWidth: Float): KeyDef = KeyDef(
@@ -204,7 +208,7 @@ fun prevPageKey(percentWidth: Float): KeyDef = KeyDef(
         variant = Variant.Alternative,
         border = Border.On,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction())),
 )
 
 fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
@@ -214,7 +218,7 @@ fun nextPageKey(percentWidth: Float): KeyDef = KeyDef(
         variant = Variant.Alternative,
         border = Border.On,
     ),
-    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction)),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.ReturnAction())),
 )
 
 fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
@@ -228,7 +232,7 @@ fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(
-            KeyboardAction.KeyCodeAction(android.view.KeyEvent.KEYCODE_APOSTROPHE)
+            KeyboardAction.KeyCodeAction(KeyEvent.KEYCODE_APOSTROPHE)
         ), KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("1"))
     ),
 )
@@ -249,11 +253,10 @@ fun clearKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
 fun infiniteKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
         src = R.drawable.ic_keyboard_infinite,
-        viewId = KeyView.button_lang,
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),
-    behaviors = setOf(),
+    behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction("0"))),
 )
 
 fun miniSpaceKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(

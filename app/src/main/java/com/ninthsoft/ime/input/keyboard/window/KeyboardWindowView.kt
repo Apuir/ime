@@ -21,7 +21,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isGone
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.data.manager.ClipboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -34,10 +33,8 @@ import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.panel.KawaiiPanel
-import com.ninthsoft.ime.input.panel.component.TextEditView
 import com.ninthsoft.ime.input.pinner.PreeditPinner
 import com.ninthsoft.ime.input.speech.SpeechOverlayView
-import com.ninthsoft.ime.base.speech.ModelProvider
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.speech.SpeechUiBridge
 import com.ninthsoft.ime.input.ImeInputMethodService
@@ -61,6 +58,15 @@ class KeyboardWindowView(
         context = context,
         listener = panelListener,
     )
+
+    init {
+        panel.onRecordingStop = {
+            isVoiceRecording = false
+            panel.recording = false
+            SherpaSpeechClient.stopHoldSession(discard = true)
+            voiceOverlay.hide()
+        }
+    }
 
     private val preeditPinner = PreeditPinner(context)
 
@@ -278,10 +284,6 @@ class KeyboardWindowView(
         panel.toggleMenu()
     }
 
-    fun showTextEditing() = panel.showTextEditing()
-
-    fun hideTextEditing() = panel.hideTextEditing()
-
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
     }
@@ -462,6 +464,7 @@ class KeyboardWindowView(
     override fun onDetach() {
         if (isVoiceRecording) {
             isVoiceRecording = false
+            panel.recording = false
             SherpaSpeechClient.stopHoldSession()
             voiceOverlay.hide()
         }
@@ -495,12 +498,8 @@ class KeyboardWindowView(
         )
     }
 
-    private fun showModelDownloadPrompt(provider: ModelProvider) {
+    private fun showModelDownloadPrompt() {
         if (!isVoiceRecording) return
-        val label = when (provider) {
-            ModelProvider.QNN -> "QNN"
-            ModelProvider.CPU -> "CPU"
-        }
         panel.confirmOverlay.confirm(
             message = context.getString(R.string.voice_model_missing_message),
             onConfirm = {
@@ -526,6 +525,7 @@ class KeyboardWindowView(
         if (isVoiceRecording) return
         if (!ensureRecordAudioPermission()) return
         isVoiceRecording = true
+        panel.recording = true
         voiceOverlay.unlock()
         voiceOverlay.applyColors(
             cachedColors.background,
@@ -548,15 +548,17 @@ class KeyboardWindowView(
         }
         SpeechUiBridge.onDone = {
             isVoiceRecording = false
+            panel.recording = false
             if (!voiceOverlay.isLocked) {
                 voiceOverlay.hide()
             }
         }
         SpeechUiBridge.onFailed = {
             isVoiceRecording = false
+            panel.recording = false
             voiceOverlay.hide()
         }
-        SpeechUiBridge.onModelMissing = { provider -> showModelDownloadPrompt(provider) }
+        SpeechUiBridge.onModelMissing = { _ -> showModelDownloadPrompt() }
 
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
     }
@@ -564,13 +566,11 @@ class KeyboardWindowView(
     private fun stopVoiceInput() {
         if (!isVoiceRecording) return
         isVoiceRecording = false
+        panel.recording = false
         SherpaSpeechClient.stopHoldSession()
         voiceOverlay.hide()
     }
 
-    fun switchWaveViewType(type: SpeechOverlayView.WaveViewType) {
-        voiceOverlay.switchWaveView(type)
-    }
 
     fun toggleVoiceLocked() {
         if (isVoiceRecording) {
@@ -584,6 +584,7 @@ class KeyboardWindowView(
         if (isVoiceRecording) return
         if (!ensureRecordAudioPermission()) return
         isVoiceRecording = true
+        panel.recording = true
         voiceOverlay.unlock()
         voiceOverlay.applyColors(
             cachedColors.background,
@@ -606,22 +607,26 @@ class KeyboardWindowView(
         }
         SpeechUiBridge.onDone = {
             isVoiceRecording = false
+            panel.recording = false
             if (!voiceOverlay.isLocked) {
                 voiceOverlay.hide()
             }
         }
         SpeechUiBridge.onFailed = {
             isVoiceRecording = false
+            panel.recording = false
             voiceOverlay.hide()
         }
-        SpeechUiBridge.onModelMissing = { provider -> showModelDownloadPrompt(provider) }
+        SpeechUiBridge.onModelMissing = { _ -> showModelDownloadPrompt() }
 
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
     }
 
     fun onInputChanged(info: EditorInfo?, text: String): Any {
         if (isVoiceRecording && text.isEmpty()) {
-            SherpaSpeechClient.stopHoldSession()
+            isVoiceRecording = false
+            panel.recording = false
+            SherpaSpeechClient.stopHoldSession(discard = true)
             voiceOverlay.hide()
         }
         panel.onInputChanged(text)

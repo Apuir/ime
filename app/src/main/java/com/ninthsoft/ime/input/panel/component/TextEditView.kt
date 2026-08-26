@@ -310,12 +310,22 @@ class TextEditView(
             super.show()
         }
     }
+
+    override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        super.refreshTheme(newColors)
+        val buttons = listOf(
+            leftButton, upButton, downButton, rightButton,
+            selectButton, homeButton, endButton,
+            selectAllButton, cutButton, copyButton, pasteButton, backspaceButton,
+        )
+        buttons.forEach { it.refreshColors(newColors) }
+    }
 }
 
 @SuppressLint("ViewConstructor")
 class TextEditingButton(
     context: Context,
-    private val colors: KeyboardColors.ColorScheme,
+    private var colors: KeyboardColors.ColorScheme,
     private val bordered: Boolean,
     private val radius: Float,
     private val altStyle: Boolean = false,
@@ -379,22 +389,37 @@ class TextEditingButton(
 
     fun enableActivatedState() {
         hasActivatedState = true
-        textView.setTextColor(
-            ColorStateList(
+        applyTextColors()
+        buildBackground()
+    }
+
+    private fun applyTextColors() {
+        if (hasActivatedState) {
+            textView.setTextColor(
+                ColorStateList(
+                    arrayOf(
+                        intArrayOf(android.R.attr.state_activated),
+                        intArrayOf(),
+                    ),
+                    intArrayOf(textActive, textNormal),
+                ),
+            )
+            imageView.imageTintList = ColorStateList(
                 arrayOf(
                     intArrayOf(android.R.attr.state_activated),
                     intArrayOf(),
                 ),
                 intArrayOf(textActive, textNormal),
-            ),
-        )
-        imageView.imageTintList = ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_activated),
-                intArrayOf(),
-            ),
-            intArrayOf(textActive, textNormal),
-        )
+            )
+        } else {
+            textView.setTextColor(textNormal)
+            imageView.imageTintList = ColorStateList.valueOf(textNormal)
+        }
+    }
+
+    fun refreshColors(newColors: KeyboardColors.ColorScheme) {
+        colors = newColors
+        applyTextColors()
         buildBackground()
     }
 

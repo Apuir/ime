@@ -98,11 +98,9 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun processKey(service: InputMethodService, key: KeyEvent) {
         if (!this@RimeEngine.inited) {
-            Timber.d("processKey not inied")
             return
         }
         sendJob {
-            Timber.d("cccccc %s", currentSchema().schemaId)
             when (key) {
                 is KeyEvent.SequenceEvent -> {
                     this@RimeEngine.flowed(InputString(key.sequence))
@@ -238,7 +236,6 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     private suspend fun onMessage(message: RimeMessage<*>) {
-        Timber.d("onMessage %s", message.messageType.toString())
         val msg = message.EngineMessage()
         when (msg) {
             is EngineMessage.InlinePreedit -> {
@@ -282,8 +279,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                             }
                             val currentSchema = currentSchema()
                             RimeConfig.openSchema(currentSchema.schemaId).use { config ->
-                                val language = config.getString("grammar/language")
-                                predictionManager?.loadModels(modelDir, sharedDataDir, language)
+                                config.getString("grammar/language")?.let {
+                                    Timber.d("predictionManager load model %s.gram", it)
+                                    predictionManager?.loadModels(modelDir, sharedDataDir, it)
+                                }
                             }
 
                             if (!triggeredInitedHook) {
@@ -396,6 +395,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     inputContext.last()
                 )
             ) {
+                Timber.d("cccc %s",predictionManager?.makePredictions(inputContext))
                 candidates = predictionManager?.makePredictions(inputContext) ?: emptyList()
             }
             showPredictionCandidates = candidates.isNotEmpty()

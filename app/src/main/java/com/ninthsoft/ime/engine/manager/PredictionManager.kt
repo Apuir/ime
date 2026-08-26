@@ -11,6 +11,7 @@ import com.ninthsoft.ime.data.database.AppDatabase
 import com.ninthsoft.ime.engine.data.EngineMessage.Candidate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import timber.log.Timber
 import java.io.File
 
 class PredictionManager(private val context: Context) {
@@ -25,14 +26,17 @@ class PredictionManager(private val context: Context) {
         mutex.withLock {
             destroyLocked()
 
-            if (language.isNullOrEmpty()) return@withLock
+            //预测模型
+            val predictGram = File(modelDir, "predict.marisa")
+            if (predictGram.isFile) {
+                prediction = Prediction(predictGram).apply { load() }
+            }
+            if (language.isNullOrEmpty()) {
+                return@withLock
+            }
             val gram = File(sharedDataDir, "$language.gram")
             if (gram.isFile) {
                 gramDb = GramDb(gram.absolutePath)
-                val predictGram = File(modelDir, "predict.marisa")
-                if (predictGram.isFile) {
-                    prediction = Prediction(predictGram).apply { load() }
-                }
             }
         }
 

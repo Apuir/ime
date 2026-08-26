@@ -123,6 +123,11 @@
                 android:name="android.view.im"
                 android:resource="@xml/ime_input_method" />
         </service>
+
+        <service
+            android:name=".base.speech.SpeechRecognitionService"
+            android:exported="false"
+            android:process=":speech" />
     </application>
 
 </manifest>

@@ -1,6 +1,9 @@
 package com.ninthsoft.ime
 
+import android.app.ActivityManager
 import android.app.Application
+import android.content.Context
+import android.os.Build
 import com.ninthsoft.ime.engine.AppStartup
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
@@ -33,13 +36,26 @@ class ImeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        applicationScope.launch(Dispatchers.Default) {
-            AppStartup.initialize(this@ImeApplication)
+        if (isMainProcess()) {
+            applicationScope.launch(Dispatchers.Default) {
+                AppStartup.initialize(this@ImeApplication)
+            }
         }
     }
 
     override fun onTerminate() {
         applicationScope.cancel()
         super.onTerminate()
+    }
+
+    private fun isMainProcess(): Boolean {
+        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            val pid = android.os.Process.myPid()
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: packageName
+        }
+        return processName == packageName
     }
 }

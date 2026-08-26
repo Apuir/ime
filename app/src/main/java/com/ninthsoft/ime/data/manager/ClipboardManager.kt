@@ -78,7 +78,7 @@ object ClipboardManager {
     fun getEntries(context: Context): List<Entry> = db(context) { db ->
         val cutoff = System.currentTimeMillis() - getRetentionDays(context) * 86400000L
         db.clipboardDao().getAllActiveSince(cutoff).map { Entry(it.text, it.timestamp, it.cloud) }
-    }
+    } ?: emptyList()
 
     fun addEntry(context: Context, text: String, notify: Boolean = true) {
         if (text.isBlank()) return
@@ -90,7 +90,7 @@ object ClipboardManager {
             dao.insert(ClipboardRecord(text = text, timestamp = now, cloud = false))
             trimExcess(dao, getMaxEntries(context))
             dao.deleteOlderThan(now - getRetentionDays(context) * 86400000L)
-        }
+        } ?: return
         if (notify && existing == null) onNewEntry?.invoke(Entry(text, now))
     }
 
@@ -170,7 +170,7 @@ object ClipboardManager {
     @Volatile var lastCopyTimestamp: Long = 0L
         private set
 
-    private fun <T> db(context: Context, block: suspend (com.ninthsoft.ime.data.database.AppDatabase) -> T): T =
+    private fun <T> db(context: Context, block: suspend (com.ninthsoft.ime.data.database.AppDatabase) -> T): T? =
         try {
             runBlocking(Dispatchers.IO) {
                 val db = AppDatabase.getInstance(context)
@@ -178,6 +178,6 @@ object ClipboardManager {
             }
         } catch (e: Exception) {
             Timber.e(e, "clipboard database operation failed")
-            null as T
+            null
         }
 }

@@ -25,6 +25,17 @@ class KawaiiPanelView(context: Context) : View(context) {
     var isExpanded: Boolean = false
         private set
 
+    var recording: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            when (val r = currentRenderer) {
+                is IdleRenderer -> r.recording = value
+                is ComposingRenderer -> r.recording = value
+            }
+            invalidate()
+        }
+
     fun collapse() {
         if (!isExpanded) return
         isExpanded = false
@@ -113,6 +124,15 @@ class KawaiiPanelView(context: Context) : View(context) {
         }
     }
 
+    private fun isRecordingAllowed(result: KawaiiPanel.TouchResult?): Boolean {
+        return when (result) {
+            is KawaiiPanel.TouchResult.ToolbarAction ->
+                result.action is KawaiiPanel.Action.CloseKeyboard
+            is KawaiiPanel.TouchResult.CollapseCandidates -> true
+            else -> false
+        }
+    }
+
     private fun startPressAnimation(renderer: IdleRenderer) {
         pressAnimator?.cancel()
         renderer.pressAlpha = 120
@@ -136,7 +156,7 @@ class KawaiiPanelView(context: Context) : View(context) {
                 isScrolling = false
                 expandLongPressed = false
                 parent.requestDisallowInterceptTouchEvent(true)
-                longPressHandler.postDelayed(longPressRunnable, 500)
+                if (!recording) longPressHandler.postDelayed(longPressRunnable, 500)
             }
 
             MotionEvent.ACTION_MOVE -> {
@@ -165,6 +185,7 @@ class KawaiiPanelView(context: Context) : View(context) {
                     val result = currentRenderer.hitTest(
                         event.x, event.y, width, height, scrollX, isExpanded, screenDensity,
                     )
+                    if (recording && !isRecordingAllowed(result)) return true
                     if (currentRenderer is IdleRenderer && result != null) {
                         startPressAnimation(currentRenderer as IdleRenderer)
                         if (result is KawaiiPanel.TouchResult.ToolbarAction && result.action is KawaiiPanel.Action.Palette) {

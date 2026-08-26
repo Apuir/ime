@@ -90,12 +90,12 @@ class KawaiiPanel(
         set(value) {
             if (field == value) return
             if (field is State.Composing && value is State.Composing && view.isExpanded) {
-                candidateGrid.updateCandidates((value as State.Composing).candidates)
+                candidateGrid.updateCandidates(value.candidates)
                 field = value
                 return
             }
             if (field is State.Prediction && value is State.Prediction && view.isExpanded) {
-                candidateGrid.updateCandidates((value as State.Prediction).candidates)
+                candidateGrid.updateCandidates(value.candidates)
                 field = value
                 return
             }
@@ -184,6 +184,15 @@ class KawaiiPanel(
 
     private val resolvedColors: KeyboardColors.ColorScheme
         get() = KeyboardColors.resolve(context)
+
+    override var recording: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            view.recording = value
+        }
+
+    var onRecordingStop: (() -> Unit)? = null
 
     val candidateGrid = CandidateGridView(
         context = context,
@@ -309,26 +318,32 @@ class KawaiiPanel(
             when (result) {
                 is TouchResult.ToolbarAction -> {
                     InputFeedbacks.hapticFeedback(view)
-                    when (result.action) {
-                        Action.CursorMove -> state = State.TextEditing
-                        Action.Clipboard -> state = State.Clipboard
-                        Action.ClearClipboard -> {
-                            confirmOverlay.confirm(
-                                message = context.getString(R.string.clipboard_clear_confirm_title),
-                                onConfirm = { handleClipboardClear() },
-                                cardX = Float.NaN,
-                                cardY = 0f,
-                            )
-                        }
-
-                        Action.SwitchKeyboard -> {
-                            when (state) {
-                                State.TextEditing, State.Clipboard, State.Copy -> state = State.Idle
-                                else -> listener?.onToolbarAction(result.action)
+                    if (recording && result.action is Action.CloseKeyboard) {
+                        onRecordingStop?.invoke()
+                    } else {
+                        when (result.action) {
+                            Action.CursorMove -> state = State.TextEditing
+                            Action.Clipboard -> state = State.Clipboard
+                            Action.ClearClipboard -> {
+                                confirmOverlay.confirm(
+                                    message = context.getString(R.string.clipboard_clear_confirm_title),
+                                    onConfirm = { handleClipboardClear() },
+                                    cardX = Float.NaN,
+                                    cardY = 0f,
+                                )
                             }
-                        }
 
-                        else -> listener?.onToolbarAction(result.action)
+                            Action.SwitchKeyboard -> {
+                                when (state) {
+                                    State.TextEditing, State.Clipboard, State.Copy -> state =
+                                        State.Idle
+
+                                    else -> listener?.onToolbarAction(result.action)
+                                }
+                            }
+
+                            else -> listener?.onToolbarAction(result.action)
+                        }
                     }
                 }
 
@@ -439,22 +454,13 @@ class KawaiiPanel(
             view.setExpanded(false)
             view.scrollX = 0f
             state = State.Idle
-            view.currentRenderer = IdleRenderer(
-                context.getDrawable(R.drawable.ic_keyboard_menu),
-                context.getDrawable(R.drawable.ic_keyboard_arrow_back),
-                context.getDrawable(R.drawable.ic_keyboard_clipboard),
-                context.getDrawable(R.drawable.ic_keyboard_undo),
-                context.getDrawable(R.drawable.ic_keyboard_redo),
-                context.getDrawable(R.drawable.ic_keyboard_palette),
-                context.getDrawable(R.drawable.ic_keyboard_cursor_move),
-                context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
-                context.getDrawable(R.drawable.ic_keyboard_trash),
-                KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
-            ).also {
-                it.textEditingMode = (state == State.TextEditing)
-                it.clipboardMode = (state == State.Clipboard)
-                it.copyText = if (state == State.Copy) copyText else null
+            view.currentRenderer = newIdleRenderer()
+        } else if (state == State.TextEditing || state == State.Clipboard) {
+            // 编辑/剪贴板态下保持工具栏渲染器，不切换为组字渲染器（右侧入口才正确）
+            if (view.currentRenderer !is IdleRenderer) {
+                view.currentRenderer = newIdleRenderer()
             }
+            view.invalidate()
         } else {
             if (state == State.Copy) state = State.Idle
             view.scrollX = 0f
@@ -465,7 +471,7 @@ class KawaiiPanel(
                 showComment = CandidateManager.isShowComment(context),
                 borderless = CandidateManager.isBorderless(context),
                 expandBorderless = KeyboardManager.Keyboard.ExpandBorderless.isEnabled(context),
-            )
+            ).also { it.recording = recording }
             var predictions = true
             list.forEach {
                 if (it.type != EngineMessage.Candidate.CandidateType.Prediction) {
@@ -482,6 +488,27 @@ class KawaiiPanel(
         view.invalidate()
     }
 
+    @SuppressLint("UseCompatLoadingForDrawables")
+    private fun newIdleRenderer(): IdleRenderer {
+        return IdleRenderer(
+            context.getDrawable(R.drawable.ic_keyboard_menu),
+            context.getDrawable(R.drawable.ic_keyboard_arrow_back),
+            context.getDrawable(R.drawable.ic_keyboard_clipboard),
+            context.getDrawable(R.drawable.ic_keyboard_undo),
+            context.getDrawable(R.drawable.ic_keyboard_redo),
+            context.getDrawable(R.drawable.ic_keyboard_palette),
+            context.getDrawable(R.drawable.ic_keyboard_cursor_move),
+            context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
+            context.getDrawable(R.drawable.ic_keyboard_trash),
+            KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat(),
+        ).also {
+            it.textEditingMode = state == State.TextEditing
+            it.clipboardMode = state == State.Clipboard
+            it.copyText = if (state == State.Copy) copyText else null
+            it.recording = recording
+        }
+    }
+
     override fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         candidateGrid.onPossibleCandidatePinYin(pinyins)
     }
@@ -490,6 +517,8 @@ class KawaiiPanel(
         view.refreshTheme()
         candidateGrid.refreshTheme(context)
         menuGrid.refreshTheme(KeyboardColors.resolve(context))
+        clipboardView.refreshTheme(KeyboardColors.resolve(context))
+        textEditingView.refreshTheme(KeyboardColors.resolve(context))
         confirmOverlay.refreshTheme(KeyboardColors.resolve(context))
     }
 }

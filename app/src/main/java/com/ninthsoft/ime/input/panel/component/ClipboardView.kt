@@ -71,9 +71,9 @@ class ClipboardView(
         private val emptyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
             textSize = 14f * density
-            color = colors.panel.candidateIndex
         }
         override fun onDraw(canvas: Canvas) {
+            emptyPaint.color = KeyboardColors.resolve(context).panel.candidateIndex
             val text = context.getString(R.string.clipboard_empty)
             canvas.drawText(text, width / 2f, height / 2f, emptyPaint)
         }
@@ -85,6 +85,12 @@ class ClipboardView(
     init {
         updateColors()
         addView(emptyView)
+    }
+
+    override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
+        super.refreshTheme(newColors)
+        updateColors()
+        invalidate()
     }
 
     fun show(list: List<ClipboardManager.Entry>) {

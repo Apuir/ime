@@ -36,7 +36,7 @@ sealed class KeyboardAction {
 
     data object BackspaceAction : KeyboardAction()
 
-    data object ReturnAction : KeyboardAction()
+    data class ReturnAction(val force: Boolean = false) : KeyboardAction()
 
     data object SpaceAction : KeyboardAction()
 
