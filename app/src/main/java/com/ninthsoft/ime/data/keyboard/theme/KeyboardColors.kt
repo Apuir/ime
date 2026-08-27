@@ -32,10 +32,13 @@ object KeyboardColors {
         val keyVMargin: Float = 4f,
         val panel: PanelColors,
         val pinner: PinnerColors,
+        val toastBackground: Int = specialKeyBackground,
+        val toastText: Int = keyText,
     ) {
         data class PanelColors(
             val background: Int,
             val toolbarText: Int,
+            val toolbarActived: Int,
             val toolbarIcon: Int,
             val candidateBackground: Int,
             val candidateText: Int,
@@ -47,6 +50,7 @@ object KeyboardColors {
                 fun from(c: ColorScheme) = PanelColors(
                     background = c.background,
                     toolbarText = c.keyText,
+                    toolbarActived = c.accentKeyBackground,
                     toolbarIcon = c.specialKeyText,
                     candidateBackground = c.specialKeyBackground,
                     candidateText = c.keyText,

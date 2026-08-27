@@ -11,4 +11,5 @@ data class ClipboardRecord(
     val timestamp: Long,
     val cloud: Boolean = false,
     val deleted: Boolean = false,
+    val deletedAt: Long = 0,
 )

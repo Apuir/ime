@@ -5,15 +5,16 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.ImeInputMethodService
+import com.ninthsoft.ime.input.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
-import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.key.KeyActionListener as KeyboardKeyActionListener
 import com.ninthsoft.ime.input.panel.IPanel
-import com.ninthsoft.ime.input.panel.KawaiiPanel
+import com.ninthsoft.ime.input.panel.PanelListener
 
 class KeyboardWindow(
     service: ImeInputMethodService,
     keyboardStateManager: KeyboardStateManager,
-    panelActionListener: KawaiiPanel.Listener? = null,
+    panelActionListener: PanelListener? = null,
 ) {
 
     var currentEditorInfo: EditorInfo? = null
@@ -46,7 +47,7 @@ class KeyboardWindow(
         }
     }
 
-    fun setKeyActionListener(listener: KeyActionListener) {
+    fun setKeyActionListener(listener: KeyboardKeyActionListener) {
         view.keyActionListener = listener
     }
 
@@ -88,7 +89,10 @@ class KeyboardWindow(
 
     fun toggleVoiceLocked() = view.toggleVoiceLocked()
 
-    fun onInputChanged(text: String) = view.onInputChanged(currentEditorInfo, text)
+    fun onInputChanged(text: String, virtualInputConnection: Boolean = false) =
+        view.onInputChanged(currentEditorInfo, text, virtualInputConnection)
+
+    fun showToast(message: CharSequence) = view.showImeToast(message)
 
     fun onDepolyFinished() = view.onDepolyFinished()
 }

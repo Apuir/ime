@@ -25,12 +25,18 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 class ImeInputMethodService : InputMethodService() {
     internal val engine: IEngine? get() = EngineFactory.current()
     internal var keyboardWindow: KeyboardWindow? = null
     internal lateinit var keyActionListener: KeyActionListener
+
+    /** 桥接模式：添加常用语时为真，所有提交/删除/语音输出写入 [virtualInputConnection] 而非真实编辑器。 */
+    var phraseAddBridgeActive = false
+    val virtualInputConnection = ImeInputConnection(this)
+
+    fun activeInputConnection(): android.view.inputmethod.InputConnection? =
+        if (phraseAddBridgeActive) virtualInputConnection else currentInputConnection
     var scope: CoroutineScope? = null
     var messageObserveJob: Job? = null
     private var showingDialog: android.app.Dialog? = null
@@ -50,6 +56,9 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        virtualInputConnection.addOnChangeListener {
+            if (phraseAddBridgeActive) syncActiveInputState()
+        }
         //service scope & message subscribe
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main).apply {
             launch {
@@ -161,43 +170,43 @@ class ImeInputMethodService : InputMethodService() {
         showingDialog = dialog
     }
 
-    private fun sendCombinationKeyEvent(keyCode: Int, shift: Boolean) {
-        InputConnectionUtil.sendCombinationKeyEvent(this, keyCode, shift = shift)
-    }
-
     internal fun handleTextEditingAction(action: TextEditView.Action) {
-        val ic = currentInputConnection
+        val ic = activeInputConnection()
         when (action) {
             is TextEditView.Action.MoveLeft -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_DPAD_LEFT, action.shift
+                ic, KeyEvent.KEYCODE_DPAD_LEFT, action.shift
             )
 
             is TextEditView.Action.MoveRight -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_DPAD_RIGHT, action.shift
+                ic, KeyEvent.KEYCODE_DPAD_RIGHT, action.shift
             )
 
             is TextEditView.Action.MoveUp -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_DPAD_UP, action.shift
+                ic, KeyEvent.KEYCODE_DPAD_UP, action.shift
             )
 
             is TextEditView.Action.MoveDown -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_DPAD_DOWN, action.shift
+                ic, KeyEvent.KEYCODE_DPAD_DOWN, action.shift
             )
 
             is TextEditView.Action.MoveHome -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_MOVE_HOME, action.shift
+                ic, KeyEvent.KEYCODE_MOVE_HOME, action.shift
             )
 
             is TextEditView.Action.MoveEnd -> sendCombinationKeyEvent(
-                KeyEvent.KEYCODE_MOVE_END, action.shift
+                ic, KeyEvent.KEYCODE_MOVE_END, action.shift
             )
 
             TextEditView.Action.SelectToggle -> { /* local state toggle handled in view */
             }
 
             TextEditView.Action.CancelSelection -> {
-                if (lastSelectionStart != lastSelectionEnd) {
-                    ic?.setSelection(lastSelectionEnd, lastSelectionEnd)
+                if (ic != null) {
+                    val selection = if (phraseAddBridgeActive) virtualInputConnection.selection
+                    else lastSelectionStart to lastSelectionEnd
+                    if (selection.first != selection.second) {
+                        ic.setSelection(selection.second, selection.second)
+                    }
                 }
             }
 
@@ -214,6 +223,12 @@ class ImeInputMethodService : InputMethodService() {
         }
     }
 
+    private fun sendCombinationKeyEvent(
+        ic: android.view.inputmethod.InputConnection?, keyCode: Int, shift: Boolean,
+    ) {
+        InputConnectionUtil.sendCombinationKeyEvent(ic, keyCode, shift = shift)
+    }
+
     override fun onUpdateSelection(
         oldSelStart: Int, oldSelEnd: Int,
         newSelStart: Int, newSelEnd: Int,
@@ -228,10 +243,23 @@ class ImeInputMethodService : InputMethodService() {
         notifyInputChanged()
     }
 
+    internal fun syncActiveInputState() {
+        val ic = activeInputConnection() ?: return
+        val selection = if (phraseAddBridgeActive) virtualInputConnection.selection
+        else lastSelectionStart to lastSelectionEnd
+        keyboardWindow?.onSelectionUpdate(selection.first, selection.second)
+        keyboardWindow?.onInputChanged(
+            ic.getTextBeforeCursor(Int.MAX_VALUE, 0)?.toString().orEmpty() +
+                ic.getTextAfterCursor(Int.MAX_VALUE, 0)?.toString().orEmpty(),
+            virtualInputConnection = phraseAddBridgeActive,
+        )
+    }
+
     fun notifyInputChanged() {
-        var text = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString() ?: ""
-        text += currentInputConnection.getTextAfterCursor(1, 0)?.toString() ?: ""
-        keyboardWindow?.onInputChanged(text)
+        val ic = activeInputConnection() ?: return
+        var text = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
+        text += ic.getTextAfterCursor(1, 0)?.toString() ?: ""
+        keyboardWindow?.onInputChanged(text, virtualInputConnection = phraseAddBridgeActive)
         if (text.isEmpty()) engine?.onInputCleared()
     }
 }

@@ -108,8 +108,8 @@ fun layoutSwitchKey(
     percentWidth: Float = 0.15f,
 ): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Text(
-        displayText = displayText, textSize = 15f,
-        textStyle = Typeface.BOLD,
+        displayText = displayText,
+        textSize = 15f,
         percentWidth = percentWidth,
         variant = Variant.Alternative,
     ),

@@ -8,6 +8,7 @@ import android.view.SurfaceView
 import java.lang.ref.WeakReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import timber.log.Timber
 
 
 abstract class RenderView @JvmOverloads constructor(
@@ -125,8 +126,8 @@ abstract class RenderView @JvmOverloads constructor(
                         rv.onRender(canvas, millisPassed)
                     }
                 }
-            } catch (_: Throwable) {
-                // 锁 Canvas 失败时跳过本帧，避免崩溃外泄到 RenderThread
+            } catch (t: Throwable) {
+                Timber.e(t, "Render frame failed: ${rv.javaClass.simpleName}")
             } finally {
                 if (canvas != null) {
                     try {

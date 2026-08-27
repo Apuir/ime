@@ -38,18 +38,20 @@ import com.ninthsoft.ime.input.speech.SpeechOverlayView
 import com.ninthsoft.ime.base.speech.SherpaSpeechClient
 import com.ninthsoft.ime.base.speech.SpeechUiBridge
 import com.ninthsoft.ime.input.ImeInputMethodService
+import com.ninthsoft.ime.input.ImeInputConnection
 import com.ninthsoft.ime.input.dialog.SchemaPickerDialog
+import com.ninthsoft.ime.input.panel.PanelListener
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
 class KeyboardWindowView(
     context: Context,
     private val keyboardStateManager: KeyboardStateManager,
-    private val panelListener: KawaiiPanel.Listener? = null,
+    private val panelListener: PanelListener? = null,
 ) : FrameLayout(context), IManagedView {
 
     companion object {
-        const val PANEL_HEIGHT_DP = 44
+        const val PANEL_HEIGHT_DP = 48
     }
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
@@ -83,6 +85,12 @@ class KeyboardWindowView(
     }
 
     private var isVoiceRecording = false
+
+    private val addPhraseLayer = InputBoxLayerView(context).apply {
+        visibility = View.GONE
+    }
+
+    private val imeToastView = ImeToastView(context)
 
     var keyActionListener: KeyActionListener
         get() = keyboardStateManager.keyActionListener
@@ -267,7 +275,6 @@ class KeyboardWindowView(
         addView(
             panel.candidateGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
-        addView(panel.menuGrid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(
             panel.textEditingView,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
@@ -276,12 +283,43 @@ class KeyboardWindowView(
             panel.clipboardView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
         addView(
+            panel.menuGridView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
+        addView(
             panel.confirmOverlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
+
+        addView(
+            addPhraseLayer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
+        addView(imeToastView, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+
+        addPhraseLayer.onConfirm = { panelListener?.onAddPhraseSave(it) }
+        addPhraseLayer.onClose = { panelListener?.onAddPhraseCancel() }
     }
 
     fun toggleMenu() {
         panel.toggleMenu()
+    }
+
+    var addPhraseActive = false
+        private set
+
+    fun enterAddPhraseMode(buffer: ImeInputConnection) {
+        addPhraseActive = true
+        addPhraseLayer.refreshTheme(cachedColors)
+        addPhraseLayer.title = context.getString(R.string.phrase_add_title)
+        addPhraseLayer.hint = context.getString(R.string.phrase_input_hint)
+        addPhraseLayer.bind(buffer)
+        addPhraseLayer.show()
+        requestLayout()
+    }
+
+    fun exitAddPhraseMode() {
+        if (!addPhraseActive) return
+        addPhraseActive = false
+        addPhraseLayer.hide()
+        requestLayout()
     }
 
     override fun onAttachedToWindow() {
@@ -304,6 +342,8 @@ class KeyboardWindowView(
         val bottomInset = resolveBottomInset()
         val contentW = (totalWidth - 2 * hPad).coerceAtLeast(0)
 
+        val stripH = if (addPhraseActive) (fullScreenHeight() * 0.20f).roundToInt() else 0
+
         panel.view.measure(
             MeasureSpec.makeMeasureSpec(totalWidth, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(barH, MeasureSpec.EXACTLY),
@@ -311,17 +351,12 @@ class KeyboardWindowView(
 
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child === panel.view || child === panel.menuGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.confirmOverlay || child.isGone) continue
+            if (child === panel.view || child === panel.textEditingView || child === panel.clipboardView || child === panel.menuGridView || child === panel.confirmOverlay || child === addPhraseLayer || child === imeToastView || child.isGone) continue
             child.measure(
                 MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
             )
         }
-
-        panel.menuGrid.measure(
-            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
-        )
 
         panel.textEditingView.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
@@ -333,12 +368,27 @@ class KeyboardWindowView(
             MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
         )
 
+        panel.menuGridView.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+        )
+
         panel.confirmOverlay.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
         )
 
-        val totalHeight = barH + cHeight + bPad + bottomInset
+        addPhraseLayer.measure(
+            MeasureSpec.makeMeasureSpec(totalWidth, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(stripH, MeasureSpec.EXACTLY),
+        )
+
+        imeToastView.measure(
+            MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.AT_MOST),
+        )
+
+        val totalHeight = stripH + barH + cHeight + bPad + bottomInset
         setMeasuredDimension(totalWidth, totalHeight)
     }
 
@@ -347,20 +397,32 @@ class KeyboardWindowView(
         val barH = (PANEL_HEIGHT_DP * resources.displayMetrics.density).roundToInt()
         val cHeight = contentHeight()
         val contentW = right - left - 2 * hPad
+        val stripH = if (addPhraseActive) (fullScreenHeight() * 0.20f).roundToInt() else 0
+        val y0 = stripH + barH
 
-        panel.view.layout(0, 0, right - left, barH)
+        panel.view.layout(0, stripH, right - left, stripH + barH)
 
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child === panel.view || child === panel.candidateGrid || child === panel.menuGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.confirmOverlay || child.isGone) continue
-            child.layout(hPad, barH, hPad + contentW, barH + cHeight)
+            if (child === panel.view || child === panel.candidateGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.menuGridView || child === panel.confirmOverlay || child === addPhraseLayer || child === imeToastView || child.isGone) continue
+            child.layout(hPad, y0, hPad + contentW, y0 + cHeight)
         }
 
-        panel.candidateGrid.layout(hPad, barH, hPad + contentW, barH + cHeight)
-        panel.menuGrid.layout(hPad, barH, hPad + contentW, barH + cHeight)
-        panel.textEditingView.layout(hPad, barH, hPad + contentW, barH + cHeight)
-        panel.clipboardView.layout(hPad, barH, hPad + contentW, barH + cHeight)
-        panel.confirmOverlay.layout(hPad, barH, hPad + contentW, barH + cHeight)
+        panel.candidateGrid.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+        panel.textEditingView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+        panel.clipboardView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+        panel.menuGridView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+        panel.confirmOverlay.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+        addPhraseLayer.layout(0, 0, right - left, stripH)
+        val toastLeft = ((right - left) - imeToastView.measuredWidth) / 2
+        val bottomPadding = dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context))
+        val toastBottom = bottom - top - bottomPadding - resolveBottomInset() - dpToPx(12)
+        imeToastView.layout(
+            toastLeft,
+            toastBottom - imeToastView.measuredHeight,
+            toastLeft + imeToastView.measuredWidth,
+            toastBottom,
+        )
     }
 
 
@@ -375,6 +437,8 @@ class KeyboardWindowView(
         cachedColors = KeyboardColors.resolve(context)
         setBackgroundColor(cachedColors.background)
         panel.refreshTheme()
+        addPhraseLayer.refreshTheme(cachedColors)
+        imeToastView.refreshTheme(cachedColors)
         preeditPinner.refreshTheme(context)
         keyboardStateManager.rebuild()
         voiceOverlay.applyColors(
@@ -622,7 +686,9 @@ class KeyboardWindowView(
         SherpaSpeechClient.startHoldSession(context as ImeInputMethodService)
     }
 
-    fun onInputChanged(info: EditorInfo?, text: String): Any {
+    fun onInputChanged(
+        info: EditorInfo?, text: String, virtualInputConnection: Boolean = false,
+    ): Any {
         if (isVoiceRecording && text.isEmpty()) {
             isVoiceRecording = false
             panel.recording = false
@@ -630,8 +696,13 @@ class KeyboardWindowView(
             voiceOverlay.hide()
         }
         panel.onInputChanged(text)
-        keyboardStateManager.onInputChanged(info, text)
+        keyboardStateManager.onInputChanged(info, text, virtualInputConnection)
         return Unit
+    }
+
+    fun showImeToast(message: CharSequence) {
+        imeToastView.showToast(message, cachedColors)
+        imeToastView.bringToFront()
     }
 
     fun switchKeyboard(name: String) = keyboardStateManager.switchTo(name)

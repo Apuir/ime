@@ -84,12 +84,14 @@ object ClipboardManager {
         if (text.isBlank()) return
         val existing = getEntries(context).firstOrNull { it.text == text }
         val now = System.currentTimeMillis()
+        val retentionCutoff = now - getRetentionDays(context) * 86400000L
         db(context) { db ->
             val dao = db.clipboardDao()
             dao.deleteByText(text)
             dao.insert(ClipboardRecord(text = text, timestamp = now, cloud = false))
             trimExcess(dao, getMaxEntries(context))
-            dao.deleteOlderThan(now - getRetentionDays(context) * 86400000L)
+            dao.deleteOlderThan(retentionCutoff)
+            dao.purgeDeletedOlderThan(retentionCutoff)
         } ?: return
         if (notify && existing == null) onNewEntry?.invoke(Entry(text, now))
     }
@@ -100,13 +102,19 @@ object ClipboardManager {
     }
 
     fun clearAll(context: Context) {
-        db(context) { db -> db.clipboardDao().softDeleteAll() }
+        val now = System.currentTimeMillis()
+        val retentionCutoff = now - getRetentionDays(context) * 86400000L
+        db(context) { db ->
+            db.clipboardDao().softDeleteAll(now)
+            db.clipboardDao().purgeDeletedOlderThan(retentionCutoff)
+        }
         lastCopyText = null
         lastCopyTimestamp = 0L
+        clearTimestamp = now
     }
 
     fun removeEntry(context: Context, text: String) {
-        db(context) { db -> db.clipboardDao().softDeleteByText(text) }
+        db(context) { db -> db.clipboardDao().softDeleteByText(text, System.currentTimeMillis()) }
     }
 
     // ── 系统剪切板监听 ──
@@ -133,7 +141,9 @@ object ClipboardManager {
         if (ts > 0) lastClipTimestamp = ts
         lastText = text
 
-        val latest = db(context) { db -> db.clipboardDao().getLatest() }
+        // 与“最新一条记录（含软删除）”比对：清空后该记录变为软删除状态，
+        // 若仍与系统剪贴板内容一致，则视为没有新记录，避免被监控轮询重新插入。
+        val latest = db(context) { db -> db.clipboardDao().getLatestIncludingDeleted() }
         if (latest?.text == text) return
 
         if (getEntries(context).none { it.text == text }) {
@@ -168,6 +178,9 @@ object ClipboardManager {
         private set
 
     @Volatile var lastCopyTimestamp: Long = 0L
+        private set
+
+    @Volatile var clearTimestamp: Long = 0L
         private set
 
     private fun <T> db(context: Context, block: suspend (com.ninthsoft.ime.data.database.AppDatabase) -> T): T? =

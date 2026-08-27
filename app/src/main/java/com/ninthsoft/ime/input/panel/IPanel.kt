@@ -11,4 +11,5 @@ interface IPanel {
     fun refreshTheme()
     fun onFinishInputView(finishingInput: Boolean)
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>)
+    fun exitAddPhraseMode()
 }

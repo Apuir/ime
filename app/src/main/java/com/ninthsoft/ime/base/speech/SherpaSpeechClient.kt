@@ -170,7 +170,7 @@ object SherpaSpeechClient {
         uiJob = service.scope?.launch(Dispatchers.Main) {
             while (isActive && holding.get()) {
                 composingText.getAndSet(null)?.let { text ->
-                    service.currentInputConnection?.setComposingText(text, 1)
+                    service.activeInputConnection()?.setComposingText(text, 1)
                 }
                 delay(50)
             }
@@ -219,9 +219,9 @@ object SherpaSpeechClient {
         service?.scope?.launch(Dispatchers.Main) {
             val text = composingText.getAndSet(null)
             if (!discarding.get() && !text.isNullOrBlank()) {
-                service.currentInputConnection?.setComposingText(text, 1)
+                service.activeInputConnection()?.setComposingText(text, 1)
             }
-            service.currentInputConnection?.finishComposingText()
+            service.activeInputConnection()?.finishComposingText()
             SpeechUiBridge.onDone?.invoke()
             resetState()
         } ?: resetState()

@@ -3,6 +3,7 @@ package com.ninthsoft.ime.base.net
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import com.ninthsoft.ime.base.util.ToastUtil
 import com.ninthsoft.ime.base.util.appContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -64,10 +65,7 @@ object HttpUtil {
     }
 
     internal fun showToast(msg: String) {
-        if (msg.isBlank()) return
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(appContext, msg, Toast.LENGTH_SHORT).show()
-        }
+        ToastUtil.showToast(msg)
     }
 
     private fun appendVersion(path: String): String {

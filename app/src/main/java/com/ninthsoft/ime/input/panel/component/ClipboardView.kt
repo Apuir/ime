@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.panel.component
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.RectF
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.Drawable
@@ -14,10 +15,13 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.ClipboardManager
+import com.ninthsoft.ime.data.manager.PhraseManager
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-@SuppressLint("ViewConstructor")
+enum class ClipboardTab { CLIPBOARD, PHRASE }
+
+@SuppressLint("ViewConstructor", "UseCompatLoadingForDrawables")
 class ClipboardView(
     context: Context,
     colors: KeyboardColors.ColorScheme,
@@ -25,19 +29,36 @@ class ClipboardView(
 
     var onItemClick: ((ClipboardManager.Entry) -> Unit)? = null
     var onItemLongClick: ((ClipboardManager.Entry, Float, Float) -> Unit)? = null
+    var onPhraseClick: ((PhraseManager.Phrase) -> Unit)? = null
+    var onPhraseDelete: ((PhraseManager.Phrase) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
 
-    private val pillR = 6f * density
-    private val pillPad = 8f * density
-    private val gap = 6f * density
+    private val headerH = 0f
     private val hMargin = 10f * density
+    private val gap = 6f * density
+    private val topPad = 6f * density
+    private val listGap = 6f * density
+    private val pillPad = 10f * density
 
-    private var entries = listOf<ClipboardManager.Entry>()
+    var clipTab: ClipboardTab = ClipboardTab.CLIPBOARD
+    private var clipboardEntries = listOf<ClipboardManager.Entry>()
+    private var phrases = listOf<PhraseManager.Phrase>()
 
-    private data class EntryLayout(val height: Float, val lines: List<String>)
-    private var entryLayouts = listOf<EntryLayout>()
+    private data class RowLayout(
+        val height: Float,
+        val indexLabel: String,
+        val primaryLines: List<String>,
+        val secondaryLines: List<String>,
+        val cloud: Boolean,
+    )
 
+    private var rowLayouts = listOf<RowLayout>()
+
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val segPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+    }
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val indexPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -58,48 +79,50 @@ class ClipboardView(
     private var longPressY = 0f
     private val longPressTimeout = ViewConfiguration.getLongPressTimeout()
     private val longPressRunnable = Runnable {
-        if (pressedIndex in entries.indices) {
-            val entry = entries[pressedIndex]
+        if (pressedIndex in rowLayouts.indices) {
             longPressPending = false
+            val x = longPressX
+            val y = longPressY
+            val idx = pressedIndex
             pressedIndex = -1
             invalidate()
-            onItemLongClick?.invoke(entry, longPressX, longPressY)
+            if (clipTab == ClipboardTab.CLIPBOARD) {
+                clipboardEntries.getOrNull(idx)?.let { onItemLongClick?.invoke(it, x, y) }
+            } else {
+                phrases.getOrNull(idx)?.let { onPhraseDelete?.invoke(it) }
+            }
         }
-    }
-
-    private val emptyView: View = object : View(context) {
-        private val emptyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textAlign = Paint.Align.CENTER
-            textSize = 14f * density
-        }
-        override fun onDraw(canvas: Canvas) {
-            emptyPaint.color = KeyboardColors.resolve(context).panel.candidateIndex
-            val text = context.getString(R.string.clipboard_empty)
-            canvas.drawText(text, width / 2f, height / 2f, emptyPaint)
-        }
-    }.apply {
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-        visibility = View.GONE
     }
 
     init {
+        setBackgroundColor(colors.background)
         updateColors()
-        addView(emptyView)
     }
 
     override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
         super.refreshTheme(newColors)
+        setBackgroundColor(newColors.background)
         updateColors()
         invalidate()
     }
 
-    fun show(list: List<ClipboardManager.Entry>) {
-        entries = list
-        resetScroll()
-        updateColors()
-        computeEntryLayouts()
-        invalidate()
+    /** 进入时调用：默认选中剪切板。 */
+    override fun show() {
+        reload()
         super.show()
+    }
+
+    /** 内容变化时刷新（保留当前选中的标签页）。 */
+    fun refresh() {
+        reload()
+    }
+
+    private fun reload() {
+        clipboardEntries = ClipboardManager.getEntries(context)
+        phrases = PhraseManager.getAll(context)
+        resetScroll()
+        computeRowLayouts()
+        invalidate()
     }
 
     private fun resetScroll() {
@@ -108,27 +131,52 @@ class ClipboardView(
     }
 
     private fun updateColors() {
-        val panel = KeyboardColors.resolve(context).panel
-        bgPaint.color = panel.candidateBackground
-        textPaint.color = panel.candidateText
+        val scheme = KeyboardColors.resolve(context)
+        val panel = scheme.panel
+        trackPaint.color = panel.candidateBackground
+        bgPaint.color = scheme.specialKeyBackground
+        textPaint.color = scheme.specialKeyText
         textPaint.textSize = 17f * density
-        indexPaint.color = panel.candidateIndex
+        indexPaint.color = scheme.keyText
         indexPaint.textSize = 13f * density
-        pressPaint.color = panel.candidateBackground
+        pressPaint.color = scheme.specialKeyPressed
         cloudDrawable?.setTint(panel.candidateIndex)
     }
 
-    private fun computeEntryLayouts() {
-        if (entries.isEmpty() || width <= 0) {
-            entryLayouts = emptyList()
+    private fun computeRowLayouts() {
+        val w = width
+        if (w <= 0) {
+            rowLayouts = emptyList()
             return
         }
-        val fm = textPaint.fontMetrics
-        val lh = fm.descent - fm.ascent
-        val maxTextW = width - hMargin * 2 - pillPad * 2 - indexPaint.measureText("9. ") - cloudIconSize - 2f * density
-        entryLayouts = entries.map { entry ->
-            val lines = breakText(entry.text, maxTextW, 4)
-            EntryLayout(height = lh * lines.size + pillPad * 2, lines = lines)
+        rowLayouts = if (clipTab == ClipboardTab.CLIPBOARD) {
+            val fm = textPaint.fontMetrics
+            val lh = fm.descent - fm.ascent
+            val maxTextW = w - hMargin * 2 - pillPad * 2 - indexPaint.measureText("9. ") - cloudIconSize - 2f * density
+            clipboardEntries.map { entry ->
+                val lines = breakText(entry.text, maxTextW, 4)
+                RowLayout(
+                    height = lh * lines.size + pillPad * 2,
+                    indexLabel = "",
+                    primaryLines = lines,
+                    secondaryLines = emptyList(),
+                    cloud = entry.cloud,
+                )
+            }
+        } else {
+            val fm = textPaint.fontMetrics
+            val lh = fm.descent - fm.ascent
+            val maxTextW = w - hMargin * 2 - pillPad * 2 - indexPaint.measureText("9. ") - 2f * density
+            phrases.map { phrase ->
+                val lines = breakText(phrase.text, maxTextW, 4)
+                RowLayout(
+                    height = lh * lines.size + pillPad * 2,
+                    indexLabel = "",
+                    primaryLines = lines,
+                    secondaryLines = emptyList(),
+                    cloud = false,
+                )
+            }
         }
     }
 
@@ -148,83 +196,100 @@ class ClipboardView(
             }
             lines.add(line)
         }
+        if (lines.isEmpty()) lines.add("")
         return lines
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        computeEntryLayouts()
+        computeRowLayouts()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width <= 0 || height <= 0) return
 
-        if (entries.isEmpty()) {
-            emptyView.visibility = View.VISIBLE
+        if (rowLayouts.isEmpty()) {
+            val emptyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textAlign = Paint.Align.CENTER
+                textSize = 14f * density
+                color = KeyboardColors.resolve(context).panel.candidateIndex
+            }
+            val msg = if (clipTab == ClipboardTab.CLIPBOARD) {
+                context.getString(R.string.clipboard_empty)
+            } else {
+                context.getString(R.string.phrase_empty)
+            }
+            canvas.drawText(msg, width / 2f, headerH + (height - headerH) / 2f, emptyPaint)
             return
         }
-        emptyView.visibility = View.GONE
 
-        var totalContentH = hMargin * 2f
-        entryLayouts.forEach { totalContentH += it.height + gap }
-        maxScroll = maxOf(0f, totalContentH - height)
+        var totalContentH = topPad * 2f
+        rowLayouts.forEach { totalContentH += it.height + listGap }
+        maxScroll = maxOf(0f, totalContentH - (height - headerH))
 
         canvas.save()
-        canvas.clipRect(0, 0, width, height)
-        canvas.translate(0f, hMargin - scrollOffsetY)
+        canvas.clipRect(0f, headerH, width.toFloat(), height.toFloat())
+        canvas.translate(0f, headerH + topPad - scrollOffsetY)
 
-        var pillY = 0f
-        for ((i, entry) in entries.withIndex()) {
-            val layout = entryLayouts.getOrNull(i) ?: break
-            val h = layout.height
+        var y = 0f
+        for ((i, row) in rowLayouts.withIndex()) {
+            val h = row.height
             val left = hMargin
             val right = width - hMargin
 
-            if (pillY + h < scrollOffsetY || pillY > scrollOffsetY + height) {
-                pillY += h + gap
+            if (y + h < scrollOffsetY || y > scrollOffsetY + (height - headerH)) {
+                y += h + listGap
                 continue
             }
 
-            if (i == pressedIndex) {
-                canvas.drawRoundRect(left, pillY, right, pillY + h, pillR, pillR, pressPaint)
-            } else {
-                canvas.drawRoundRect(left, pillY, right, pillY + h, pillR, pillR, bgPaint)
-            }
+            val pressed = i == pressedIndex
+            canvas.drawRoundRect(left, y, right, y + h, 8f * density, 8f * density,
+                if (pressed) pressPaint else bgPaint)
 
-            val indexLabel = "${i + 1}. "
-            val indexW = indexPaint.measureText(indexLabel)
-            val textStartX = left + pillPad + indexW
+            val textStartX = left + pillPad
 
             val fm = textPaint.fontMetrics
             val lh = fm.descent - fm.ascent
-            val baseline = pillY + pillPad - fm.ascent
-
-            canvas.drawText(indexLabel, left + pillPad, baseline, indexPaint)
-
-            if (entry.cloud && cloudDrawable != null) {
-                val iconLeft = left + pillPad + indexW + 2f * density
-                val iconTop = baseline - cloudIconSize
-                cloudDrawable.setBounds(
-                    iconLeft.toInt(), iconTop.toInt(),
-                    (iconLeft + cloudIconSize).toInt(), (iconTop + cloudIconSize).toInt()
-                )
-                cloudDrawable.draw(canvas)
+            val baseline = y + pillPad - fm.ascent
+            val indexLabel = "${i + 1}. "
+            val indexW = indexPaint.measureText(indexLabel)
+            canvas.drawText(indexLabel, textStartX, baseline, indexPaint)
+            for ((li, line) in row.primaryLines.withIndex()) {
+                canvas.drawText(line, textStartX + indexW, baseline + lh * li, textPaint)
+            }
+            if (clipTab == ClipboardTab.CLIPBOARD) {
+                if (row.cloud && cloudDrawable != null) {
+                    val textX = textStartX + indexW
+                    val iconLeft = textX + 2f * density
+                    val iconTop = baseline - cloudIconSize
+                    cloudDrawable.setBounds(
+                        iconLeft.toInt(), iconTop.toInt(),
+                        (iconLeft + cloudIconSize).toInt(), (iconTop + cloudIconSize).toInt()
+                    )
+                    cloudDrawable.draw(canvas)
+                }
             }
 
-            for ((li, line) in layout.lines.withIndex()) {
-                canvas.drawText(line, textStartX, baseline + lh * li, textPaint)
-            }
-
-            pillY += h + gap
+            y += h + listGap
         }
 
         canvas.restore()
     }
 
+    private fun itemIndexAt(y: Float): Int {
+        val contentY = scrollOffsetY + y - headerH - topPad
+        var cumulative = 0f
+        for (i in rowLayouts.indices) {
+            val h = rowLayouts[i].height
+            if (contentY >= cumulative && contentY < cumulative + h) return i
+            cumulative += h + listGap
+        }
+        return -1
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (entries.isEmpty()) return false
         velocityTracker?.addMovement(event)
 
         when (event.actionMasked) {
@@ -235,19 +300,9 @@ class ClipboardView(
                 velocityTracker = VelocityTracker.obtain()
                 velocityTracker?.addMovement(event)
 
-                val contentY = scrollOffsetY + event.y - hMargin
-                var index = -1
-                var cumulative = 0f
-                for (i in entryLayouts.indices) {
-                    val h = entryLayouts[i].height
-                    if (contentY >= cumulative && contentY < cumulative + h) {
-                        index = i
-                        break
-                    }
-                    cumulative += h + gap
-                }
-                if (index in entries.indices) {
-                    pressedIndex = index
+                val idx = itemIndexAt(event.y)
+                if (idx in rowLayouts.indices) {
+                    pressedIndex = idx
                     longPressPending = true
                     longPressX = event.x
                     longPressY = event.y
@@ -295,10 +350,17 @@ class ClipboardView(
                 velocityTracker?.recycle()
                 velocityTracker = null
 
-                if (!isScrolling && pressedIndex >= 0 && pressedIndex < entries.size) {
+                if (!isScrolling && pressedIndex >= 0 && pressedIndex < rowLayouts.size) {
+                    val idx = pressedIndex
+                    pressedIndex = -1
+                    invalidate()
                     InputFeedbacks.hapticFeedback(this)
                     InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
-                    onItemClick?.invoke(entries[pressedIndex])
+                    if (clipTab == ClipboardTab.CLIPBOARD) {
+                        clipboardEntries.getOrNull(idx)?.let { onItemClick?.invoke(it) }
+                    } else {
+                        phrases.getOrNull(idx)?.let { onPhraseClick?.invoke(it) }
+                    }
                 }
                 longPressPending = false
                 pressedIndex = -1

@@ -25,6 +25,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb( 10, 10, 10),
                 toolbarText = Color.rgb(220, 220, 220),
+                toolbarActived = Color.rgb(80, 200, 205),
                 toolbarIcon = Color.rgb(170, 170, 170),
                 toolbarPressed = Color.rgb(220, 220, 220),
                 candidateBackground =Color.argb(220,22, 22, 22),
@@ -37,6 +38,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(220, 220, 220),
                 secondaryTextColor = Color.rgb(120, 120, 120),
             ),
+            toastBackground = Color.rgb(36, 36, 38),
+            toastText = Color.rgb(245, 245, 247),
         ),
     )
 
@@ -46,9 +49,9 @@ object KeyboardThemePresets {
         colors = KeyboardColors.ColorScheme(
             keyBackground = Color.rgb(255, 255, 255),
             keyPressed = Color.rgb(224, 224, 229),
-            keyBorderStroke = Color.rgb(235, 235, 240),
+            keyBorderStroke = Color.rgb(210, 210, 215),
             specialKeyText = Color.rgb(60, 60, 65),
-            specialKeyBackground = Color.rgb(210, 210, 215),
+            specialKeyBackground = Color.rgb(230, 230, 230),
             specialKeyPressed = Color.rgb(190, 190, 195),
             specialKeyBorderStroke = Color.rgb(210, 210, 215),
             accentKeyBackground = Color.rgb(0, 122, 255),
@@ -57,11 +60,12 @@ object KeyboardThemePresets {
             keyText = Color.rgb(0, 0, 0),
             accentKeyText = Color.rgb(255, 255, 255),
             altText = Color.rgb(120, 120, 125),
-            background = Color.rgb(242, 242, 247),
+            background = Color.rgb(242, 242, 242),
             surfaceStyle = KeyboardColors.SurfaceStyle.Raised,
             panel = KeyboardColors.ColorScheme.PanelColors(
-                background = Color.rgb(242, 242, 247),
+                background = Color.rgb(235, 235, 235),
                 toolbarText = Color.rgb(20, 20, 20),
+                toolbarActived = Color.rgb(0, 100, 220),
                 toolbarIcon = Color.rgb(80, 80, 85),
                 candidateBackground = Color.rgb(255, 255, 255),
                 candidateText = Color.rgb(20, 20, 20),
@@ -74,6 +78,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(20, 20, 20),
                 secondaryTextColor = Color.rgb(130, 130, 135),
             ),
+            toastBackground = Color.rgb(45, 45, 48),
+            toastText = Color.rgb(255, 255, 255),
         ),
     )
 
@@ -83,7 +89,7 @@ object KeyboardThemePresets {
         colors = KeyboardColors.ColorScheme(
             keyBackground = Color.rgb(33, 52, 46),
             keyPressed = Color.rgb(46, 66, 58),
-            keyBorderStroke = Color.rgb(33, 52, 46),
+            keyBorderStroke = Color.rgb(46, 66, 58),
             specialKeyBackground = Color.rgb(46, 66, 58),
             specialKeyPressed = Color.rgb(60, 80, 72),
             specialKeyBorderStroke = Color.rgb(46, 66, 58),
@@ -98,6 +104,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(22, 36, 30),
                 toolbarText = Color.rgb(224, 235, 228),
+                toolbarActived = Color.rgb(46, 160, 94),
                 toolbarIcon = Color.rgb(145, 175, 155),
                 candidateBackground = Color.rgb(46, 66, 58),
                 candidateText = Color.rgb(224, 235, 228),
@@ -110,6 +117,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(255, 255, 255),
                 secondaryTextColor = Color.rgb(145, 175, 155),
             ),
+            toastBackground = Color.rgb(35, 62, 51),
+            toastText = Color.rgb(235, 248, 240),
         ),
     )
 
@@ -134,6 +143,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(24, 36, 48),
                 toolbarText = Color.rgb(225, 235, 245),
+                toolbarActived = Color.rgb(0, 132, 220),
                 toolbarIcon = Color.rgb(140, 170, 200),
                 candidateBackground = Color.rgb(52, 68, 82),
                 candidateText = Color.rgb(225, 235, 245),
@@ -146,6 +156,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(255, 255, 255),
                 secondaryTextColor = Color.rgb(140, 170, 200),
             ),
+            toastBackground = Color.rgb(32, 55, 74),
+            toastText = Color.rgb(235, 247, 255),
         ),
     )
 
@@ -155,7 +167,7 @@ object KeyboardThemePresets {
         colors = KeyboardColors.ColorScheme(
             keyBackground = Color.rgb(58, 52, 58),
             keyPressed = Color.rgb(72, 66, 72),
-            keyBorderStroke =  Color.rgb(58, 52, 58),
+            keyBorderStroke =  Color.rgb(72, 66, 72),
             specialKeyBackground = Color.rgb(72, 66, 72),
             specialKeyPressed = Color.rgb(88, 80, 86),
             specialKeyBorderStroke = Color.rgb(72, 66, 72),
@@ -170,6 +182,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(40, 36, 40),
                 toolbarText = Color.rgb(240, 235, 230),
+                toolbarActived = Color.rgb(230, 130, 40),
                 toolbarIcon = Color.rgb(185, 170, 160),
                 candidateBackground = Color.rgb(72, 66, 72),
                 candidateText = Color.rgb(240, 235, 230),
@@ -182,6 +195,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(255, 255, 255),
                 secondaryTextColor = Color.rgb(185, 170, 160),
             ),
+            toastBackground = Color.rgb(70, 56, 63),
+            toastText = Color.rgb(255, 242, 232),
         ),
     )
 
@@ -191,7 +206,7 @@ object KeyboardThemePresets {
         colors = KeyboardColors.ColorScheme(
             keyBackground = Color.rgb(50, 42, 58),
             keyPressed = Color.rgb(66, 56, 74),
-            keyBorderStroke =  Color.rgb(50, 42, 58),
+            keyBorderStroke =  Color.rgb(66, 56, 74),
             specialKeyBackground = Color.rgb(66, 56, 74),
             specialKeyPressed = Color.rgb(82, 72, 90),
             specialKeyBorderStroke = Color.rgb(66, 56, 74),
@@ -206,6 +221,7 @@ object KeyboardThemePresets {
             panel = KeyboardColors.ColorScheme.PanelColors(
                 background = Color.rgb(34, 28, 42),
                 toolbarText = Color.rgb(235, 228, 242),
+                toolbarActived = Color.rgb(160, 70, 180),
                 toolbarIcon = Color.rgb(175, 160, 190),
                 candidateBackground = Color.rgb(66, 56, 74),
                 candidateText = Color.rgb(235, 228, 242),
@@ -218,6 +234,8 @@ object KeyboardThemePresets {
                 textColor = Color.rgb(255, 255, 255),
                 secondaryTextColor = Color.rgb(175, 160, 190),
             ),
+            toastBackground = Color.rgb(60, 45, 72),
+            toastText = Color.rgb(247, 235, 255),
         ),
     )
 }

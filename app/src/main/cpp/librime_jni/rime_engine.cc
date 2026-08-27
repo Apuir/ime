@@ -79,8 +79,8 @@ namespace {
             traits.user_data_dir = std::getenv("RIME_USER_DATA_DIR");
             traits.log_dir = "";
             traits.app_name = "rime.cpp";
-            traits.distribution_name = "ime";
-            traits.distribution_code_name = "ime";
+            traits.distribution_name = "Jime";
+            traits.distribution_code_name = "Jime";
             traits.distribution_version = std::getenv("RIME_DISTRIBUTION_VERSION");
 
             api_->setup(&traits);

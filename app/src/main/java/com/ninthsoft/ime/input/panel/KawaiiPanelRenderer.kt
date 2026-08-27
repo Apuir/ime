@@ -21,7 +21,7 @@ class ComposingRenderer(
     var showComment: Boolean = true,
     var borderless: Boolean = false,
     var expandBorderless: Boolean = false,
-    var recording: Boolean = false,
+    override var recording: Boolean = false,
 ) : IRenderer {
 
     private fun dimColor(color: Int): Int {
@@ -53,15 +53,16 @@ class ComposingRenderer(
         val pillY = (height - pillH) / 2f
         val pillR = 6f * density
         val hPad = horizontalPaddingDp * density
+        val sidePad = hPad + 4f * density
         val pillPad = 8f * density
         val gap = 6f * density
 
         val expandBtnW = 32f * density
         val expandBtnGap = 16f * density
-        val expandBtnRight = width.toFloat() - hPad - (4f * density) //展开键盘 额外padding
+        val expandBtnRight = width.toFloat() - sidePad
         val expandBtnLeft = expandBtnRight - expandBtnW
         val pillsEnd = expandBtnLeft - expandBtnGap
-        val maxPillW = pillsEnd - hPad
+        val maxPillW = pillsEnd - sidePad
 
         val minTextSize = 12f * density
         val minScale = minTextSize / minOf(
@@ -79,7 +80,7 @@ class ComposingRenderer(
 
         val layouts = mutableListOf<PillLayout>()
         val pills = mutableListOf<PillRect>()
-        var x = hPad
+        var x = sidePad
         for ((i, c) in candidates.withIndex()) {
             val indexStr = if (showIndex) "${i + 1}. " else ""
             val indexW = paints.candidateIndexPaint.measureText(indexStr)
@@ -113,7 +114,7 @@ class ComposingRenderer(
         }
         lastPills = pills
 
-        maxScrollX = maxOf(0f, x - hPad - pillsEnd)
+        maxScrollX = maxOf(0f, x - sidePad - pillsEnd)
 
         val dividerX = (pillsEnd + expandBtnLeft) / 2f
         val fadeW = 24f * density
@@ -168,7 +169,15 @@ class ComposingRenderer(
             drawRect(fadeStart, 0f, dividerX, height.toFloat(), fadePaint)
         }
 
-        canvas.drawRect(pillsEnd, 0f, width.toFloat(), height.toFloat(), paints.bgPaint)
+        val bgGradPaint = Paint(paints.bgPaint).apply {
+            shader = LinearGradient(
+                0f, 0f, 0f, height.toFloat(),
+                intArrayOf(paints.bgPaint.color, paints.bgPaint.color, paints.keyboardBackground),
+                floatArrayOf(0f, 0.6f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(pillsEnd, 0f, width.toFloat(), height.toFloat(), bgGradPaint)
         canvas.drawLine(
             dividerX, pillY + pillH / 4f, dividerX, pillY + pillH * 3f / 4f, paints.dividerPaint
         )
@@ -214,7 +223,7 @@ class ComposingRenderer(
         val pillY = (height - pillH) / 2f
         if (y < pillY || y > pillY + pillH) return null
 
-        val expandRightMargin = horizontalPaddingDp * density
+        val expandRightMargin = horizontalPaddingDp * density + 4f * density
         val expandBtnW = 32f * density
         val expandBtnLeft = width - expandRightMargin - expandBtnW
         val expandBtnRight = width - expandRightMargin

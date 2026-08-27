@@ -9,6 +9,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.math.*
 import androidx.core.graphics.toColorInt
+import timber.log.Timber
 
 /**
  * ParticleWaveView - 粒子喷射环风格声波动效（低功耗、硬件加速友好版）
@@ -61,11 +62,16 @@ class ParticleWaveView @JvmOverloads constructor(
     // 复用图形对象，严禁在 onRender 内部实例化
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG)
     private val particlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val polygonPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+        style = Paint.Style.FILL
+    }
 
     private val polygonPath = Path()
     private val innerPath = Path()
     private val singleParticlePath = Path() // 🌟 专用于绘制单个三角形粒子的 Path 复用容器
     private var coreGradient: RadialGradient? = null
+
+    @Volatile
     private var dirtyGradient = true
     private var lastGradientRadius = 0f
 
@@ -78,12 +84,14 @@ class ParticleWaveView @JvmOverloads constructor(
 
     // 粒子系统
     private val particles = mutableListOf<Particle>()
+    private val particleLock = Any()
     private val random = Random()
     private val particleCount = 30
 
     private var ringRotation = 0f
     private var coreRotation = 0f
     private var isTransparentMode = false
+    private var lastDiagnosticMillis = 0L
 
     init {
         initAttr(attrs)
@@ -102,9 +110,11 @@ class ParticleWaveView @JvmOverloads constructor(
     }
 
     private fun initParticles() {
-        particles.clear()
-        for (i in 0 until particleCount) {
-            particles.add(Particle().also { resetParticle(it, true) })
+        synchronized(particleLock) {
+            particles.clear()
+            for (i in 0 until particleCount) {
+                particles.add(Particle().also { resetParticle(it, true) })
+            }
         }
     }
 
@@ -200,6 +210,19 @@ class ParticleWaveView @JvmOverloads constructor(
      * 活跃状态高频全功能绘制
      */
     private fun drawActiveScene(canvas: Canvas, vPercent: Float, timeFactor: Float) {
+        val elapsedMillis = (timeFactor * offsetSpeed).toLong()
+        val diagnosticFrame = elapsedMillis - lastDiagnosticMillis >= 5_000L
+        if (diagnosticFrame) {
+            lastDiagnosticMillis = elapsedMillis
+            val activeCount = synchronized(particleLock) { particles.count { it.active } }
+            Timber.d(
+                "ParticleWave active: volume=%.2f target=%d particles=%d coreGradient=%s",
+                volume,
+                targetVolume,
+                activeCount,
+                coreGradient != null,
+            )
+        }
         val r = Color.red(_lineColor)
         val g = Color.green(_lineColor)
         val b = Color.blue(_lineColor)
@@ -215,7 +238,7 @@ class ParticleWaveView @JvmOverloads constructor(
         val step = if (vPercent > 0.5f) 8 else 20
 
         for (layer in 0 until 1) {
-            val ringRadius = maxRadius * (0.50f + layer * 0.2f)
+            val ringRadius = maxRadius * 0.50f
             val ringAngle = if (layer == 0) ringRotation else -ringRotation
             val ringAlpha = (80 + 120 * vPercent).toInt()
             paint.color = Color.argb(ringAlpha, r, g, b)
@@ -258,86 +281,89 @@ class ParticleWaveView @JvmOverloads constructor(
             (3 + (particleCount - 3) * vPercent).toInt().coerceIn(3, particleCount)
         val spawnChance = 0.03f + vPercent * 0.6f
         // 单次扫描完成“激活计数 + 新粒子激活 + 绘制”，避免原先两次 O(n) 遍历。
-        var currentActiveCount = 0
-        for (i in 0 until particleCount) {
-            val p = particles[i]
-            if (p.active) {
-                currentActiveCount++
-                continue
-            }
-            if (currentActiveCount < dynamicMaxCount && random.nextFloat() < spawnChance) {
-                p.active = true
-                p.angle = random.nextFloat() * 2 * PI.toFloat()
-                p.radius = spawnRadius
-                p.life = 0f
-                p.speed = 0.6f + vPercent * 3f + random.nextFloat()
+        synchronized(particleLock) {
+            var currentActiveCount = 0
+            for (i in 0 until particleCount) {
+                val p = particles[i]
+                if (p.active) {
+                    currentActiveCount++
+                    continue
+                }
+                if (currentActiveCount < dynamicMaxCount && random.nextFloat() < spawnChance) {
+                    p.active = true
+                    p.angle = random.nextFloat() * 2 * PI.toFloat()
+                    p.radius = spawnRadius
+                    p.life = 0f
+                    p.speed = 0.6f + vPercent * 3f + random.nextFloat()
 
-                p.shapeType = if (random.nextBoolean()) SHAPE_TRIANGLE else SHAPE_SQUARE
-                p.rotation = random.nextFloat() * 360f
-                p.spinSpeed = (random.nextFloat() - 0.5f) * 10f
-                currentActiveCount++
+                    p.shapeType = if (random.nextBoolean()) SHAPE_TRIANGLE else SHAPE_SQUARE
+                    p.rotation = random.nextFloat() * 360f
+                    p.spinSpeed = (random.nextFloat() - 0.5f) * 10f
+                    currentActiveCount++
+                }
             }
-        }
-        for (i in 0 until particleCount) {
-            val p = particles[i]
-            if (!p.active) continue
+            for (i in 0 until particleCount) {
+                val p = particles[i]
+                if (!p.active) continue
 
-            // 粒子向外扩散
-            p.radius += p.speed * (0.4f + vPercent)
+                // 粒子向外扩散
+                p.radius += p.speed * (0.4f + vPercent)
             // 🌟 稍微调小寿命步长（从 0.05f 改为 0.025f），给粒子留出足够的时间飞到外圈更远的地方
-            p.life += 0.025f
-            p.rotation += p.spinSpeed
+                p.life += 0.025f
+                p.rotation += p.spinSpeed
 
             // 🌟 边界判定升级：只有超过了扩展后的外圈半径，或者寿命耗尽，才允许销毁
-            if (p.radius > particleMaxRadius || p.life > 1.0f) {
-                p.active = false
-                p.radius = spawnRadius
-                p.life = 0f
-                continue
-            }
+                if (p.radius > particleMaxRadius || p.life > 1.0f) {
+                    p.active = false
+                    p.radius = spawnRadius
+                    p.life = 0f
+                    continue
+                }
 
-            val cosP = cos(p.angle)
-            val sinP = sin(p.angle)
-            val x = centerX + p.radius * cosP
-            val y = centerY + p.radius * sinP
+                val cosP = cos(p.angle)
+                val sinP = sin(p.angle)
+                val x = centerX + p.radius * cosP
+                val y = centerY + p.radius * sinP
 
             // 🌟 透明度计算：利用 (1 - p.life) 确保粒子在越过外围圆环奔向 1.4 倍半径的过程中，是完美自然淡出的
-            val alpha = (200 * (1 - p.life) * (0.2f + 0.8f * vPercent)).toInt().coerceIn(0, 255)
-            particlePaint.color = Color.argb(alpha, r, g, b)
+                val alpha = (200 * (1 - p.life) * (0.2f + 0.8f * vPercent)).toInt().coerceIn(0, 255)
+                particlePaint.color = Color.argb(alpha, r, g, b)
 
-            val particleSize = p.size * (1 - p.life * 0.6f)
+                val particleSize = p.size * (1 - p.life * 0.6f)
 
             // 绘制主几何粒子
-            canvas.save()
-            canvas.translate(x, y)
-            canvas.rotate(p.rotation)
-            drawCustomShape(canvas, p.shapeType, particleSize, particlePaint)
-            canvas.restore()
+                canvas.save()
+                canvas.translate(x, y)
+                canvas.rotate(p.rotation)
+                drawCustomShape(canvas, p.shapeType, particleSize, particlePaint)
+                canvas.restore()
 
             // 绘制拖尾
-            if (p.life < 0.8f) {
-                val trailRadius = max(spawnRadius, p.radius - p.speed * 2.5f)
-                val trailX = centerX + trailRadius * cosP
-                val trailY = centerY + trailRadius * sinP
-                particlePaint.alpha = alpha shr 1
+                if (p.life < 0.8f) {
+                    val trailRadius = max(spawnRadius, p.radius - p.speed * 2.5f)
+                    val trailX = centerX + trailRadius * cosP
+                    val trailY = centerY + trailRadius * sinP
+                    particlePaint.alpha = alpha shr 1
 
-                canvas.save()
-                canvas.translate(trailX, trailY)
-                canvas.rotate(p.rotation - p.spinSpeed * 1.5f)
-                drawCustomShape(canvas, p.shapeType, particleSize * 0.5f, particlePaint)
-                canvas.restore()
+                    canvas.save()
+                    canvas.translate(trailX, trailY)
+                    canvas.rotate(p.rotation - p.spinSpeed * 1.5f)
+                    drawCustomShape(canvas, p.shapeType, particleSize * 0.5f, particlePaint)
+                    canvas.restore()
+                }
             }
         }
+        if (diagnosticFrame) Timber.d("ParticleWave particle effects rendered")
 
         // ========== 3. 中心多边形核心 ==========
         val coreRotateSpeed = 0.2f + vPercent * 0.8f
         coreRotation += coreRotateSpeed
         if (coreRotation > 360f) coreRotation -= 360f
 
-        paint.style = Paint.Style.FILL
+        polygonPaint.style = Paint.Style.FILL
 
         polygonPath.rewind()
-        val expansion = 1f + vPercent * 0.1f
+        val expansion = 0.82f + vPercent * 0.1f
         val dynamicRadius = baseRadius * expansion
 
         for (i in 0 until polygonSides) {
@@ -361,13 +387,15 @@ class ParticleWaveView @JvmOverloads constructor(
             lastGradientRadius = targetGradientRadius
             dirtyGradient = false
         }
-        paint.shader = coreGradient
-        canvas.drawPath(polygonPath, paint)
+        polygonPaint.shader = coreGradient
+        polygonPaint.alpha = 255
+        canvas.drawPath(polygonPath, polygonPaint)
+        if (diagnosticFrame) Timber.d("ParticleWave core polygon rendered")
 
-        paint.shader = null
-        paint.style = Paint.Style.FILL
-        paint.color = Color.WHITE
-        paint.alpha = (80 * (0.3f + vPercent * 0.5f)).toInt()
+        polygonPaint.shader = null
+        polygonPaint.style = Paint.Style.FILL
+        polygonPaint.color = Color.WHITE
+        polygonPaint.alpha = (80 * (0.3f + vPercent * 0.5f)).toInt()
 
         innerPath.rewind()
         val innerScale = 0.5f + vPercent * 0.1f
@@ -381,11 +409,11 @@ class ParticleWaveView @JvmOverloads constructor(
             if (i == 0) innerPath.moveTo(x, y) else innerPath.lineTo(x, y)
         }
         innerPath.close()
-        canvas.drawPath(innerPath, paint)
+        canvas.drawPath(innerPath, polygonPaint)
 
-        paint.alpha = 200
-        canvas.drawCircle(centerX, centerY, baseRadius * 0.12f, paint)
-        paint.alpha = 255
+        polygonPaint.alpha = 200
+        canvas.drawCircle(centerX, centerY, baseRadius * 0.12f, polygonPaint)
+        polygonPaint.alpha = 255
     }
 
     /**
@@ -423,24 +451,26 @@ class ParticleWaveView @JvmOverloads constructor(
         val g = Color.green(_lineColor)
         val b = Color.blue(_lineColor)
 
-        paint.style = Paint.Style.FILL
-        paint.shader = null
-        paint.color = Color.argb(100, r, g, b)
+        polygonPaint.style = Paint.Style.FILL
+        polygonPaint.shader = null
+        polygonPaint.color = Color.argb(100, r, g, b)
+        polygonPaint.alpha = 255
 
         polygonPath.rewind()
         for (i in 0 until polygonSides) {
             val angleRad = (coreRotation + i * 360f / polygonSides) * RAD_CONVERT
-            val x = centerX + baseRadius * cos(angleRad)
-            val y = centerY + baseRadius * sin(angleRad)
+            val coreRadius = baseRadius * 0.82f
+            val x = centerX + coreRadius * cos(angleRad)
+            val y = centerY + coreRadius * sin(angleRad)
             if (i == 0) polygonPath.moveTo(x, y) else polygonPath.lineTo(x, y)
         }
         polygonPath.close()
-        canvas.drawPath(polygonPath, paint)
+        canvas.drawPath(polygonPath, polygonPaint)
 
-        paint.color = Color.WHITE
-        paint.alpha = 50
-        canvas.drawCircle(centerX, centerY, baseRadius * 0.12f, paint)
-        paint.alpha = 255
+        polygonPaint.color = Color.WHITE
+        polygonPaint.alpha = 50
+        canvas.drawCircle(centerX, centerY, baseRadius * 0.1f, polygonPaint)
+        polygonPaint.alpha = 255
     }
 
     private fun softerChangeVolume() {
@@ -500,7 +530,9 @@ class ParticleWaveView @JvmOverloads constructor(
 
     override fun release() {
         stopAnim()
-        particles.clear()
+        synchronized(particleLock) {
+            particles.clear()
+        }
     }
 
     override fun onAttachedToWindow() {

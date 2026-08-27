@@ -17,10 +17,13 @@ class Paints(context: Context) {
     val candidateIndexPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { }
     var toolbarPressedColor: Int = 0
     var toolbarIconColor: Int = 0
+    var keyboardBackground: Int = 0
 
     fun updateColors(context: Context) {
-        val panel = KeyboardColors.resolve(context).panel
+        val scheme = KeyboardColors.resolve(context)
+        val panel = scheme.panel
         bgPaint.color = panel.background
+        keyboardBackground = scheme.background
         dividerPaint.color = panel.candidateDivider
         toolbarTextPaint.color = panel.toolbarText
         toolbarIconColor = panel.toolbarIcon

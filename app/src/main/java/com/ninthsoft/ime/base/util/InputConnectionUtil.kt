@@ -3,6 +3,7 @@ package com.ninthsoft.ime.base.util
 import android.inputmethodservice.InputMethodService
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.inputmethod.InputConnection
 import android.view.KeyEvent.ACTION_DOWN
 import android.view.KeyEvent.ACTION_UP
 import android.view.KeyEvent.KEYCODE_CTRL_LEFT
@@ -18,7 +19,13 @@ class InputConnectionUtil {
         fun sendCombinationKeyEvent(
             service: InputMethodService, keyCode: Int, ctrl: Boolean = false, shift: Boolean = false
         ) {
-            val ic = service.currentInputConnection ?: return
+            sendCombinationKeyEvent(service.currentInputConnection, keyCode, ctrl, shift)
+        }
+
+        fun sendCombinationKeyEvent(
+            ic: InputConnection?, keyCode: Int, ctrl: Boolean = false, shift: Boolean = false
+        ) {
+            ic ?: return
             val now = SystemClock.uptimeMillis()
             var meta = 0
             if (ctrl) meta = meta or META_CTRL_ON or META_CTRL_LEFT_ON

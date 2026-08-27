@@ -13,10 +13,11 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.constraintlayout.widget.ConstraintLayout
 import com.ninthsoft.ime.R
+import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
-import com.ninthsoft.ime.input.panel.KawaiiPanel
+import com.ninthsoft.ime.data.manager.CandidateManager
+import com.ninthsoft.ime.input.panel.PanelAction
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.centerHorizontally
 import splitties.views.dsl.constraintlayout.constraintLayout
@@ -31,13 +32,13 @@ import splitties.views.dsl.core.wrapContent
 class MenuGridView(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-    var onAction: ((KawaiiPanel.Action) -> Unit)? = null,
+    var onAction: ((PanelAction) -> Unit)? = null,
 ) : ComponentView(context, colors) {
 
     private data class MenuItem(
         val label: String,
         val icon: Int,
-        val action: KawaiiPanel.Action,
+        val action: PanelAction,
     )
 
     // Each inner array is one horizontally scrollable page.
@@ -46,42 +47,64 @@ class MenuGridView(
             MenuItem(
                 context.getString(R.string.menu_emoji),
                 R.drawable.ic_keyboard_emoticon,
-                KawaiiPanel.Action.EmojiKeyboard
+                PanelAction.EmojiKeyboard
             ),
             MenuItem(
                 context.getString(R.string.menu_clipboard),
                 R.drawable.ic_keyboard_clipboard,
-                KawaiiPanel.Action.Clipboard
+                PanelAction.Clipboard
+            ),
+            MenuItem(
+                context.getString(R.string.phrase_tab),
+                R.drawable.ic_keyboard_star_david,
+                PanelAction.CommonPhrases
             ),
             MenuItem(
                 context.getString(R.string.menu_voice),
                 R.drawable.ic_keyboard_voice,
-                KawaiiPanel.Action.ToggleVoice
-            ),
-            MenuItem(
-                context.getString(R.string.menu_cursor),
-                R.drawable.ic_keyboard_cursor_move,
-                KawaiiPanel.Action.CursorMove
+                PanelAction.ToggleVoice
             ),
             MenuItem(
                 context.getString(R.string.menu_settings),
                 R.drawable.ic_keyboard_setting,
-                KawaiiPanel.Action.Settings
+                PanelAction.Settings
             ),
             MenuItem(
                 context.getString(R.string.menu_schema),
                 R.drawable.ic_keyboard_tune,
-                KawaiiPanel.Action.SchemaSettings
+                PanelAction.SchemaSettings
             ),
             MenuItem(
                 context.getString(R.string.menu_theme),
                 R.drawable.ic_keyboard_palette,
-                KawaiiPanel.Action.Palette
+                PanelAction.Palette
             ),
             MenuItem(
                 context.getString(R.string.menu_reload_engine),
                 R.drawable.ic_keyboard_reload,
-                KawaiiPanel.Action.ReloadEngine
+                PanelAction.ReloadEngine
+            ),
+        ),
+        arrayOf(
+            MenuItem(
+                context.getString(R.string.menu_cursor),
+                R.drawable.ic_keyboard_cursor_move,
+                PanelAction.CursorMove
+            ),
+            MenuItem(
+                context.getString(R.string.menu_about),
+                R.drawable.ic_keyboard_information_outline,
+                PanelAction.About
+            ),
+            MenuItem(
+                context.getString(R.string.model_prediction),
+                R.drawable.ic_keyboard_lightbulb_on_outline,
+                PanelAction.TogglePrediction
+            ),
+            MenuItem(
+                context.getString(R.string.menu_traditional_chinese),
+                R.drawable.ic_keyboard_traditional_ch,
+                PanelAction.ToggleTraditionalChinese
             ),
         ),
     )
@@ -270,15 +293,19 @@ class MenuGridView(
         val parentId = View.generateViewId()
         return constraintLayout {
             id = parentId
+            tag = item.action
             background = bg
             isClickable = true
             isFocusable = true
-            setOnClickListener { onAction?.invoke(item.action) }
+            setOnClickListener {
+                InputFeedbacks.hapticFeedback(this)
+                onAction?.invoke(item.action)
+            }
 
             val icon = imageView {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setImageResource(item.icon.takeIf { it != 0 } ?: android.R.drawable.ic_menu_help)
-                imageTintList = ColorStateList.valueOf(this@MenuGridView.colors.panel.toolbarIcon)
+                imageTintList = ColorStateList.valueOf(itemIconColor(item))
             }
             add(icon, lParams(iconSize, iconSize) {
                 centerHorizontally()
@@ -290,7 +317,7 @@ class MenuGridView(
             val label = textView {
                 text = item.label
                 textSize = 12f
-                setTextColor(this@MenuGridView.colors.panel.toolbarText)
+                setTextColor(itemTextColor(item))
                 typeface = Typeface.DEFAULT
                 gravity = Gravity.CENTER
             }
@@ -305,6 +332,7 @@ class MenuGridView(
 
     override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
         super.refreshTheme(newColors)
+        setBackgroundColor(newColors.background)
         for (pageIndex in 0 until pages.childCount) {
             val page = pages.getChildAt(pageIndex) as ViewGroup
             for (rowIndex in 0 until page.childCount) {
@@ -312,12 +340,17 @@ class MenuGridView(
                 for (itemIndex in 0 until row.childCount) {
                     val item = row.getChildAt(itemIndex) as ViewGroup
                     (item.background as? GradientDrawable)?.setColor(newColors.keyBackground)
+                    val action = item.tag as? PanelAction
                     for (childIndex in 0 until item.childCount) {
                         when (val child = item.getChildAt(childIndex)) {
-                            is ImageView -> child.imageTintList =
-                                ColorStateList.valueOf(newColors.panel.toolbarIcon)
+                            is ImageView -> {
+                                if (isToggleAction(action)) {
+                                    child.setImageResource(toggleIcon(action!!))
+                                }
+                                child.imageTintList = ColorStateList.valueOf(itemIconColor(action))
+                            }
 
-                            is TextView -> child.setTextColor(newColors.panel.toolbarText)
+                            is TextView -> child.setTextColor(itemTextColor(action))
                         }
                     }
                 }
@@ -325,4 +358,55 @@ class MenuGridView(
         }
         updateIndicators()
     }
+
+    fun refreshPredictionState() {
+        for (pageIndex in 0 until pages.childCount) {
+            val page = pages.getChildAt(pageIndex) as ViewGroup
+            for (rowIndex in 0 until page.childCount) {
+                val row = page.getChildAt(rowIndex) as ViewGroup
+                for (itemIndex in 0 until row.childCount) {
+                    val item = row.getChildAt(itemIndex) as ViewGroup
+                    if (!isToggleAction(item.tag as? PanelAction)) continue
+                    for (childIndex in 0 until item.childCount) {
+                        when (val child = item.getChildAt(childIndex)) {
+                            is ImageView -> {
+                                child.setImageResource(toggleIcon(item.tag as PanelAction))
+                                child.imageTintList =
+                                    ColorStateList.valueOf(itemIconColor(item.tag as PanelAction))
+                            }
+
+                                is TextView -> child.setTextColor(itemTextColor(item.tag as PanelAction))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun isToggleAction(action: PanelAction?): Boolean =
+        action == PanelAction.TogglePrediction || action == PanelAction.ToggleTraditionalChinese
+
+    private fun isEnabled(action: PanelAction): Boolean = when (action) {
+        PanelAction.TogglePrediction -> CandidateManager.isPredictionEnabled(context)
+        PanelAction.ToggleTraditionalChinese -> CandidateManager.isTraditionalChineseEnabled(context)
+        else -> false
+    }
+
+
+    private fun toggleIcon(action: PanelAction): Int = when (action) {
+        PanelAction.TogglePrediction ->  R.drawable.ic_keyboard_lightbulb_on_outline
+        PanelAction.ToggleTraditionalChinese -> R.drawable.ic_keyboard_traditional_ch
+        else -> android.R.drawable.ic_menu_help
+    }
+
+
+    private fun itemIconColor(item: MenuItem): Int = itemIconColor(item.action)
+
+    private fun itemIconColor(action: PanelAction?): Int =
+        if (isToggleAction(action) && isEnabled(action!!)) colors.panel.toolbarActived else colors.panel.toolbarIcon
+
+    private fun itemTextColor(item: MenuItem): Int = itemTextColor(item.action)
+
+    private fun itemTextColor(action: PanelAction?): Int =
+        if (isToggleAction(action) && isEnabled(action!!)) colors.panel.toolbarActived else colors.panel.toolbarText
 }

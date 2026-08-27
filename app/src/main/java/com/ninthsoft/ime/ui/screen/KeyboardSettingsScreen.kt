@@ -82,8 +82,8 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
     var rippleEnabled by remember {
         mutableStateOf(KeyboardManager.Keyboard.RippleEffect.isEnabled(context))
     }
-    var keyBorderEnabled by remember {
-        mutableStateOf(KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context))
+    var keyBorderHidden by remember {
+        mutableStateOf(!KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context))
     }
     var expandBorderless by remember {
         mutableStateOf(KeyboardManager.Keyboard.ExpandBorderless.isEnabled(context))
@@ -247,10 +247,10 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                 )
                 SwitchRow(
                     title = stringResource(R.string.key_border),
-                    checked = keyBorderEnabled,
+                    checked = keyBorderHidden,
                     onCheckedChange = {
-                        keyBorderEnabled = it
-                        KeyboardManager.Keyboard.KeyBorderStroke.setEnabled(context, it)
+                        keyBorderHidden = it
+                        KeyboardManager.Keyboard.KeyBorderStroke.setEnabled(context, !it)
                     },
                 )
                 SwitchRow(

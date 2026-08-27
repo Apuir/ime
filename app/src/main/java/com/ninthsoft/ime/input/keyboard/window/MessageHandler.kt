@@ -3,6 +3,7 @@ package com.ninthsoft.ime.input.keyboard.window
 import android.inputmethodservice.InputMethodService
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.data.EngineMessage
+import com.ninthsoft.ime.input.ImeInputMethodService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -19,7 +20,8 @@ class MessageHandler(
     suspend fun handle(message: EngineMessage) {
         when (message) {
             is EngineMessage.Commit -> {
-                service.currentInputConnection?.commitText(message.text, 1)
+                (service as ImeInputMethodService).activeInputConnection()
+                    ?.commitText(message.text, 1)
             }
 
             is EngineMessage.Candidates -> {

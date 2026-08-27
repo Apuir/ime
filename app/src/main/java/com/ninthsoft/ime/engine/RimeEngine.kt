@@ -37,6 +37,7 @@ import com.ninthsoft.ime.engine.rime.core.RimeConfig
 import com.ninthsoft.ime.engine.rime.core.RimeMessage
 import com.ninthsoft.ime.engine.rime.data.DataManager.modelDir
 import com.ninthsoft.ime.engine.rime.data.DataManager.sharedDataDir
+import com.ninthsoft.ime.input.ImeInputMethodService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +60,12 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private var behaviorHosted: BehaviorHost? = null
     private var context: Context? = null
     private var inputConnection: InputConnection? = null
+    private var serviceRef: ImeInputMethodService? = null
+
+    /** 桥接模式下返回虚拟连接，否则返回真实连接。 */
+    private fun inputConnection(): InputConnection? =
+        serviceRef?.activeInputConnection() ?: inputConnection
+
     private val rerankManager by lazy { context?.let { CandidateRerankManager(it) } }
     private val predictionManager by lazy { context?.let { PredictionManager(it) } }
     private var showPredictionCandidates = false
@@ -97,10 +104,14 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun processKey(service: InputMethodService, key: KeyEvent) {
+
+        serviceRef = service as? ImeInputMethodService
         if (!this@RimeEngine.inited) {
             return
         }
         sendJob {
+            Timber.d("ssss %s",currentSchema().switches)
+
             when (key) {
                 is KeyEvent.SequenceEvent -> {
                     this@RimeEngine.flowed(InputString(key.sequence))
@@ -122,7 +133,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                                 messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
                                 return@sendJob
                             }
-                            val ic = service.currentInputConnection
+                            val ic = inputConnection()
                             if (getRawInput().isEmpty()) {
                                 if (!ic?.getSelectedText(0).isNullOrEmpty()) {
                                     messages.emit(EngineMessage.Commit(""))
@@ -170,7 +181,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 return@sendJob
             }
             val ctx = context ?: return@sendJob
-            val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "")
+            val inputContext = (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "")
             AppDatabase.getInstance(ctx).candidatePreferDao().upsert(candidate.text, inputContext)
         }
         notEmitNextEmptyCandidates = true
@@ -197,11 +208,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun undo(service: InputMethodService) {
-        InputConnectionUtil.sendCombinationKeyEvent(service, KEYCODE_Z, ctrl = true)
+        InputConnectionUtil.sendCombinationKeyEvent(inputConnection(), KEYCODE_Z, ctrl = true)
     }
 
     override fun redo(service: InputMethodService) {
-        InputConnectionUtil.sendCombinationKeyEvent(service, KEYCODE_Z, ctrl = true, shift = true)
+        InputConnectionUtil.sendCombinationKeyEvent(
+            inputConnection(), KEYCODE_Z, ctrl = true, shift = true
+        )
     }
 
     override fun resortCandidates(candidates: List<Candidate>) {
@@ -325,6 +338,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
 
     override fun clear(service: InputMethodService) {
+        serviceRef = service as? ImeInputMethodService
         sendJob {
             if (compositionCached.preedit?.isNotEmpty() == true) {
                 this@RimeEngine.resetComposition()
@@ -333,7 +347,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     showPredictionCandidates = false
                     messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
                 }
-                service.currentInputConnection?.let {
+                inputConnection()?.let {
                     val p0 = it.getTextBeforeCursor(Int.MAX_VALUE, 0)?.length ?: 0
                     val p1 = it.getTextAfterCursor(Int.MAX_VALUE, 0)?.length ?: 0
                     it.deleteSurroundingTextInCodePoints(p0, p1)
@@ -369,7 +383,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     messages.emit(msg)
                     return@sendJob
                 }
-                val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "")
+                val inputContext = (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "")
                 val sortedList = rerankManager?.rerank(msg.list, inputContext, null)
                 messages.emit(EngineMessage.Candidates(sortedList ?: msg.list, 0, 0))
             }
@@ -385,17 +399,19 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     override fun predict(commit: String) {
-        if (context?.let { !CandidateManager.isPredictionEnabled(it) } == true) {
-            return
-        }
-        val inputContext = (inputConnection?.getTextBeforeCursor(20, 0)?.toString() ?: "") + commit
+        val inputContext =
+            (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "") + commit
         sendJob {
+            if (context?.let { !CandidateManager.isPredictionEnabled(it) } == true) {
+                messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
+                return@sendJob
+            }
             var candidates: List<Candidate> = emptyList()
             if (!inputContext.isEmpty() && !TextUtil.isSymbol(inputContext.last()) && !TextUtil.isAlphabet(
                     inputContext.last()
                 )
             ) {
-                Timber.d("cccc %s",predictionManager?.makePredictions(inputContext))
+                Timber.d("cccc %s", predictionManager?.makePredictions(inputContext))
                 candidates = predictionManager?.makePredictions(inputContext) ?: emptyList()
             }
             showPredictionCandidates = candidates.isNotEmpty()

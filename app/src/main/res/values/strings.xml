@@ -19,7 +19,7 @@
     <string name="key_y_gap">Y轴间隔</string>
     <string name="key_ripple_effect">水波纹特效</string>
     <string name="key_corner_radius">按键圆角</string>
-    <string name="key_border">绘制键边框</string>
+    <string name="key_border">隐藏键边框</string>
     <string name="expand_borderless">展开键无边框</string>
 
 
@@ -115,6 +115,7 @@
     <string name="cut">剪切</string>
     <string name="copy">复制</string>
     <string name="paste">粘贴</string>
+    <string name="newline">换行</string>
     <string name="backspace">删除</string>
     <string name="clipboard">剪切板</string>
 
@@ -125,6 +126,22 @@
     <string name="clipboard_delete_confirm">确定要删除 \"%1$s\" 吗？</string>
     <string name="clipboard_confirm">确定</string>
     <string name="clipboard_cancel">取消</string>
+
+    <!-- Clipboard / Phrase capsule -->
+    <string name="clipboard_tab">剪切板</string>
+    <string name="phrase_tab">常用语</string>
+    <string name="phrase_empty">暂无常用语</string>
+    <string name="phrase_add">新建常用语</string>
+    <string name="phrase_add_title">常用语</string>
+    <string name="phrase_add_success">常用语添加成功</string>
+    <string name="phrase_edit_title">编辑常用语</string>
+    <string name="phrase_label_hint">标签（用于展示与搜索）</string>
+    <string name="phrase_text_hint">常用语内容</string>
+    <string name="phrase_input_hint">请输入常用语内容</string>
+    <string name="phrase_save">保存</string>
+    <string name="phrase_cancel">取消</string>
+    <string name="phrase_delete_confirm">确定要删除 \"%1$s\" 吗？</string>
+    <string name="phrase_clear_confirm">确定要删除全部常用语吗？</string>
     <string name="candidate_forget_confirm">确定要忘记 \"%1$s\" 吗？</string>
 
     <!-- Menu Grid -->
@@ -149,6 +166,7 @@
 
     <string name="model_prediction">候选词预测</string>
     <string name="model_prediction_enable">启用预测</string>
+    <string name="menu_traditional_chinese">繁体输入</string>
     <string name="prediction_candidates">候选词</string>
     <string name="prediction_candidates_desc">候选词预测、模型增强、候选词布局</string>
     <string name="voice_settings">语音转文字</string>

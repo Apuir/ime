@@ -182,9 +182,17 @@ object KeyboardStateManager {
         switchTo(currentSchema?.layout ?: defaultKeyboardName)
     }
 
-    fun onInputChanged(info: EditorInfo?, text: String) {
+    fun onInputChanged(info: EditorInfo?, text: String, virtualInputConnection: Boolean = false) {
         if (info != null) {
-            currentKeyboardName?.let { keyboards[it]?.updateEditorInfo(info, text.isEmpty()) }
+            val effectiveInfo = if (virtualInputConnection) {
+                EditorInfo().apply {
+                    inputType = info.inputType
+                    imeOptions = EditorInfo.IME_ACTION_UNSPECIFIED
+                }
+            } else {
+                info
+            }
+            currentKeyboardName?.let { keyboards[it]?.updateEditorInfo(effectiveInfo, text.isEmpty()) }
         }
     }
 

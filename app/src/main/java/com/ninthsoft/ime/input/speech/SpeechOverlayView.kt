@@ -312,7 +312,7 @@ class SpeechOverlayView(
         visibility = VISIBLE
         setBackgroundColor(
             Color.argb(
-                245, Color.red(bgColor), Color.green(bgColor), Color.blue(bgColor)
+                230, Color.red(bgColor), Color.green(bgColor), Color.blue(bgColor)
             )
         )
         alpha = 0f

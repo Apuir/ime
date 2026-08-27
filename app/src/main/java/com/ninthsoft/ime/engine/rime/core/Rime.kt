@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
+import splitties.views.dsl.core.BuildConfig
 import timber.log.Timber
 
 class Rime : RimeApi, RimeLifecycleOwner {
@@ -190,7 +191,11 @@ class Rime : RimeApi, RimeLifecycleOwner {
         val sharedDataDir = DataManager.sharedDataDir.absolutePath
         val userDataDir = DataManager.userDataDir.absolutePath
         Timber.d("Starting rime: shared=$sharedDataDir user=$userDataDir fullCheck=$fullCheck")
-        bootstrap(sharedDataDir, userDataDir, "1.0", fullCheck)
+
+        val info = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+        val versionName = info.versionName ?: "1.0"
+
+        bootstrap(sharedDataDir, userDataDir, versionName, fullCheck)
     }
 
     private fun processKeyInner(value: Int, modifiers: Int, isVirtual: Boolean): Boolean {

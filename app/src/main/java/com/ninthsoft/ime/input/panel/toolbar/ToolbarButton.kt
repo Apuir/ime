@@ -3,18 +3,18 @@ package com.ninthsoft.ime.input.panel.toolbar
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import androidx.core.graphics.withRotation
-import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.panel.Paints
 import androidx.core.graphics.withScale
+import com.ninthsoft.ime.input.panel.PanelAction
 
 sealed class ToolbarButton {
-    abstract val action: KawaiiPanel.Action
+    abstract val action: PanelAction
     abstract fun draw(canvas: Canvas, cx: Float, cy: Float, paints: Paints, density: Float)
 }
 
 class TextButton(
     val label: String,
-    override val action: KawaiiPanel.Action,
+    override val action: PanelAction,
 ) : ToolbarButton() {
     override fun draw(canvas: Canvas, cx: Float, cy: Float, paints: Paints, density: Float) {
         val textY = cy - (paints.toolbarTextPaint.descent() + paints.toolbarTextPaint.ascent()) / 2f
@@ -24,7 +24,7 @@ class TextButton(
 
 class ImageButton(
     private val drawable: Drawable?,
-    override val action: KawaiiPanel.Action,
+    override val action: PanelAction,
     private val rotation: Float = 0f,
     private val mirrorX: Boolean = false,
     private val iconScale: Float = 1f,
@@ -53,7 +53,7 @@ class ImageButton(
 class ToggleImageButton(
     private val normalDrawable: Drawable?,
     private val toggledDrawable: Drawable?,
-    override val action: KawaiiPanel.Action,
+    override val action: PanelAction,
     private val toggledRotation: Float = 0f,
     var isToggled: Boolean = false,
     private val iconScale: Float = 1f,

@@ -9,7 +9,7 @@ import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.engine.event.KeyModifiers
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
-import timber.log.Timber
+import com.ninthsoft.ime.input.ImeInputMethodService
 
 class KeyActionListener(
     private val service: InputMethodService,
@@ -65,8 +65,9 @@ class KeyActionListener(
             }
 
             is KeyboardAction.MultiReturnAction -> {
-                val ic = service.currentInputConnection ?: return
+                engine?.resetComposition()
 
+                val ic = (service as ImeInputMethodService).activeInputConnection() ?: return
                 ic.performEditorAction(
                     when (action.text) {
                         "GO" -> EditorInfo.IME_ACTION_GO
