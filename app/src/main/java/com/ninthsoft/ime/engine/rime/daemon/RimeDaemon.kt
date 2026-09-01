@@ -157,7 +157,7 @@ object RimeDaemon {
                 RimeMessage.DeployMessage.State.Success -> {
                     buildNotification = {
                         setColor(Color.GREEN)
-                        setContentText(appContext.getString(R.string.rime_deploy_finish))
+                        setContentText(appContext.getString(R.string.rime_deploy_success))
                         setOngoing(false)
                         setTimeoutAfter(3000L)
                         setAutoCancel(true)
@@ -177,6 +177,8 @@ object RimeDaemon {
                         setPriority(NotificationCompat.PRIORITY_DEFAULT)
                     }
                 }
+
+                else -> return
             }
             sendNotification(MESSAGE_ID, buildNotification)
         }

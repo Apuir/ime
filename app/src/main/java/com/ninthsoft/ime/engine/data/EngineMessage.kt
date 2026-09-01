@@ -25,7 +25,7 @@ sealed class EngineMessage {
     ) : EngineMessage()
 
     data class Depoly(val state: State) : EngineMessage() {
-        enum class State { Start,Success, Failure }
+        enum class State { Start, Success, Failure, Finish }
     }
 
     data class PossibleCandidatePinYin(val possibleCandidatePinYins: List<CandidatePinYin>) :

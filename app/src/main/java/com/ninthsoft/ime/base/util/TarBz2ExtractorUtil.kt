@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.base.util
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import timber.log.Timber
@@ -11,11 +12,11 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * .tar.bz2 解包工具：针对 BZip2 的流特性进行了多层缓存优化，大幅提升解压速度。
+ * .tar.bz2 解包工具：针对 BZip2 的流特性进行了多层缓存优化，支持保留文件和目录的 mtime。
  */
 object TarBz2ExtractorUtil {
 
-    private const val BUFFER = 64 * 1024
+    private const val BUFFER_SIZE = 64 * 1024
     private const val STREAM_BUFFER = 256 * 1024
     private const val REPORT_STEP = 256 * 1024L
     private const val LOG_STEP = 16 * 1024 * 1024L
@@ -33,47 +34,66 @@ object TarBz2ExtractorUtil {
 
         val counting = CountingInputStream(FileInputStream(archive))
         val state = ProgressState()
+        val sharedBuffer = ByteArray(BUFFER_SIZE)
 
         counting.use { cis ->
-            // 【关键修复】BZip2 必须包裹在 BufferedInputStream 中，否则每次读取都是灾难性的慢
-            val bufferedIn = BufferedInputStream(cis, STREAM_BUFFER)
-            BZip2CompressorInputStream(bufferedIn).use { bzIn ->
-                // TarArchiveInputStream 同样需要高效的缓冲输入流
-                val tarBufferedIn = BufferedInputStream(bzIn, STREAM_BUFFER)
-                TarArchiveInputStream(tarBufferedIn).use { tarIn ->
-                    var entry = tarIn.nextEntry
-                    while (entry != null) {
-                        val entryName = entry.name
-                        val outFile = File(destDir, entryName)
-                        val outPath = outFile.canonicalPath
+            BufferedInputStream(cis, STREAM_BUFFER).use { bufferedIn ->
+                BZip2CompressorInputStream(bufferedIn).use { bzIn ->
+                    BufferedInputStream(bzIn, STREAM_BUFFER).use { tarBufferedIn ->
+                        TarArchiveInputStream(tarBufferedIn).use { tarIn ->
+                            var entry = tarIn.nextEntry
+                            while (entry != null) {
+                                val entryName = entry.name
+                                val outFile = File(destDir, entryName)
+                                val outPath = outFile.canonicalPath
 
-                        // 严格路径穿越防护
-                        if (!outPath.startsWith(destPath) && outPath != destDir.canonicalPath) {
-                            Timber.w("Skip unsafe archive entry: %s", entryName)
-                        } else {
-                            val shouldExtract = filter(entryName)
-                            if (entry.isDirectory) {
-                                if (shouldExtract) outFile.mkdirs()
-                            } else {
-                                if (shouldExtract) {
-                                    outFile.parentFile?.mkdirs()
-                                    BufferedOutputStream(
-                                        outFile.outputStream(), STREAM_BUFFER
-                                    ).use { os ->
-                                        pump(tarIn, os, counting, total, onProgress, state)
-                                    }
+                                // 严格路径穿越防护
+                                if (!outPath.startsWith(destPath) && outPath != destDir.canonicalPath) {
+                                    Timber.w("Skip unsafe archive entry: %s", entryName)
                                 } else {
-                                    // 过滤条目：纯消费跳过，不写盘
-                                    pump(tarIn, null, counting, total, onProgress, state)
+                                    val shouldExtract = filter(entryName)
+                                    if (entry.isDirectory) {
+                                        if (shouldExtract) {
+                                            outFile.mkdirs()
+                                            // 恢复目录的修改时间
+                                            setEntryTime(outFile, entry)
+                                        }
+                                    } else {
+                                        if (shouldExtract) {
+                                            outFile.parentFile?.mkdirs()
+                                            BufferedOutputStream(
+                                                outFile.outputStream(), STREAM_BUFFER
+                                            ).use { os ->
+                                                pump(tarIn, os, counting, total, onProgress, state, sharedBuffer)
+                                            }
+                                            // 文件写入完成后，恢复文件的修改时间 (mtime)
+                                            setEntryTime(outFile, entry)
+                                        } else {
+                                            // 过滤条目：纯消费跳过，不写盘
+                                            pump(tarIn, null, counting, total, onProgress, state, sharedBuffer)
+                                        }
+                                    }
                                 }
+                                entry = tarIn.nextEntry
                             }
                         }
-                        entry = tarIn.nextEntry
                     }
                 }
             }
         }
         onProgress(counting.bytesRead.coerceAtMost(total), total)
+    }
+
+    private fun setEntryTime(file: File, entry: TarArchiveEntry) {
+        try {
+            entry.lastModifiedDate?.time?.let { time ->
+                if (time > 0) {
+                    file.setLastModified(time)
+                }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to set mtime for %s", file.name)
+        }
     }
 
     private fun pump(
@@ -83,8 +103,8 @@ object TarBz2ExtractorUtil {
         total: Long,
         onProgress: (Long, Long) -> Unit,
         state: ProgressState,
+        buffer: ByteArray,
     ) {
-        val buffer = ByteArray(BUFFER)
         var n: Int
         while (tarIn.read(buffer).also { n = it } != -1) {
             out?.write(buffer, 0, n)

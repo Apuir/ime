@@ -200,7 +200,7 @@ object KeyboardStateManager {
         when (message) {
             is EngineMessage.Depoly -> {
                 Timber.d("handleEngineMessage EngineMessage.Depoly ")
-                if (message.state == EngineMessage.Depoly.State.Success) {
+                if (message.state == EngineMessage.Depoly.State.Finish) {
                     refreshSchemas()
                 }
             }

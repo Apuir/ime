@@ -182,8 +182,6 @@ class ParticleWaveView @JvmOverloads constructor(
 
     override fun onRender(canvas: Canvas?, millisPassed: Long) {
         if (viewWidth == 0 || viewHeight == 0 || baseRadius <= 0) return
-        // 正常情况下 RenderThread 已通过 shouldIdleWait 拒绝进入冬眠分支；
-        // 但若有外部并发唤起/暂停造成的瞬态，安全跳过本次绘制。
         if (isEngineSleeping) return
 
         softerChangeVolume()
@@ -195,7 +193,6 @@ class ParticleWaveView @JvmOverloads constructor(
             silentFrameCount++
             if (silentFrameCount >= SILENT_IDLE_THRESHOLD) {
                 drawStaticScene(canvas!!, timeFactor)
-                // 标记冬眠后返回，下一帧 RenderThread 通过 shouldIdleWait 切换到 awaitWakeUp。
                 isEngineSleeping = true
                 silentFrameCount = 0
                 return
@@ -275,15 +272,19 @@ class ParticleWaveView @JvmOverloads constructor(
 
         // ========== 2. 粒子系统 (允许越过外围圆环版) ==========
         val spawnRadius = baseRadius * 1.2f
-        // 🌟 新增：允许粒子飞行的绝对最大半径（扩大到外围环的 1.4 倍，使其能明显穿透出去）
         val particleMaxRadius = maxRadius * 1.7f
-        val dynamicMaxCount =
-            (3 + (particleCount - 3) * vPercent).toInt().coerceIn(3, particleCount)
-        val spawnChance = 0.03f + vPercent * 0.6f
-        // 单次扫描完成“激活计数 + 新粒子激活 + 绘制”，避免原先两次 O(n) 遍历。
+
         synchronized(particleLock) {
+            // 🛡️ 安全防护：若列表尚未初始化或已被清空，直接跳过粒子渲染，防止越界崩溃
+            if (particles.isEmpty()) return
+            val actualCount = particles.size
+
+            val dynamicMaxCount =
+                (3 + (actualCount - 3) * vPercent).toInt().coerceIn(3, actualCount)
+            val spawnChance = 0.03f + vPercent * 0.6f
+
             var currentActiveCount = 0
-            for (i in 0 until particleCount) {
+            for (i in 0 until actualCount) {
                 val p = particles[i]
                 if (p.active) {
                     currentActiveCount++
@@ -302,17 +303,16 @@ class ParticleWaveView @JvmOverloads constructor(
                     currentActiveCount++
                 }
             }
-            for (i in 0 until particleCount) {
+
+            for (i in 0 until actualCount) {
                 val p = particles[i]
                 if (!p.active) continue
 
                 // 粒子向外扩散
                 p.radius += p.speed * (0.4f + vPercent)
-            // 🌟 稍微调小寿命步长（从 0.05f 改为 0.025f），给粒子留出足够的时间飞到外圈更远的地方
                 p.life += 0.025f
                 p.rotation += p.spinSpeed
 
-            // 🌟 边界判定升级：只有超过了扩展后的外圈半径，或者寿命耗尽，才允许销毁
                 if (p.radius > particleMaxRadius || p.life > 1.0f) {
                     p.active = false
                     p.radius = spawnRadius
@@ -325,20 +325,19 @@ class ParticleWaveView @JvmOverloads constructor(
                 val x = centerX + p.radius * cosP
                 val y = centerY + p.radius * sinP
 
-            // 🌟 透明度计算：利用 (1 - p.life) 确保粒子在越过外围圆环奔向 1.4 倍半径的过程中，是完美自然淡出的
                 val alpha = (200 * (1 - p.life) * (0.2f + 0.8f * vPercent)).toInt().coerceIn(0, 255)
                 particlePaint.color = Color.argb(alpha, r, g, b)
 
                 val particleSize = p.size * (1 - p.life * 0.6f)
 
-            // 绘制主几何粒子
+                // 绘制主几何粒子
                 canvas.save()
                 canvas.translate(x, y)
                 canvas.rotate(p.rotation)
                 drawCustomShape(canvas, p.shapeType, particleSize, particlePaint)
                 canvas.restore()
 
-            // 绘制拖尾
+                // 绘制拖尾
                 if (p.life < 0.8f) {
                     val trailRadius = max(spawnRadius, p.radius - p.speed * 2.5f)
                     val trailX = centerX + trailRadius * cosP
@@ -421,16 +420,14 @@ class ParticleWaveView @JvmOverloads constructor(
      */
     private fun drawCustomShape(canvas: Canvas, shapeType: Int, size: Float, paint: Paint) {
         if (shapeType == SHAPE_TRIANGLE) {
-            // 绘制等边三角形
             singleParticlePath.rewind()
             val r = size * 1.1f
-            // 缓存三个顶点的标准弧度（避免高频计算）
             val p1X = 0f
             val p1Y = -r
-            val p2X = r * 0.866f  // cos(30°)
-            val p2Y = r * 0.5f    // sin(30°)
-            val p3X = -r * 0.866f // -cos(30°)
-            val p3Y = r * 0.5f   // sin(30°)
+            val p2X = r * 0.866f
+            val p2Y = r * 0.5f
+            val p3X = -r * 0.866f
+            val p3Y = r * 0.5f
 
             singleParticlePath.moveTo(p1X, p1Y)
             singleParticlePath.lineTo(p2X, p2Y)
@@ -438,7 +435,6 @@ class ParticleWaveView @JvmOverloads constructor(
             singleParticlePath.close()
             canvas.drawPath(singleParticlePath, paint)
         } else {
-            // 绘制正方形/四边形 (Rect 范围从 -size 到 size)
             canvas.drawRect(-size, -size, size, size, paint)
         }
     }
@@ -507,7 +503,7 @@ class ParticleWaveView @JvmOverloads constructor(
     override fun setVolume(volume: Int) {
         val inputVolume = volume.coerceIn(0, 100)
         if (abs((targetVolume - inputVolume).toFloat()) > perVolume || inputVolume > 0) {
-            targetVolume = inputVolume + 20 //作为开始正式接受声音的标志
+            targetVolume = inputVolume + 20
             checkVolumeValue()
 
             if (inputVolume > 0 && isEngineSleeping) {
@@ -538,6 +534,10 @@ class ParticleWaveView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         isViewAttached = true
+        // 🌟 确保重新附加时如果列表已被清空，自动重新初始化粒子池
+        if (particles.isEmpty()) {
+            initParticles()
+        }
     }
 
     override fun onDetachedFromWindow() {
@@ -599,7 +599,6 @@ class ParticleWaveView @JvmOverloads constructor(
         if (sensibility < 1) sensibility = 1
     }
 
-    // 🌟 扩展数据结构，支持形状类型与自旋转
     private data class Particle(
         var angle: Float = 0f,
         var radius: Float = 0f,
@@ -607,8 +606,8 @@ class ParticleWaveView @JvmOverloads constructor(
         var size: Float = 0f,
         var life: Float = 0f,
         var active: Boolean = false,
-        var shapeType: Int = SHAPE_TRIANGLE, // 形状类别
-        var rotation: Float = 0f,           // 自身旋转角度
-        var spinSpeed: Float = 0f           // 自旋速度
+        var shapeType: Int = SHAPE_TRIANGLE,
+        var rotation: Float = 0f,
+        var spinSpeed: Float = 0f
     )
 }

@@ -94,6 +94,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 session?.runOnReady(job)
             }
         }
+        //以结束为号
+        sendJob {
+            joinMaintenanceThread()
+            onMessage(RimeMessage.DeployMessage(RimeMessage.DeployMessage.State.Finish))
+        }
     }
 
     override fun finalize() {
@@ -110,7 +115,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             return
         }
         sendJob {
-            Timber.d("ssss %s",currentSchema().switches)
+            Timber.d("ssss %s", currentSchema().switches)
 
             when (key) {
                 is KeyEvent.SequenceEvent -> {
@@ -276,7 +281,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             is EngineMessage.Depoly -> {
                 when (msg.state) {
                     EngineMessage.Depoly.State.Start -> inited = false
-                    EngineMessage.Depoly.State.Success -> {
+                    EngineMessage.Depoly.State.Finish -> {
                         inited = true
                         sendJob {
                             val prefs = context?.getSharedPreferences(
@@ -423,6 +428,8 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         resetState()
         sendJob {
             deploy()
+            joinMaintenanceThread()
+            onMessage(RimeMessage.DeployMessage(RimeMessage.DeployMessage.State.Finish))
         }
     }
 

@@ -9,6 +9,7 @@ import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.base.util.isStorageAvailable
 import com.ninthsoft.ime.engine.data.CommandSymbol
 import com.ninthsoft.ime.engine.data.EngineMessage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -44,7 +45,8 @@ class Rime : RimeApi, RimeLifecycleOwner {
     private val dispatcher = RimeDispatcher(
         object : RimeDispatcher.RimeController {
             override fun nativeStartup() {
-                startRime(true)
+                startRime(false)
+
                 lifecycleRegistry.emitState(RimeLifecycle.State.READY)
             }
 
@@ -75,6 +77,12 @@ class Rime : RimeApi, RimeLifecycleOwner {
     override suspend fun updateConfig() = withRimeContext {
         shutdown()
         startRime(false)
+    }
+
+    override suspend fun joinMaintenanceThread() {
+        withContext(Dispatchers.IO) {
+            Companion.joinMaintenanceThread()
+        }
     }
 
     override suspend fun syncUserData(): Boolean = withRimeContext {
@@ -353,6 +361,9 @@ class Rime : RimeApi, RimeLifecycleOwner {
 
         @JvmStatic
         external fun shutdown()
+
+        @JvmStatic
+        external fun joinMaintenanceThread()
 
         @JvmStatic
         external fun deploySchemaFile(schemaFile: String): Boolean

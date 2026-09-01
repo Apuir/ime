@@ -30,7 +30,7 @@ class MessageHandler(
 
             is EngineMessage.Depoly -> {
                 Timber.d("EngineMessage.Depoly")
-                if (message.state == EngineMessage.Depoly.State.Success) {
+                if (message.state == EngineMessage.Depoly.State.Finish) {
                     window?.onDepolyFinished()
                 }
             }

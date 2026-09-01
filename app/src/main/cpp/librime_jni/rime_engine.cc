@@ -94,6 +94,10 @@ namespace {
             api_->finalize();
         }
 
+        void joinMaintenanceThread() {
+            api_->join_maintenance_thread();
+        }
+
         bool syncUserData() {
             session_.reset();
             return api_->sync_user_data();
@@ -322,6 +326,11 @@ Java_com_ninthsoft_ime_engine_rime_core_Rime_bootstrap(
 JNIEXPORT void JNICALL
 Java_com_ninthsoft_ime_engine_rime_core_Rime_shutdown(JNIEnv *, jclass) {
     RimeEngine::instance().shutdown();
+}
+
+JNIEXPORT void JNICALL
+Java_com_ninthsoft_ime_engine_rime_core_Rime_joinMaintenanceThread(JNIEnv *, jclass) {
+    RimeEngine::instance().joinMaintenanceThread();
 }
 
 JNIEXPORT jboolean JNICALL

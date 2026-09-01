@@ -24,6 +24,8 @@ interface RimeApi {
 
     suspend fun updateConfig()
 
+    suspend fun joinMaintenanceThread()
+
     suspend fun syncUserData(): Boolean
 
     suspend fun processKey(

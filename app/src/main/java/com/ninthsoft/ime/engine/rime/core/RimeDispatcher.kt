@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.engine.rime.core
 
+import com.ninthsoft.ime.engine.rime.core.Rime.Companion.handleMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Runnable

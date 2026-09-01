@@ -48,7 +48,7 @@ sealed class RimeMessage<T>(val data: T) {
     }
 
     data class DeployMessage(val state: State) : RimeMessage<DeployMessage.State>(state) {
-        enum class State { Start, Success, Failure }
+        enum class State { Start, Success, Failure, Finish }
     }
 
     data class CommitTextMessage(val commit: CommitProto) : RimeMessage<CommitProto>(commit)
@@ -328,6 +328,7 @@ fun RimeMessage<*>.EngineMessage(): EngineMessage = when (this) {
             RimeMessage.DeployMessage.State.Start -> EngineMessage.Depoly.State.Start
             RimeMessage.DeployMessage.State.Success -> EngineMessage.Depoly.State.Success
             RimeMessage.DeployMessage.State.Failure -> EngineMessage.Depoly.State.Failure
+            RimeMessage.DeployMessage.State.Finish -> EngineMessage.Depoly.State.Finish
         }
         EngineMessage.Depoly(deployState)
     }
