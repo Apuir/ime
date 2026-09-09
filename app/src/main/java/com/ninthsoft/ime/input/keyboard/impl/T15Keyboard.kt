@@ -10,19 +10,16 @@ import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.clearKey
-import com.ninthsoft.ime.input.keyboard.key.infiniteKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
-import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
 import com.ninthsoft.ime.input.keyboard.key.peroidKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
-import com.ninthsoft.ime.input.keyboard.key.segmentKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
 import com.ninthsoft.ime.input.keyboard.key.zeroKey
 
 @SuppressLint("ViewConstructor")
-class T9Keyboard(
+class T15Keyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
@@ -51,52 +48,76 @@ class T9Keyboard(
                         behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.CommitAction(ch))),
                     )
                 })
-            return
         }
-        super.updateSidePanel(data.map { pinYin ->
-            KeyDef(
-                appearance = KeyDef.Appearance.Text(
-                    displayText = pinYin.pinYin,
-                    textSize = 15f,
-                    percentWidth = 0.5f,
-                    margin = false,
-                ),
-                behaviors = setOf(
-                    KeyDef.Behavior.Press(KeyboardAction.SelectCandidatePinYin(pinYin = pinYin))
-                ),
-            )
-        })
+        return
     }
 
+
     companion object {
-        const val NAME = "T9"
+        const val NAME = "T15"
+
+        const val percentWidth = 0.13998f
+        const val npercentWidth = 0.15f
+
+        fun mixedAlphabetKey(
+            digit: String,
+            send: String,
+            letters: String,
+            percentWidth: Float = 0.23333f,
+            mainTextTranslationY: Int = 0,
+            altTextTranslationY: Int = 4
+        ) = KeyDef(
+            appearance = KeyDef.Appearance.AltText(
+                displayText = letters,
+                altText = digit,
+                textSize = 20f,
+                percentWidth = percentWidth,
+                mainTextTranslationY = mainTextTranslationY,
+                altTextTranslationY = altTextTranslationY
+            ),
+            behaviors = setOf(
+                KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(send)),
+                KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit))
+            ),
+        )
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                sidePannelKey(rowSpan = 3, visableRow = 4),
-                segmentKey(percentWidth = 0.23333f),
-                mixedAlphabetKey("2", "ABC"),
-                mixedAlphabetKey("3", "DEF"),
-                backspaceKey(),
+                sidePannelKey(rowSpan = 3, visableRow = 4, percentWidth = npercentWidth),
+                mixedAlphabetKey("1", "q", "b", percentWidth = percentWidth),
+                mixedAlphabetKey("2", "w", "p", percentWidth = percentWidth),
+                mixedAlphabetKey("3", "e", "m", percentWidth = percentWidth),
+                mixedAlphabetKey("4", "r", "rf", percentWidth = percentWidth),
+                mixedAlphabetKey("5", "t", "ẑz", percentWidth = percentWidth),
+                backspaceKey(percentWidth = npercentWidth),
             ),
             listOf(
-                mixedAlphabetKey("4", "GHI"),
-                mixedAlphabetKey("5", "JKL"),
-                mixedAlphabetKey("6", "MNO"),
-                clearKey(0.15f),
+                mixedAlphabetKey("6", "a", "d", percentWidth = percentWidth),
+                mixedAlphabetKey("7", "s", "t", percentWidth = percentWidth),
+                mixedAlphabetKey("8", "d", "n", percentWidth = percentWidth),
+                mixedAlphabetKey("9", "f", "l", percentWidth = percentWidth),
+                mixedAlphabetKey("0", "g", "ĉc", percentWidth = percentWidth),
+                clearKey(percentWidth = npercentWidth),
             ),
             listOf(
-                mixedAlphabetKey("7", "PQRS"),
-                mixedAlphabetKey("8", "TUV"),
-                mixedAlphabetKey("9", "WXYZ"),
-                zeroKey()
+                mixedAlphabetKey(
+                    "&", "z", "gj", percentWidth = percentWidth, altTextTranslationY = 0
+                ), mixedAlphabetKey(
+                    "*", "x", "kq", percentWidth = percentWidth, altTextTranslationY = 4
+                ), mixedAlphabetKey(
+                    "^", "c", "hx", percentWidth = percentWidth, altTextTranslationY = 6
+                ), mixedAlphabetKey(
+                    "#", "v", "yw", percentWidth = percentWidth, altTextTranslationY = 2
+                ), mixedAlphabetKey(
+                    ";", "b", "ŝs", percentWidth = percentWidth, altTextTranslationY = 2
+                ), zeroKey(percentWidth = npercentWidth)
             ),
             listOf(
-                layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
+                layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = npercentWidth),
                 schemaSwitchKey(0.13f),
                 spaceKey(percentWidth = 0.44f),
                 peroidKey(percentWidth = 0.13f),
-                returnKey(percentWidth = 0.15f),
+                returnKey(percentWidth = npercentWidth),
             ),
         )
     }
