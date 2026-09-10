@@ -248,6 +248,26 @@ object KeyboardManager {
             }
         }
 
+        /** 键盘上方工具栏中间那排可自定义的工具（有序）。 */
+        object ToolbarTools {
+            const val KEY = "keyboard.toolbar_tools"
+
+            val DEFAULT_KEYS = listOf("undo", "redo", "cursor", "clipboard", "palette")
+
+            fun getKeys(context: Context): List<String> {
+                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getString(KEY, null) ?: return DEFAULT_KEYS
+                if (raw.isEmpty()) return emptyList()
+                return raw.split(',').filter { it.isNotBlank() }
+            }
+
+            fun setKeys(context: Context, keys: List<String>) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putString(KEY, keys.joinToString(","))
+                }
+            }
+        }
+
         object ExpandBorder {
             const val KEY = "keyboard.expand_borders"
 

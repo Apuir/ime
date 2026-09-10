@@ -13,7 +13,7 @@ import com.ninthsoft.ime.input.panel.toolbar.ToolbarRendererResources
  */
 class StateRenderContext(
     val context: Context,
-    val idleResources: ToolbarRendererResources,
+    var idleResources: ToolbarRendererResources,
     val expandDrawable: Drawable?,
     val candidateGrid: CandidateGridView,
     val textEditingView: TextEditView,

@@ -16,6 +16,7 @@ import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.panel.toolbar.ToolbarRenderer
 import com.ninthsoft.ime.input.panel.toolbar.ToolbarRendererResources
+import com.ninthsoft.ime.input.panel.toolbar.configuredToolbarButtons
 import kotlin.math.abs
 
 @SuppressLint("UseCompatLoadingForDrawables")
@@ -76,6 +77,7 @@ class KawaiiPanelView(context: Context) : View(context) {
                 context.getDrawable(R.drawable.ic_keyboard_cursor_move),
                 context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
                 context.getDrawable(R.drawable.ic_keyboard_trash),
+                centerButtons = configuredToolbarButtons(context),
             ),
             hPad,
         )

@@ -156,6 +156,18 @@
     <string name="color_pinnerText">拼音条文字</string>
     <string name="color_pinnerSecondaryText">拼音条次级文字</string>
 
+    <!-- Toolbar tools -->
+    <string name="toolbar_tools">工具栏工具</string>
+    <string name="toolbar_tools_desc">选择键盘上方工具栏显示哪些工具</string>
+    <string name="toolbar_tools_selected">已显示（可排序）</string>
+    <string name="toolbar_tools_available">可添加</string>
+    <string name="toolbar_tools_empty">还没有放置任何工具，从下方添加</string>
+    <string name="toolbar_tools_hint">已显示的按顺序排列在工具栏中间，可用箭头调整顺序</string>
+    <string name="toolbar_tools_move_up">上移</string>
+    <string name="toolbar_tools_move_down">下移</string>
+    <string name="tool_undo">撤销</string>
+    <string name="tool_redo">重做</string>
+
     <!-- General -->
     <string name="cancel">取消</string>
     <string name="back">返回</string>

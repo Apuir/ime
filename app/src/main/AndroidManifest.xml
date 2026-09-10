@@ -76,6 +76,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.ToolbarSettingsActivity"
+            android:exported="false"
+            android:label="@string/toolbar_tools"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"

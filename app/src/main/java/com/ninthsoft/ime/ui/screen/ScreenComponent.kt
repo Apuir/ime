@@ -194,8 +194,7 @@ object ScreenComponent {
         subtitle: String? = null,
         trailing: @Composable () -> Unit,
         showDivider: Boolean = false,
-    ) {
-        Row(
+    ) {        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 6.dp),
@@ -219,6 +218,48 @@ object ScreenComponent {
             }
             Spacer(Modifier.width(12.dp))
             trailing()
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+    }
+
+    /** 可点击的设置行，右侧显示当前取值。 */
+    @Composable
+    fun ClickableRow(
+        title: String,
+        value: String,
+        onClick: () -> Unit,
+        showDivider: Boolean = false,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontSize = rowSubFontSize,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = rowSubFontSize,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(18.dp),
+            )
         }
         if (showDivider) {
             HorizontalDivider(

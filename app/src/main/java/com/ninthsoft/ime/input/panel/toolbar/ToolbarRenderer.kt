@@ -91,13 +91,14 @@ class ToolbarRenderer(
         return if (recording) (color and 0x00FFFFFF) or 0x5A000000 else color
     }
 
-    private val centerButtons = listOf(
-        ImageButton(resources.undo, PanelAction.Undo, iconScale = iconScale),
-        ImageButton(resources.redo, PanelAction.Redo, iconScale = iconScale),
-        ImageButton(resources.cursorMove, PanelAction.CursorMove, iconScale = iconScale),
-        ImageButton(resources.clipboard, PanelAction.Clipboard, iconScale = iconScale),
-        ImageButton(resources.palette, PanelAction.Palette, iconScale = iconScale),
-    )
+    private val centerButtons: List<ImageButton> =
+        resources.centerButtons.map { spec ->
+            ImageButton(spec.drawable, spec.action, iconScale = iconScale)
+        }
+
+    /** 文本编辑模式下仅保留撤销/重做可用。 */
+    private fun isEditingToolEnabled(action: PanelAction): Boolean =
+        action == PanelAction.Undo || action == PanelAction.Redo
 
     var pressAlpha: Int = 0
     var pressCx: Float = 0f
@@ -209,19 +210,21 @@ class ToolbarRenderer(
             val textY = textCenterY - (textPaint.descent() + textPaint.ascent()) / 2f
             canvas.drawText(ellipsized, drawX, textY, textPaint)
         } else {
-            val otherW = centerAreaW / centerButtons.size
-            for ((i, btn) in centerButtons.withIndex()) {
-                val savedColor = paints.toolbarIconColor
-                val disabled = (textEditingMode && i >= 2) || recording
-                if (disabled) {
-                    paints.toolbarIconColor = (savedColor and 0x00FFFFFF) or 0x62000000.toInt()
-                }
-                btn.draw(
-                    canvas, centerAreaLeft + otherW * i + otherW / 2f,
-                    height / 2f, paints, density,
-                )
-                if (disabled) {
-                    paints.toolbarIconColor = savedColor
+            if (centerButtons.isNotEmpty()) {
+                val otherW = centerAreaW / centerButtons.size
+                for ((i, btn) in centerButtons.withIndex()) {
+                    val savedColor = paints.toolbarIconColor
+                    val disabled = (textEditingMode && !isEditingToolEnabled(btn.action)) || recording
+                    if (disabled) {
+                        paints.toolbarIconColor = (savedColor and 0x00FFFFFF) or 0x62000000.toInt()
+                    }
+                    btn.draw(
+                        canvas, centerAreaLeft + otherW * i + otherW / 2f,
+                        height / 2f, paints, density,
+                    )
+                    if (disabled) {
+                        paints.toolbarIconColor = savedColor
+                    }
                 }
             }
         }
@@ -410,7 +413,7 @@ class ToolbarRenderer(
         val centerPad = centerHorizontalPaddingDp * density
         val centerAreaLeft = hPad + fixedW + centerPad
         val centerAreaW = width - centerAreaLeft - hPad - fixedW - centerPad
-        val otherW = centerAreaW / centerButtons.size
+        val otherW = if (centerButtons.isEmpty()) 0f else centerAreaW / centerButtons.size
 
         when (x) {
             in closeTouchLeft..closeTouchRight -> {
@@ -438,16 +441,17 @@ class ToolbarRenderer(
             }
 
             else -> {
-                if (copyText != null) return null
+                if (copyText != null || centerButtons.isEmpty()) return null
                 val index = ((x - centerAreaLeft) / otherW).toInt()
                     .takeIf { it in centerButtons.indices } ?: return null
-                if (textEditingMode && index >= 2) return null
+                val button = centerButtons[index]
+                if (textEditingMode && !isEditingToolEnabled(button.action)) return null
                 pressCx = centerAreaLeft + otherW * index + otherW / 2f
                 pressCy = height / 2f
                 pressRadiusMax = height * 0.55f
                 pressRadius = 0f
                 return KawaiiPanel.TouchResult.ToolbarAction(
-                    centerButtons[index].action,
+                    button.action,
                     tapX = x,
                     tapY = y,
                 )

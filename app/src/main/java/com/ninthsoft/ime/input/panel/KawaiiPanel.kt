@@ -24,6 +24,7 @@ import com.ninthsoft.ime.input.panel.state.CopyStateRender
 import com.ninthsoft.ime.input.panel.state.IdleStateRender
 import com.ninthsoft.ime.input.panel.toolbar.ToolbarRenderer
 import com.ninthsoft.ime.input.panel.toolbar.ToolbarRendererResources
+import com.ninthsoft.ime.input.panel.toolbar.configuredToolbarButtons
 import com.ninthsoft.ime.input.panel.state.IStateRender
 import com.ninthsoft.ime.input.panel.state.MenuStateRender
 import com.ninthsoft.ime.input.panel.state.ClipboardStateRender
@@ -190,6 +191,7 @@ class KawaiiPanel(
             context.getDrawable(R.drawable.ic_keyboard_cursor_move),
             context.getDrawable(R.drawable.ic_keyboard_keyboard_close),
             context.getDrawable(R.drawable.ic_keyboard_trash),
+            centerButtons = configuredToolbarButtons(context),
         ),
         expandDrawable = context.getDrawable(R.drawable.ic_keyboard_expand_more),
         candidateGrid = candidateGrid,
@@ -199,64 +201,82 @@ class KawaiiPanel(
         recording = recording,
     )
 
+    /**
+     * 处理菜单网格与工具栏共用的「进入某状态 / 切换开关」动作。
+     * 返回 true 表示已消费，不再向 [PanelListener.onToolbarAction] 透传。
+     */
+    private fun handleToggleAction(action: PanelAction): Boolean {
+        when (action) {
+            PanelAction.Clipboard -> {
+                clipboardTab = ClipboardTab.CLIPBOARD
+                state = State.Clipboard
+            }
+
+            PanelAction.CommonPhrases -> {
+                clipboardTab = ClipboardTab.PHRASE
+                state = State.Clipboard
+            }
+
+            PanelAction.CursorMove -> state = State.TextEditing
+
+            PanelAction.TogglePrediction -> {
+                CandidateManager.setPredictionEnabled(
+                    context,
+                    !CandidateManager.isPredictionEnabled(context),
+                )
+                menuGridView.refreshPredictionState()
+            }
+
+            PanelAction.ToggleShowComment -> {
+                CandidateManager.setShowComment(
+                    context,
+                    !CandidateManager.isShowComment(context),
+                )
+                menuGridView.refreshPredictionState()
+            }
+
+            PanelAction.ToggleTraditionalChinese -> {
+                CandidateManager.setTraditionalChineseEnabled(
+                    context,
+                    !CandidateManager.isTraditionalChineseEnabled(context),
+                )
+                menuGridView.refreshPredictionState()
+            }
+
+            PanelAction.ToggleEmojiInput -> {
+                CandidateManager.setEmojiEnabled(
+                    context,
+                    !CandidateManager.isEmojiEnabled(context),
+                )
+                menuGridView.refreshPredictionState()
+            }
+
+            PanelAction.ToggleAsciiMode -> {
+                CandidateManager.setAsciiModeEnabled(
+                    context,
+                    !CandidateManager.isAsciiModeEnabled(context),
+                )
+                menuGridView.refreshPredictionState()
+            }
+
+            else -> return false
+        }
+        return true
+    }
+
     init {
         menuGridView.onAction = { action ->
             if (state == State.Menu) state = State.Idle
-            when (action) {
-                PanelAction.Clipboard -> {
-                    clipboardTab = ClipboardTab.CLIPBOARD
-                    state = State.Clipboard
-                }
-                PanelAction.CommonPhrases -> {
-                    clipboardTab = ClipboardTab.PHRASE
-                    state = State.Clipboard
-                }
-                PanelAction.CursorMove -> state = State.TextEditing
-                PanelAction.TogglePrediction -> {
-                    CandidateManager.setPredictionEnabled(
-                        context,
-                        !CandidateManager.isPredictionEnabled(context),
-                    )
-                    menuGridView.refreshPredictionState()
-                }
-                PanelAction.ToggleShowComment -> {
-                    CandidateManager.setShowComment(
-                        context,
-                        !CandidateManager.isShowComment(context),
-                    )
-                    menuGridView.refreshPredictionState()
-                }
-                PanelAction.ToggleTraditionalChinese -> {
-                    CandidateManager.setTraditionalChineseEnabled(
-                        context,
-                        !CandidateManager.isTraditionalChineseEnabled(context),
-                    )
-                    menuGridView.refreshPredictionState()
-                }
-                PanelAction.ToggleEmojiInput -> {
-                    CandidateManager.setEmojiEnabled(
-                        context,
-                        !CandidateManager.isEmojiEnabled(context),
-                    )
-                    menuGridView.refreshPredictionState()
-                }
-                PanelAction.ToggleAsciiMode -> {
-                    CandidateManager.setAsciiModeEnabled(
-                        context,
-                        !CandidateManager.isAsciiModeEnabled(context),
-                    )
-                    menuGridView.refreshPredictionState()
-                }
-                else -> {
-                    val dispatch: () -> Unit = { listener?.onToolbarAction(action) }
-                    when (action) {
-                        PanelAction.Settings,
-                        PanelAction.SchemaSettings,
-                        PanelAction.Palette,
-                        PanelAction.About,
-                        -> view.postDelayed(dispatch, 30L)
-                        else -> dispatch()
-                    }
+            if (!handleToggleAction(action)) {
+                val dispatch: () -> Unit = { listener?.onToolbarAction(action) }
+                when (action) {
+                    PanelAction.Settings,
+                    PanelAction.SchemaSettings,
+                    PanelAction.Palette,
+                    PanelAction.About,
+                    -> view.postDelayed(dispatch, 30L)
+
+                    else -> dispatch()
                 }
             }
         }
@@ -406,7 +426,11 @@ class KawaiiPanel(
                                 }
                             }
 
-                            else -> listener?.onToolbarAction(result.action)
+                            else -> {
+                                if (!handleToggleAction(result.action)) {
+                                    listener?.onToolbarAction(result.action)
+                                }
+                            }
                         }
                     }
                 }
@@ -460,6 +484,14 @@ class KawaiiPanel(
             view.setExpanded(false)
             state = State.Menu
         }
+    }
+
+    /** 工具栏工具配置变更后，重读配置并重建当前工具栏渲染器。 */
+    fun refreshToolbarConfig() {
+        renderContext.idleResources = renderContext.idleResources.copy(
+            centerButtons = configuredToolbarButtons(context),
+        )
+        applyStateRender(state)
     }
 
     fun showTextEditing() {

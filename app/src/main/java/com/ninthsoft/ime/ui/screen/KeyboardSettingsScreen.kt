@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.manager.KeyboardManager
+import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
@@ -40,7 +41,10 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KeyboardSettingsScreen(onBack: () -> Unit) {
+fun KeyboardSettingsScreen(
+    onBack: () -> Unit,
+    onOpenToolbarSettings: () -> Unit = {},
+) {
     val context = LocalContext.current
 
     var keySoundEnabled by remember {
@@ -191,6 +195,14 @@ fun KeyboardSettingsScreen(onBack: () -> Unit) {
                         KeyboardManager.Keyboard.Gap.setVerticalDp(context, it.toInt())
                     },
                     showDivider = true,
+                )
+            }
+
+            SettingsGroup(title = stringResource(R.string.toolbar_tools)) {
+                ClickableRow(
+                    title = stringResource(R.string.toolbar_tools),
+                    value = stringResource(R.string.toolbar_tools_desc),
+                    onClick = onOpenToolbarSettings,
                 )
             }
 

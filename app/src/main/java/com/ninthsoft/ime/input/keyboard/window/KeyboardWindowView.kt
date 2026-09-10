@@ -194,6 +194,8 @@ class KeyboardWindowView(
 
             KeyboardManager.Keyboard.KeyRadius.KEY, KeyboardManager.Keyboard.KEY_THEME, KeyboardManager.Keyboard.KEY_FOLLOW_SYSTEM, KeyboardManager.Keyboard.KEY_LIGHT_THEME, KeyboardManager.Keyboard.KEY_DARK_THEME, KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL, KeyboardManager.Keyboard.Gap.KEY_VERTICAL -> post { refreshColors() }
 
+            KeyboardManager.Keyboard.ToolbarTools.KEY -> post { panel.refreshToolbarConfig() }
+
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {
                 keyboardStateManager.setRippleEnabled(
                     KeyboardManager.Keyboard.RippleEffect.isEnabled(context)
