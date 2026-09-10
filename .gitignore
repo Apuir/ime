@@ -10,5 +10,18 @@
 local.properties
 /app/src/main/cpp/deps/*
 .kotlin/
-release.keystore
 app/src/main/assets/resource.zip
+
+# ---- 签名材料：绝不入库 ----
+release.keystore
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+/android-keystores/
+
+# ---- 构建产物 ----
+*.apk
+*.aab
+/app/debug/
+/app/release/

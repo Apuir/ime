@@ -27,6 +27,12 @@ for item in "${DEPS[@]}"; do
     IFS="|" read -r path url branch <<< "$item"
 
     if [ ! -d "$path/.git" ]; then
+        # AGP 配置 CMake 时会在 deps/librime/plugins 下建空目录，导致 git clone 报
+        # “目标路径已存在且不是空目录”。这里把非 git 残留清掉，保证脚本真正幂等。
+        if [ -d "$path" ]; then
+            echo ">>> 清理非 git 残留目录: $path"
+            rm -rf "$path"
+        fi
         echo ">>> 克隆: $path"
         mkdir -p "$(dirname "$path")"
         git clone --depth 1 -b "$branch" "$url" "$path"
@@ -76,6 +82,12 @@ for item in "${RIME_DEPS[@]}"; do
     IFS="|" read -r path url branch <<< "$item"
 
     if [ ! -d "$path/.git" ]; then
+        # AGP 配置 CMake 时会在 deps/librime/plugins 下建空目录，导致 git clone 报
+        # “目标路径已存在且不是空目录”。这里把非 git 残留清掉，保证脚本真正幂等。
+        if [ -d "$path" ]; then
+            echo ">>> 清理非 git 残留目录: $path"
+            rm -rf "$path"
+        fi
         echo ">>> 克隆: $path"
         mkdir -p "$(dirname "$path")"
         git clone --depth 1 -b "$branch" "$url" "$path"
@@ -87,5 +99,96 @@ for item in "${RIME_DEPS[@]}"; do
         cd - > /dev/null
     fi
 done
+
+# --- 给 librime 补上 C API 的 kind 字段 ---
+# 上游 danjian/librime 的 95d3e11 只加了内部 Schema::kind_，忘了暴露到
+# RimeSchemaListItem，而 librime_jni/rime_data.h 直接读 item.kind，
+# 不补会导致 native 编译报 “no member named 'kind'”。
+# 若上游将来自己加上，这里会自动跳过。
+LIBRIME_SRC="$DEPS_DIR/librime/src"
+if [ -f "$LIBRIME_SRC/rime_api.h" ] && ! grep -qE "char\s*\*\s*kind;" "$LIBRIME_SRC/rime_api.h"; then
+    echo ">>> 给 librime 打补丁：把 schema kind 暴露到 C API"
+    git -C "$DEPS_DIR/librime" apply --whitespace=nowarn - <<'LIBRIME_KIND_PATCH'
+diff --git a/src/rime/lever/levers_api_impl.h b/src/rime/lever/levers_api_impl.h
+index 60263a7c..7acf2040 100644
+--- a/src/rime/lever/levers_api_impl.h
++++ b/src/rime/lever/levers_api_impl.h
+@@ -110,6 +110,7 @@ static Bool rime_levers_get_available_schema_list(
+     item.name = const_cast<char*>(info.name.c_str());
+     item.layout = const_cast<char*>(info.layout.c_str());
+     item.punctuation = const_cast<char*>(info.punctuation.c_str());
++    item.kind = const_cast<char*>(info.kind.c_str());
+     item.reserved = const_cast<SchemaInfo*>(&info);
+     ++list->size;
+   }
+@@ -131,6 +132,7 @@ static Bool rime_levers_get_selected_schema_list(RimeSwitcherSettings* settings,
+     item.name = NULL;
+     item.layout = const_cast<char*>("");
+     item.punctuation = const_cast<char*>("");
++    item.kind = const_cast<char*>("");
+     item.reserved = NULL;
+     ++list->size;
+   }
+diff --git a/src/rime/lever/switcher_settings.cc b/src/rime/lever/switcher_settings.cc
+index 83ff53a2..bf2c6dec 100644
+--- a/src/rime/lever/switcher_settings.cc
++++ b/src/rime/lever/switcher_settings.cc
+@@ -76,6 +76,7 @@ void SwitcherSettings::GetAvailableSchemasFromDirectory(const path& dir) {
+         config.GetString("schema/version", &info.version);
+         config.GetString("schema/layout", &info.layout);
+         config.GetString("schema/punctuation", &info.punctuation);
++        config.GetString("schema/kind", &info.kind);
+         if (auto authors = config.GetList("schema/author")) {
+           for (size_t i = 0; i < authors->size(); ++i) {
+             auto author = authors->GetValueAt(i);
+diff --git a/src/rime/lever/switcher_settings.h b/src/rime/lever/switcher_settings.h
+index f677a7e7..1f4a189d 100644
+--- a/src/rime/lever/switcher_settings.h
++++ b/src/rime/lever/switcher_settings.h
+@@ -17,6 +17,7 @@ struct SchemaInfo {
+   string name;
+   string layout;
+   string punctuation;
++  string kind;
+   string version;
+   string author;
+   string description;
+diff --git a/src/rime_api.h b/src/rime_api.h
+index 450cfc09..b281f0f0 100644
+--- a/src/rime_api.h
++++ b/src/rime_api.h
+@@ -223,6 +223,7 @@ typedef struct rime_schema_list_item_t {
+   char* name;
+   char* layout;
+   char* punctuation;
++  char* kind;
+   void* reserved;
+ } RimeSchemaListItem;
+ 
+diff --git a/src/rime_api_impl.h b/src/rime_api_impl.h
+index 9eb192d2..5329bb99 100644
+--- a/src/rime_api_impl.h
++++ b/src/rime_api_impl.h
+@@ -627,6 +627,8 @@ RIME_DEPRECATED Bool RimeGetSchemaList(RimeSchemaList* output) {
+     strcpy(x.layout, schema.layout().c_str());
+     x.punctuation = new char[schema.punctuation().length() + 1];
+     strcpy(x.punctuation, schema.punctuation().c_str());
++    x.kind = new char[schema.kind().length() + 1];
++    strcpy(x.kind, schema.kind().c_str());
+     x.reserved = NULL;
+     ++output->size;
+   }
+@@ -647,6 +649,7 @@ RIME_DEPRECATED void RimeFreeSchemaList(RimeSchemaList* schema_list) {
+       delete[] schema_list->list[i].name;
+       delete[] schema_list->list[i].layout;
+       delete[] schema_list->list[i].punctuation;
++      delete[] schema_list->list[i].kind;
+     }
+     delete[] schema_list->list;
+   }
+LIBRIME_KIND_PATCH
+else
+    echo ">>> librime 已包含 C API kind 字段，跳过补丁"
+fi
 
 echo ">>> 所有依赖已同步完成。"

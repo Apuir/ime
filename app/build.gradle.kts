@@ -1,9 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+// release 签名材料：优先环境变量（CI 用），其次仓库根的 keystore.properties（已 .gitignore）。
+// 两者都没有 => release 保持「未签名」，不会影响其他人的普通构建。
+val keystoreProps = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+val signingProp: (String, String) -> String? = { key, env ->
+    System.getenv(env) ?: keystoreProps.getProperty(key)
+}
+val releaseStoreFile: String? = signingProp("storeFile", "JIME_STORE_FILE")
 
 @Suppress("UnstableApiUsage") android {
     namespace = "com.ninthsoft.ime"
@@ -14,8 +26,8 @@ plugins {
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 10101
-        versionName = "1.1.1"
+        versionCode = 10200
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -39,12 +51,26 @@ plugins {
         }
     }
 
+    signingConfigs {
+        val storePath = releaseStoreFile
+        if (storePath != null) {
+            create("release") {
+                storeFile = rootProject.file(storePath)
+                storePassword = signingProp("storePassword", "JIME_STORE_PASSWORD")
+                keyAlias = signingProp("keyAlias", "JIME_KEY_ALIAS")
+                keyPassword = signingProp("keyPassword", "JIME_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             )
+            // 有 keystore.properties 时自动签名；没有则产出 app-release-unsigned.apk
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {

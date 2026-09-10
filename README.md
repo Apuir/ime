@@ -7,7 +7,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.1.1` / `10101` |
+| versionName / versionCode | `1.2.0` / `10200` |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
