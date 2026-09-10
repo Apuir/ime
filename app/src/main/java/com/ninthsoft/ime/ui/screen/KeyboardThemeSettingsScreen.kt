@@ -8,22 +8,30 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -46,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -60,10 +69,12 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.ThemeStore
+import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardThemePresets
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.theme.CompactTheme
+import com.ninthsoft.ime.ui.ThemeEditorActivity
 import kotlinx.serialization.json.Json
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
@@ -122,8 +133,7 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
 
     var showQrDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
-    var showOverwriteDialog by remember { mutableStateOf(false) }
-    var pendingImport by remember { mutableStateOf<KeyboardTheme?>(null) }
+    var deleteTarget by remember { mutableStateOf<KeyboardTheme?>(null) }
     var qrCodeText by remember { mutableStateOf("") }
     var themeVersion by remember { mutableIntStateOf(0) }
 
@@ -206,6 +216,7 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
     fun finishImport(theme: KeyboardTheme) {
         KeyboardManager.Keyboard.setFollowSystem(context, false)
         KeyboardManager.Keyboard.setThemeId(context, theme.id)
+        KeyboardColors.applyGeometry(context, theme.colors)
         followSystem = false
         selectedThemeId = theme.id
         themeVersion++
@@ -217,21 +228,9 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
     }
 
     fun importTheme(theme: KeyboardTheme) {
-        val customs = KeyboardThemePresets.customThemes
-        val existingIndex = customs.indexOfFirst { it.id == theme.id }
-        if (existingIndex >= 0) {
-            ThemeStore.overwrite(existingIndex, theme)
-            finishImport(theme)
-        } else if (customs.size < ThemeStore.MAX_CUSTOM_THEMES) {
-            ThemeStore.import(theme)
-            finishImport(theme)
-        } else {
-            pendingImport = theme
-            showOverwriteDialog = true
-            Toast.makeText(
-                context, R.string.keyboard_theme_overwrite_need, Toast.LENGTH_SHORT
-            ).show()
-        }
+        // 自定义主题数量不再设上限：同 id 覆盖，否则追加。
+        ThemeStore.import(theme)
+        finishImport(theme)
     }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
@@ -242,6 +241,17 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
             return@rememberLauncherForActivityResult
         }
         importTheme(importedTheme)
+    }
+
+    val editorLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        ThemeStore.refresh()
+        themeVersion++
+        followSystem = KeyboardManager.Keyboard.getFollowSystem(context)
+        selectedThemeId = KeyboardManager.Keyboard.getThemeId(context)
+        selectedLightThemeId = KeyboardManager.Keyboard.getLightThemeId(context)
+        selectedDarkThemeId = KeyboardManager.Keyboard.getDarkThemeId(context)
     }
 
     val qrBitmap = qrCodeText.takeIf { it.isNotEmpty() }?.let {
@@ -269,6 +279,13 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { editorLauncher.launch(ThemeEditorActivity.intent(context)) }) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.theme_editor_new),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                     IconButton(onClick = { scanLauncher.launch(scanOptions) }) {
                         Icon(
                             Icons.Filled.QrCodeScanner,
@@ -341,6 +358,7 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
                                 onClick = {
                                     selectedLightThemeId = theme.id
                                     KeyboardManager.Keyboard.setLightThemeId(context, theme.id)
+                                    KeyboardColors.applyGeometry(context, theme.colors)
                                 },
                             )
                         }
@@ -370,6 +388,7 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
                                 onClick = {
                                     selectedDarkThemeId = theme.id
                                     KeyboardManager.Keyboard.setDarkThemeId(context, theme.id)
+                                    KeyboardColors.applyGeometry(context, theme.colors)
                                 },
                             )
                         }
@@ -387,12 +406,89 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
                                 onClick = {
                                     selectedThemeId = theme.id
                                     KeyboardManager.Keyboard.setThemeId(context, theme.id)
+                                    KeyboardColors.applyGeometry(context, theme.colors)
                                 },
                             )
                         }
                     }
                 }
             }
+            }
+
+            key(themeVersion) {
+                SettingsGroup(title = stringResource(R.string.theme_editor_user_themes)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                editorLauncher.launch(ThemeEditorActivity.intent(context))
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = stringResource(R.string.theme_editor_new),
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    val customs = KeyboardThemePresets.customThemes
+                    if (customs.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.theme_editor_no_user_themes),
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    } else {
+                        customs.forEach { theme ->
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = theme.name,
+                                    fontSize = rowSubFontSize,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(
+                                    onClick = {
+                                        editorLauncher.launch(
+                                            ThemeEditorActivity.intent(context, theme.id)
+                                        )
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Edit,
+                                        contentDescription = stringResource(R.string.theme_editor_edit),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                IconButton(onClick = { deleteTarget = theme }) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = stringResource(R.string.theme_editor_delete),
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -438,42 +534,31 @@ fun KeyboardThemeSettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    if (showOverwriteDialog && pendingImport != null) {
-        val existing = KeyboardThemePresets.customThemes
+    deleteTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { showOverwriteDialog = false },
-            title = { Text(stringResource(R.string.keyboard_theme_overwrite_title)) },
-            text = {
-                if (existing.isEmpty()) {
-                    Text(stringResource(R.string.keyboard_theme_overwrite_empty))
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        existing.forEachIndexed { index, theme ->
-                            TextButton(
-                                onClick = {
-                                    pendingImport?.let {
-                                        ThemeStore.overwrite(index, it)
-                                        finishImport(it)
-                                    }
-                                    pendingImport = null
-                                    showOverwriteDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(
-                                    text = theme.name,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                    }
-                }
-            },
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(stringResource(R.string.theme_editor_delete)) },
+            text = { Text(stringResource(R.string.theme_editor_delete_confirm, target.name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    pendingImport = null
-                    showOverwriteDialog = false
+                    ThemeStore.delete(target.id)
+                    if (KeyboardManager.Keyboard.getThemeId(context) == target.id) {
+                        KeyboardManager.Keyboard.setThemeId(context, KeyboardTheme.DEFAULT_ID)
+                        selectedThemeId = KeyboardTheme.DEFAULT_ID
+                    }
+                    deleteTarget = null
+                    themeVersion++
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.theme_editor_deleted, target.name),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }) {
+                    Text(stringResource(R.string.theme_editor_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

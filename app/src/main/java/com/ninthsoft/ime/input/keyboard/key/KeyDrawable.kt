@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import androidx.annotation.ColorInt
+import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 
 fun radiusDrawable(
     r: Float,
@@ -89,6 +90,39 @@ fun borderedKeyBackgroundDrawable(
             cornerRadius = radius
             setColor(bkgColor)
             setStroke(strokeWidth, strokeColor)
+        },
+    ),
+).apply {
+    setLayerInset(0, hMargin, vMargin, hMargin, vMargin)
+}
+
+/**
+ * 按键背景：支持圆角矩形 / 直角矩形 / 椭圆三种形状，并可指定描边厚度。
+ * [strokeWidth] <= 0 时不绘制描边。
+ */
+fun keyBackgroundDrawable(
+    @ColorInt bkgColor: Int,
+    @ColorInt strokeColor: Int,
+    radius: Float,
+    strokeWidth: Int,
+    shape: KeyboardColors.KeyShape,
+    hMargin: Int,
+    vMargin: Int,
+): Drawable = LayerDrawable(
+    arrayOf(
+        GradientDrawable().apply {
+            this.shape = when (shape) {
+                KeyboardColors.KeyShape.Oval -> GradientDrawable.OVAL
+                else -> GradientDrawable.RECTANGLE
+            }
+            cornerRadius = when (shape) {
+                KeyboardColors.KeyShape.Rectangle -> 0f
+                else -> radius
+            }
+            setColor(bkgColor)
+            if (strokeWidth > 0) {
+                setStroke(strokeWidth, strokeColor)
+            }
         },
     ),
 ).apply {

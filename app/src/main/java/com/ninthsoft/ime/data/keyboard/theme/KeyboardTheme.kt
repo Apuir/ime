@@ -13,8 +13,9 @@ data class KeyboardTheme(
         const val LIGHT_DEFAULT_ID = "light"
         const val DARK_DEFAULT_ID = "amoled"
 
+        /** 主题选择列表：内置预设 + 全部用户自定义主题（数量不设上限）。 */
         val PRESETS: List<KeyboardTheme>
-            get() = KeyboardThemePresets.ALL.take(6)
+            get() = KeyboardThemePresets.ALL
 
         val DEFAULT: KeyboardTheme
             get() = KeyboardThemePresets.Amoled

@@ -25,6 +25,13 @@ class InputFeedbacks private constructor() {
         private val lock = Any()
         private const val VIBRATION_ATTRIBUTION_TAG = "keyboard_feedback"
 
+        /**
+         * 临时全局抑制按键反馈。主题编辑器里嵌入真实键盘作预览时置为 true，
+         * 避免在设置界面按键还震动/发声（编辑器退出时恢复）。
+         */
+        @Volatile
+        var suppressFeedback: Boolean = false
+
         fun initSoundPool(context: Context) {
             if (soundPool != null && isPopLoaded) return
             synchronized(lock) {
@@ -54,6 +61,7 @@ class InputFeedbacks private constructor() {
         }
 
         fun soundEffect(context: Context, effect: SoundEffect) {
+            if (suppressFeedback) return
             if (!KeyboardManager.Keyboard.Feedback.getSoundEnabled(context)) return
             when (effect) {
                 SoundEffect.Standard -> {
@@ -82,6 +90,7 @@ class InputFeedbacks private constructor() {
             pressAmplitude: Int = 255,
             longPressAmplitude: Int = 255
         ) {
+            if (suppressFeedback) return
             val context = view.context
             if (!KeyboardManager.Keyboard.Feedback.getVibrationEnabled(context)) return
 

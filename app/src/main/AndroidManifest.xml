@@ -69,6 +69,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.ThemeEditorActivity"
+            android:exported="false"
+            android:label="@string/theme_editor"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"

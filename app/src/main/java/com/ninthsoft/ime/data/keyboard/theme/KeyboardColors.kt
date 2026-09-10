@@ -13,6 +13,27 @@ object KeyboardColors {
         Flat,
     }
 
+    /** 按键形状：圆角矩形 / 直角矩形 / 椭圆（药丸）。 */
+    @Serializable
+    enum class KeyShape {
+        Rounded,
+        Rectangle,
+        Oval,
+    }
+
+    /**
+     * 键盘几何参数快照。仅当主题由主题编辑器保存时非空；
+     * 应用该主题时会把这里的值写回 [com.ninthsoft.ime.data.manager.KeyboardManager] 的全局设置。
+     */
+    @Serializable
+    data class KeyGeometry(
+        val cornerRadius: Float = 14f,
+        val keyHMargin: Float = 3f,
+        val keyVMargin: Float = 3f,
+        val keyboardHeightPercent: Int = 24,
+        val keyboardHeightLandscapePercent: Int = 44,
+    )
+
     @Serializable
     data class ColorScheme(
         val keyBackground: Int,
@@ -33,6 +54,12 @@ object KeyboardColors {
         val cornerRadius: Float = 5f,
         val keyHMargin: Float = 3f,
         val keyVMargin: Float = 4f,
+        /** 按键边框描边厚度（dp）。0 表示不绘制边框。 */
+        val keyBorderWidth: Float = 1f,
+        /** 按键形状。 */
+        val keyShape: KeyShape = KeyShape.Rounded,
+        /** 键盘几何参数快照；null 表示不随主题改变几何设置。 */
+        val geometry: KeyGeometry? = null,
         val panel: PanelColors,
         val pinner: PinnerColors,
         val toastBackground: Int = specialKeyBackground,
@@ -90,6 +117,30 @@ object KeyboardColors {
             cornerRadius = userRadius,
             keyHMargin = userHMargin,
             keyVMargin = userVMargin,
+        )
+    }
+
+    /** 当前全局键盘几何参数快照，供主题编辑器作为默认值。 */
+    fun currentGeometry(context: Context): KeyGeometry = KeyGeometry(
+        cornerRadius = KeyboardManager.Keyboard.KeyRadius.getDp(context).toFloat(),
+        keyHMargin = KeyboardManager.Keyboard.Gap.getHorizontalDp(context).toFloat(),
+        keyVMargin = KeyboardManager.Keyboard.Gap.getVerticalDp(context).toFloat(),
+        keyboardHeightPercent = KeyboardManager.Keyboard.getHeightPercent(context),
+        keyboardHeightLandscapePercent = KeyboardManager.Keyboard.getHeightPercentLandscape(context),
+    )
+
+    /**
+     * 把主题内嵌的几何参数写回全局设置。仅当主题带有 [ColorScheme.geometry] 时生效，
+     * 内置预设（geometry 为 null）不会覆盖用户的键盘几何设置。
+     */
+    fun applyGeometry(context: Context, scheme: ColorScheme) {
+        val g = scheme.geometry ?: return
+        KeyboardManager.Keyboard.KeyRadius.setDp(context, g.cornerRadius.toInt())
+        KeyboardManager.Keyboard.Gap.setHorizontalDp(context, g.keyHMargin.toInt())
+        KeyboardManager.Keyboard.Gap.setVerticalDp(context, g.keyVMargin.toInt())
+        KeyboardManager.Keyboard.setHeightPercent(context, g.keyboardHeightPercent)
+        KeyboardManager.Keyboard.setHeightPercentLandscape(
+            context, g.keyboardHeightLandscapePercent,
         )
     }
 

@@ -153,7 +153,7 @@ abstract class KeyView(
     }
 
     private fun createShapeBkg(color: Int): Drawable {
-        val borderOrShadowWidth = dp(1)
+        val borderWidth = dp(colors.keyBorderWidth).toInt()
         var strokeColor = when (def.variant) {
             Variant.Alternative -> colors.specialKeyBorderStroke
             Variant.Accent -> colors.accentKeyBorderStroke
@@ -162,9 +162,9 @@ abstract class KeyView(
         if (!borderStroke) {
             strokeColor = Color.TRANSPARENT
         }
-        return borderedKeyBackgroundDrawable(
+        return keyBackgroundDrawable(
             color, strokeColor,
-            radius, borderOrShadowWidth, hMargin, vMargin,
+            radius, borderWidth, colors.keyShape, hMargin, vMargin,
         )
     }
 
