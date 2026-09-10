@@ -76,6 +76,8 @@
 - 键盘主题：内置 3 套（暗夜 / 素白 / 落日）+ **不限数量**的自定义主题；应用内 GUI 编辑器可直接调色、调按键形状/边框/圆角/间距/高度并命名保存，支持二维码导入导出（`THEME_FORMAT.md`）
 - 工具栏工具自定义：键盘上方工具栏中间那排图标可由用户勾选、排序、增删（撤销/重做/剪贴板/主题/语音/表情…）
 - 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）
+- **横屏悬浮键盘**：横屏时键盘自动变成一张可拖动的小卡片悬浮在应用之上（宽度可调、位置可拖动并记忆），
+  应用界面不再被键盘顶起；设置 → 键盘布局里可开关与调整宽度
 - SAF 文件管理（`AppFilesDocumentsProvider`）：无需 root 即可用系统“文件”App 浏览/编辑 `files/` 下的方案与词库
 - 运行日志、崩溃日志、版本检查、按键音/震动/水波纹等细节设置
 
@@ -485,6 +487,40 @@ listOf(
 - 接线：`input/keyboard/impl/BaseKeyboard.kt#createKeyView`——上滑模式下把这类长按改为 `setupSwipeAltInput()`（复用 `CustomGestureView` 的上滑手势），长按不再触发
 - 设置入口：`ui/screen/KeyboardSettingsScreen.kt` 的「按键手势」分组
 
+### 9.3.3 横屏悬浮键盘
+
+横屏时键盘不再铺满整屏宽度，而是一张可拖动的小卡片；**应用窗口不会被键盘顶起**，卡片之外的手势直接穿透给下层应用。
+
+实现方式（与 FlorisBoard 的 floating window 同思路，不需要 `SYSTEM_ALERT_WINDOW` 等额外权限）：
+
+1. **IME 窗口占满全屏但背景透明**：悬浮模式下 `KeyboardWindowView.onMeasure()` 把自身测成整个可用高度
+   （IME 窗口默认 `MATCH_PARENT × WRAP_CONTENT`，于是窗口变成全屏），键盘本体绘制在窗口内的一张小卡片里。
+2. **用 `onComputeInsets` 控制两件事**（`input/ImeInputMethodService.kt`）：
+   - `contentTopInsets` / `visibleTopInsets` = 内容底边 → 上报给应用的内容边衬为 0，应用不 resize；
+   - `touchableRegion` = 卡片矩形 + `TOUCHABLE_INSETS_REGION` → 只有卡片接收触摸，其余穿透。
+   框架在 `ViewRootImpl.performTraversals` 里于 layout 之后派发该回调，并把结果通过
+   `mWindowSession.setInsets()` 交给 WMS，所以拖动时只要 `requestLayout()` 就会同步新的可触摸区域。
+3. **卡片几何与拖动**：`KeyboardWindowView` 用 `onMeasure()` 算出卡片矩形（宽度按屏宽百分比、高度沿用
+   「键盘高度（横屏）」），`onLayout()` 把候选栏/键盘/面板都布局到卡片内；`dispatchDraw()` 画圆角卡片、
+   阴影和顶部拖动条；顶部 18dp 手柄区域由 `onTouchEvent()` 处理拖动。
+   宽度未手动设置时取 **屏幕短边 / 长边**（`Keyboard.Floating.adaptiveWidthPercent()`）：横屏短边就是竖屏宽度，
+   于是悬浮键盘的按键大小与竖屏基本一致，不会变成又宽又扁的横条。
+4. **位置记忆**：拖动结束后把位置换算成「可移动余量」的比例写入偏好（`keyboard.floating.pos_x/pos_y`），
+   这样换尺寸/换分辨率也能合理还原。拖动过程中用内存中的比例，避免 `onMeasure` 读到旧值把卡片弹回。
+
+相关代码与设置：
+
+| 需求 | 位置 |
+|------|------|
+| 偏好读写 | `data/manager/KeyboardManager.kt` → `Keyboard.Floating` |
+| 模式判定（横屏 + 开关） | `Keyboard.Floating.shouldUseFloating(context)`，由 `ImeInputMethodService` 的 `onCreateInputView()` / `onConfigurationChanged()` / `onWindowShown()` / 偏好变更回调应用 |
+| 卡片布局 / 绘制 / 拖动 | `input/keyboard/window/KeyboardWindowView.kt`（`onMeasure` / `onLayout` / `dispatchDraw` / `onTouchEvent`） |
+| 触摸区域上报 | `input/ImeInputMethodService.kt` → `onComputeInsets()` |
+| 设置界面 | `ui/screen/KeyboardSettingsScreen.kt` 的「键盘布局」分组 |
+
+> 注意：悬浮模式下只有卡片的矩形区域（或添加常用语 / 语音时的整窗口）可触摸，其余区域会穿透到下层应用，
+> 因此若要新增“浮动在卡片之外”的交互元素，必须同步扩展 `KeyboardWindowView.floatingTouchableRegion()`。
+
 ### 9.4 输入方案（Rime schema）
 
 方案数据在 `shared/`，用户补丁在 `user/`。常见做法：
@@ -647,6 +683,10 @@ listOf(
 | `keyboard.expand_borders` | Bool | false（**反向**） | 展开键边框 |
 | `keyboard.gesture_input` | Int | 0 | 符号/数字输入手势：0=长按，1=上滑（互斥） |
 | `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
+| `keyboard.floating.enabled` | Bool | true | 横屏悬浮键盘开关 |
+| `keyboard.floating.width` | Int | 未设置=自适应 | 悬浮卡片宽度（% 屏宽）；未手动设置时取「屏短边/长边」，即按键宽度与竖屏一致（20:9 手机约 45%），拖过滑杆后才写入 |
+| `keyboard.floating.pos_x` | Float | 0.5 | 悬浮卡片水平位置比例（0=贴左，1=贴右；拖动后写入） |
+| `keyboard.floating.pos_y` | Float | 1.0 | 悬浮卡片垂直位置比例（0=贴顶，1=贴底；拖动后写入） |
 
 **`candidate_settings`**（`CandidateManager`）
 

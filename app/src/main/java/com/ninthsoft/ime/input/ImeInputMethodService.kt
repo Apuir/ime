@@ -2,6 +2,10 @@ package com.ninthsoft.ime.input
 
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Rect
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
@@ -46,6 +50,13 @@ class ImeInputMethodService : InputMethodService() {
     private var showingDialog: android.app.Dialog? = null
     private var lastSelectionStart = 0
     private var lastSelectionEnd = 0
+
+    /** 复用缓冲区，避免 onComputeInsets 每次分配（该方法在一次布局中可能被多次调用）。 */
+    private val insetsRegion = Rect()
+
+    /** 进入悬浮模式前的 IME 窗口背景，离开时还原。 */
+    private var originalImeWindowBackground: Drawable? = null
+    private var imeWindowBackgroundCleared = false
     private val themePrefs: SharedPreferences by lazy {
         getSharedPreferences(KeyboardManager.PREFS_NAME, MODE_PRIVATE)
     }
@@ -62,6 +73,10 @@ class ImeInputMethodService : InputMethodService() {
         // 上屏模式变化后立即刷新当前预览，无需重新输入。
         if (key == CandidateManager.KEY_PREVIEW_MODE) {
             livePreview.onPreviewModeChanged()
+        }
+        // 悬浮开关可能是在键盘收起时改的，这里同步一次窗口背景，避免窗口全屏却不透明。
+        if (key == KeyboardManager.Keyboard.Floating.KEY_ENABLED) {
+            applyFloatingMode(KeyboardManager.Keyboard.Floating.shouldUseFloating(this))
         }
         keyboardWindow?.onConfigChanged(key.orEmpty())
     }
@@ -94,11 +109,15 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 横竖屏切换时框架会重建输入视图，这里同步一次悬浮模式，保证窗口尺寸立即跟随方向变化。
+        applyFloatingMode(KeyboardManager.Keyboard.Floating.shouldUseFloating(this))
         keyboardWindow?.view?.refreshColors()
     }
 
     override fun onCreateInputView(): View {
+        val floating = KeyboardManager.Keyboard.Floating.shouldUseFloating(this)
         keyboardWindow?.let {
+            applyFloatingMode(floating)
             // InputMethodService adds the returned root to its own container.
             // Detach it first when the same window instance is requested again.
             (it.view.parent as? ViewGroup)?.removeView(it.view)
@@ -111,10 +130,54 @@ class ImeInputMethodService : InputMethodService() {
         )
         keyboardWindow = window
         window.setKeyActionListener(keyActionListener)
+        applyFloatingMode(floating)
         // KeyboardStateManager 是进程级单例，其键盤注册表可能残留上一实例（旧配色）的键盘；
         // 新建窗口（销毁重建路径）时重建一次，让键盘用本次实例解析出的新配色生成。
         KeyboardStateManager.rebuild()
         return window.view
+    }
+
+    /**
+     * 切换悬浮模式：除了通知键盘视图，还要同步 IME 窗口自身的背景。
+     *
+     * 悬浮模式下 IME 窗口会占满整个屏幕，如果窗口背景不透明（例如默认的
+     * `Theme.DeviceDefault.InputMethod` / 应用主题的 `windowBackground`）就会把下层应用整个挡住，
+     * 因此悬浮时把窗口背景换成透明，离开悬浮模式时还原。
+     */
+    private fun applyFloatingMode(floating: Boolean) {
+        keyboardWindow?.setFloatingMode(floating)
+        val win = window?.window ?: return
+        if (floating) {
+            if (!imeWindowBackgroundCleared) {
+                originalImeWindowBackground = win.decorView.background
+                imeWindowBackgroundCleared = true
+            }
+            win.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        } else if (imeWindowBackgroundCleared) {
+            win.setBackgroundDrawable(originalImeWindowBackground)
+            imeWindowBackgroundCleared = false
+        }
+    }
+
+    /**
+     * 悬浮键盘模式下 IME 窗口占满整个屏幕但背景透明，键盘只是窗口内的一张卡片。
+     *
+     * 这里把 `contentTopInsets` / `visibleTopInsets` 设为窗口底部，使 IME 上报给下层应用的
+     * 内容边衬为零（应用不会被顶起），同时通过 `touchableRegion` 声明只有卡片区域接收触摸，
+     * 卡片之外的手势会穿透到下层应用。这正是主流输入法「悬浮键盘」的实现方式。
+     */
+    override fun onComputeInsets(outInsets: InputMethodService.Insets?) {
+        val view = keyboardWindow?.view
+        if (outInsets == null || view == null || !view.usesOverlayLayout) {
+            super.onComputeInsets(outInsets)
+            return
+        }
+        val contentBottom = view.contentBottomInWindowPx()
+        view.floatingTouchableRegion(insetsRegion)
+        outInsets.contentTopInsets = contentBottom
+        outInsets.visibleTopInsets = contentBottom
+        outInsets.touchableRegion.set(insetsRegion)
+        outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -142,6 +205,8 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onWindowShown() {
         super.onWindowShown()
+        // 每次显示都对齐一次悬浮模式：键盘可能是收起期间被改了设置，或输入视图被框架复用。
+        applyFloatingMode(KeyboardManager.Keyboard.Floating.shouldUseFloating(this))
         keyboardWindow?.onWindowShown()
         ClipboardManager.startMonitoring(this)
         if (messageObserveJob == null) {

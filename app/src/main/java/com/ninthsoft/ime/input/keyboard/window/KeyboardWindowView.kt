@@ -6,8 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Build
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -54,9 +60,54 @@ class KeyboardWindowView(
 
     companion object {
         const val PANEL_HEIGHT_DP = 48
+
+        /** 悬浮卡片顶部拖动手柄的高度（dp）。 */
+        private const val FLOATING_HANDLE_DP = 18
+
+        /** 悬浮卡片的圆角半径（dp）。 */
+        private const val FLOATING_CORNER_DP = 16
     }
 
     private var cachedColors: KeyboardColors.ColorScheme = KeyboardColors.resolve(context)
+
+    // ==================== 横屏悬浮键盘 ====================
+
+    /** 横屏悬浮开关（由 [com.ninthsoft.ime.input.ImeInputMethodService] 注入）。 */
+    private var floatingEnabled: Boolean = false
+
+    /** 悬浮卡片在窗口坐标系中的位置与大小。 */
+    private val floatingCard = Rect()
+
+    /** 悬浮卡片的拖动手柄区域（窗口坐标系）。 */
+    private val floatingHandle = Rect()
+
+    /** 卡片可移动的水平/垂直余量，用于把拖动位置换算成比例保存。 */
+    private var floatingAvailX = 0
+    private var floatingAvailY = 0
+
+    /**
+     * 内存中的当前位置比例。拖动过程中不能依赖 SharedPreferences：写回是异步的，
+     * 而 onMeasure 每次遍历都会重新读取，若读旧值会把卡片弹回原位。
+     * 为 null 表示「未拖动过，直接读设置里的值」。
+     */
+    private var floatingXRatio: Float? = null
+    private var floatingYRatio: Float? = null
+
+    private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val cardShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0x33000000
+    }
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val cardRectF = RectF()
+    private val cardShadowRectF = RectF()
+    private val handleRectF = RectF()
+
+    private var dragActive = false
+    private var dragStartRawX = 0f
+    private var dragStartRawY = 0f
+    private var dragStartCardLeft = 0
+    private var dragStartCardTop = 0
 
     val panel = KawaiiPanel(
         context = context,
@@ -199,6 +250,22 @@ class KeyboardWindowView(
                 requestLayout()
             }
 
+            KeyboardManager.Keyboard.Floating.KEY_ENABLED,
+            KeyboardManager.Keyboard.Floating.KEY_WIDTH,
+            -> post {
+                setFloatingMode(KeyboardManager.Keyboard.Floating.shouldUseFloating(context))
+                requestLayout()
+            }
+
+            // 位置被外部改动（例如设置里的「重置悬浮键盘位置」）时，丢弃内存中的拖动位置重新读设置。
+            KeyboardManager.Keyboard.Floating.KEY_POSITION_X,
+            KeyboardManager.Keyboard.Floating.KEY_POSITION_Y,
+            -> post {
+                floatingXRatio = null
+                floatingYRatio = null
+                requestLayout()
+            }
+
             KeyboardManager.Keyboard.KeyRadius.KEY, KeyboardManager.Keyboard.KEY_THEME, KeyboardManager.Keyboard.KEY_FOLLOW_SYSTEM, KeyboardManager.Keyboard.KEY_LIGHT_THEME, KeyboardManager.Keyboard.KEY_DARK_THEME, KeyboardManager.Keyboard.Gap.KEY_HORIZONTAL, KeyboardManager.Keyboard.Gap.KEY_VERTICAL,
             KeyboardManager.Keyboard.GestureInput.KEY,
             -> post { refreshColors() }
@@ -293,7 +360,7 @@ class KeyboardWindowView(
             cachedColors.accentKeyText
         )
 
-        setBackgroundColor(cachedColors.background)
+        applyBackgroundTint()
 
         addView(panel.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
@@ -357,20 +424,103 @@ class KeyboardWindowView(
         super.onDetachedFromWindow()
     }
 
+    // ==================== 卡片布局几何 ====================
+
+    private val isLandscape: Boolean
+        get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    /** 悬浮卡片宽度百分比；未开启横屏悬浮时返回 100（即原来的贴底全宽布局）。 */
+    private fun effectiveWidthPercent(): Int =
+        if (floatingEnabled) KeyboardManager.Keyboard.Floating.getWidthPercent(context) else 100
+
+    private fun currentPosXRatio(): Float =
+        floatingXRatio ?: KeyboardManager.Keyboard.Floating.getPositionXRatio(context)
+
+    private fun currentPosYRatio(): Float =
+        floatingYRatio ?: KeyboardManager.Keyboard.Floating.getPositionYRatio(context)
+
+    /** 是否使用「全屏透明窗口 + 悬浮卡片」布局。 */
+    val usesOverlayLayout: Boolean
+        get() = isLandscape && effectiveWidthPercent() < 100
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
         val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
         val bPad = dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context))
         val barH = (PANEL_HEIGHT_DP * density).roundToInt()
-        val cHeight = contentHeight()
-        val totalWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val handleH = (FLOATING_HANDLE_DP * density).roundToInt()
+        val totalWidth = MeasureSpec.getSize(widthMeasureSpec).takeIf { it > 0 } ?: fullScreenWidth()
         val bottomInset = resolveBottomInset()
-        val contentW = (totalWidth - 2 * hPad).coerceAtLeast(0)
-
         val stripH = if (addPhraseActive) (fullScreenHeight() * 0.20f).roundToInt() else 0
+        val cHeight = contentHeight()
 
+        if (usesOverlayLayout) {
+            // 悬浮模式：本 View 占满整个 IME 窗口（背景透明），键盘绘制在一张固定大小的卡片里。
+            // 应用是否需要缩放、哪些区域可触摸由 ImeInputMethodService.onComputeInsets 决定。
+            val availHeight = measureSpecHeight(heightMeasureSpec)
+            val cardW = (totalWidth * effectiveWidthPercent() / 100f)
+                .roundToInt().coerceIn(1, totalWidth)
+            // 卡片高度 = 手柄 + 候选栏 + 键盘内容 + 底部边距；内容不足时按窗口可用高度收窄。
+            val maxContentH = (availHeight - bottomInset - handleH - barH - bPad)
+                .coerceAtLeast(minimumHeight)
+            val cardContentH = cHeight.coerceAtMost(maxContentH)
+            val cardH = handleH + barH + cardContentH + bPad
+
+            floatingAvailX = (totalWidth - cardW).coerceAtLeast(0)
+            floatingAvailY = (availHeight - cardH - bottomInset).coerceAtLeast(0)
+            val cardX = (currentPosXRatio() * floatingAvailX).roundToInt().coerceIn(0, floatingAvailX)
+            val cardY = (currentPosYRatio() * floatingAvailY).roundToInt().coerceIn(0, floatingAvailY)
+            floatingCard.set(cardX, cardY, cardX + cardW, cardY + cardH)
+            floatingHandle.set(cardX, cardY, cardX + cardW, cardY + handleH)
+
+            val cardContentW = (cardW - 2 * hPad).coerceAtLeast(0)
+            measureContentChildren(
+                barW = cardW, barH = barH,
+                contentW = cardContentW, contentH = cardContentH,
+                stripW = totalWidth, stripH = stripH,
+            )
+            rememberGeometry(
+                barLeft = floatingCard.left,
+                barTop = floatingCard.top + handleH,
+                barW = cardW, barH = barH,
+                contentLeft = floatingCard.left + hPad,
+                contentTop = floatingCard.top + handleH + barH,
+                contentW = cardContentW, contentH = cardContentH,
+                stripW = totalWidth, stripH = stripH,
+            )
+            setMeasuredDimension(totalWidth, availHeight)
+            return
+        }
+
+        val contentW = (totalWidth - 2 * hPad).coerceAtLeast(0)
+        measureContentChildren(
+            barW = totalWidth, barH = barH,
+            contentW = contentW, contentH = cHeight,
+            stripW = totalWidth, stripH = stripH,
+        )
+        rememberGeometry(
+            barLeft = 0, barTop = stripH, barW = totalWidth, barH = barH,
+            contentLeft = hPad, contentTop = stripH + barH,
+            contentW = contentW, contentH = cHeight,
+            stripW = totalWidth, stripH = stripH,
+        )
+        setMeasuredDimension(totalWidth, stripH + barH + cHeight + bPad + bottomInset)
+    }
+
+    private fun measureSpecHeight(heightMeasureSpec: Int): Int {
+        val size = MeasureSpec.getSize(heightMeasureSpec)
+        return if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED || size <= 0) {
+            fullScreenHeight()
+        } else {
+            size
+        }
+    }
+
+    private fun measureContentChildren(
+        barW: Int, barH: Int, contentW: Int, contentH: Int, stripW: Int, stripH: Int,
+    ) {
         panel.view.measure(
-            MeasureSpec.makeMeasureSpec(totalWidth, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(barW, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(barH, MeasureSpec.EXACTLY),
         )
 
@@ -379,75 +529,236 @@ class KeyboardWindowView(
             if (child === panel.view || child === panel.textEditingView || child === panel.clipboardView || child === panel.menuGridView || child === panel.confirmOverlay || child === addPhraseLayer || child === imeToastView || child.isGone) continue
             child.measure(
                 MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
             )
         }
 
         panel.textEditingView.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
         )
 
         panel.clipboardView.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
         )
 
         panel.menuGridView.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
         )
 
         panel.confirmOverlay.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
         )
 
         addPhraseLayer.measure(
-            MeasureSpec.makeMeasureSpec(totalWidth, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(stripW, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(stripH, MeasureSpec.EXACTLY),
         )
 
         imeToastView.measure(
             MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(cHeight, MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.AT_MOST),
         )
+    }
 
-        val totalHeight = stripH + barH + cHeight + bPad + bottomInset
-        setMeasuredDimension(totalWidth, totalHeight)
+    // 把 onMeasure 算出的几何参数缓存下来，供 onLayout 使用（悬浮模式下内容高度会被收窄，
+    // 不能再用 contentHeight() 重新推算，否则测量/布局会不一致）。
+    private var geomBarLeft = 0
+    private var geomBarTop = 0
+    private var geomBarW = 0
+    private var geomBarH = 0
+    private var geomContentLeft = 0
+    private var geomContentTop = 0
+    private var geomContentW = 0
+    private var geomContentH = 0
+    private var geomStripW = 0
+    private var geomStripH = 0
+
+    private fun rememberGeometry(
+        barLeft: Int, barTop: Int, barW: Int, barH: Int,
+        contentLeft: Int, contentTop: Int, contentW: Int, contentH: Int,
+        stripW: Int, stripH: Int,
+    ) {
+        geomBarLeft = barLeft
+        geomBarTop = barTop
+        geomBarW = barW
+        geomBarH = barH
+        geomContentLeft = contentLeft
+        geomContentTop = contentTop
+        geomContentW = contentW
+        geomContentH = contentH
+        geomStripW = stripW
+        geomStripH = stripH
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-        val hPad = dpToPx(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
-        val barH = (PANEL_HEIGHT_DP * resources.displayMetrics.density).roundToInt()
-        val cHeight = contentHeight()
-        val contentW = right - left - 2 * hPad
-        val stripH = if (addPhraseActive) (fullScreenHeight() * 0.20f).roundToInt() else 0
-        val y0 = stripH + barH
+        val contentW = geomContentW
+        val contentH = geomContentH
+        val y0 = geomContentTop
 
-        panel.view.layout(0, stripH, right - left, stripH + barH)
+        panel.view.layout(geomBarLeft, geomBarTop, geomBarLeft + geomBarW, geomBarTop + geomBarH)
 
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             if (child === panel.view || child === panel.candidateGrid || child === panel.textEditingView || child === panel.clipboardView || child === panel.menuGridView || child === panel.confirmOverlay || child === addPhraseLayer || child === imeToastView || child.isGone) continue
-            child.layout(hPad, y0, hPad + contentW, y0 + cHeight)
+            child.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
         }
 
-        panel.candidateGrid.layout(hPad, y0, hPad + contentW, y0 + cHeight)
-        panel.textEditingView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
-        panel.clipboardView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
-        panel.menuGridView.layout(hPad, y0, hPad + contentW, y0 + cHeight)
-        panel.confirmOverlay.layout(hPad, y0, hPad + contentW, y0 + cHeight)
-        addPhraseLayer.layout(0, 0, right - left, stripH)
-        val toastLeft = ((right - left) - imeToastView.measuredWidth) / 2
-        val bottomPadding = dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context))
-        val toastBottom = bottom - top - bottomPadding - resolveBottomInset() - dpToPx(12)
+        panel.candidateGrid.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
+        panel.textEditingView.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
+        panel.clipboardView.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
+        panel.menuGridView.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
+        panel.confirmOverlay.layout(geomContentLeft, y0, geomContentLeft + contentW, y0 + contentH)
+        addPhraseLayer.layout(0, 0, geomStripW, geomStripH)
+
+        val toastLeft = geomBarLeft + (geomBarW - imeToastView.measuredWidth) / 2
+        val toastBottom = if (usesOverlayLayout) {
+            floatingCard.bottom - dpToPx(12)
+        } else {
+            bottom - top - dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context)) -
+                resolveBottomInset() - dpToPx(12)
+        }
         imeToastView.layout(
             toastLeft,
             toastBottom - imeToastView.measuredHeight,
             toastLeft + imeToastView.measuredWidth,
             toastBottom,
         )
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        if (usesOverlayLayout) {
+            val density = resources.displayMetrics.density
+            val radius = FLOATING_CORNER_DP * density
+            val shadowOffset = 2 * density
+
+            cardRectF.set(floatingCard)
+            cardShadowRectF.set(floatingCard)
+            cardShadowRectF.inset(-shadowOffset, -shadowOffset * 0.5f)
+            cardShadowRectF.offset(0f, shadowOffset)
+            canvas.drawRoundRect(cardShadowRectF, radius, radius, cardShadowPaint)
+
+            cardPaint.color = cachedColors.background
+            canvas.drawRoundRect(cardRectF, radius, radius, cardPaint)
+
+            // 顶部拖动条的视觉提示
+            val gripW = 40 * density
+            val gripH = 4 * density
+            val cx = floatingCard.exactCenterX()
+            val cy = floatingHandle.exactCenterY()
+            handleRectF.set(cx - gripW / 2f, cy - gripH / 2f, cx + gripW / 2f, cy + gripH / 2f)
+            handlePaint.color = cachedColors.altText
+            handlePaint.alpha = 110
+            canvas.drawRoundRect(handleRectF, gripH / 2f, gripH / 2f, handlePaint)
+        }
+        super.dispatchDraw(canvas)
+    }
+
+    /**
+     * 悬浮模式下卡片只有顶部手柄区域可拖动；卡片其余部分以及卡片外的区域行为保持不变
+     * （卡片外的触摸会被系统穿透给下层应用）。
+     */
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!usesOverlayLayout) return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (floatingHandle.contains(event.x.toInt(), event.y.toInt())) {
+                    dragActive = true
+                    dragStartRawX = event.rawX
+                    dragStartRawY = event.rawY
+                    dragStartCardLeft = floatingCard.left
+                    dragStartCardTop = floatingCard.top
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_MOVE -> if (dragActive) {
+                moveFloatingCard(
+                    dragStartCardLeft + (event.rawX - dragStartRawX),
+                    dragStartCardTop + (event.rawY - dragStartRawY),
+                )
+                return true
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragActive) {
+                dragActive = false
+                saveFloatingPosition()
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    private fun moveFloatingCard(newLeft: Float, newTop: Float) {
+        val cardLeft = newLeft.roundToInt().coerceIn(0, floatingAvailX)
+        val cardTop = newTop.roundToInt().coerceIn(0, floatingAvailY)
+        if (cardLeft == floatingCard.left && cardTop == floatingCard.top) return
+        floatingCard.offsetTo(cardLeft, cardTop)
+        floatingHandle.offsetTo(cardLeft, cardTop)
+        // 记到内存里，保证接下来的 onMeasure 不会用旧比例把卡片弹回去。
+        floatingXRatio = if (floatingAvailX > 0) cardLeft.toFloat() / floatingAvailX else 0.5f
+        floatingYRatio = if (floatingAvailY > 0) cardTop.toFloat() / floatingAvailY else 1f
+        // requestLayout 会触发 ViewRootImpl 重新派发 onComputeInsets，从而同步可触摸区域。
+        requestLayout()
+        invalidate()
+    }
+
+    private fun saveFloatingPosition() {
+        val x = floatingXRatio ?: return
+        val y = floatingYRatio ?: return
+        KeyboardManager.Keyboard.Floating.setPosition(context, x, y)
+    }
+
+    /** 切换悬浮/普通模式（由 ImeInputMethodService 按横竖屏注入）。 */
+    fun setFloatingMode(enabled: Boolean) {
+        if (floatingEnabled == enabled) return
+        floatingEnabled = enabled
+        dragActive = false
+        applyBackgroundTint()
+        requestLayout()
+    }
+
+
+    /**
+     * 悬浮模式下需要由输入法窗口接收触摸的区域。
+     *
+     * 返回的是 **IME 窗口坐标系** 下的矩形：`Insets.touchableRegion` 要求相对窗口原点，
+     * 而本 View 在窗口里可能有偏移（框架的输入容器带 candidatesArea 等），因此统一加上
+     * 本 View 在窗口内的位置，避免依赖具体布局。
+     */
+    fun floatingTouchableRegion(out: Rect) {
+        if (addPhraseActive || isVoiceRecording) {
+            // 添加常用语 / 语音悬浮条需要在整窗口范围内交互。
+            out.set(0, 0, width, height)
+        } else {
+            out.set(floatingCard)
+        }
+        val loc = locationInWindow()
+        out.offset(loc[0], loc[1])
+    }
+
+    /**
+     * IME 内容底边在窗口坐标系中的位置。悬浮模式下 `contentTopInsets` 取该值，
+     * 使上报给下层应用的底部边衬为 0（应用不会被键盘顶起）。
+     */
+    fun contentBottomInWindowPx(): Int {
+        val loc = locationInWindow()
+        val h = if (height > 0) height else fullScreenHeight()
+        return loc[1] + h
+    }
+
+    private fun locationInWindow(): IntArray {
+        val loc = IntArray(2)
+        getLocationInWindow(loc)
+        return loc
+    }
+
+    private fun applyBackgroundTint() {
+        // 悬浮卡片布局下窗口背景必须透明，卡片背景由 dispatchDraw 单独绘制。
+        setBackgroundColor(if (usesOverlayLayout) Color.TRANSPARENT else cachedColors.background)
     }
 
 
@@ -460,7 +771,7 @@ class KeyboardWindowView(
     fun refreshColors() {
         panel.view.setExpanded(false)
         cachedColors = KeyboardColors.resolve(context)
-        setBackgroundColor(cachedColors.background)
+        applyBackgroundTint()
         panel.refreshTheme()
         addPhraseLayer.refreshTheme(cachedColors)
         imeToastView.refreshTheme(cachedColors)
@@ -525,6 +836,17 @@ class KeyboardWindowView(
             dm
         )
         return dm.heightPixels
+    }
+
+    private fun fullScreenWidth(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return wm.maximumWindowMetrics.bounds.width()
+        }
+        val dm = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION") (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(
+            dm
+        )
+        return dm.widthPixels
     }
 
     private fun dpToPx(dp: Int): Int {

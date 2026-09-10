@@ -1,8 +1,10 @@
 package com.ninthsoft.ime.data.manager
 
 import android.content.Context
+import android.content.res.Configuration
 import androidx.core.content.edit
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
+import kotlin.math.roundToInt
 
 object KeyboardManager {
     const val PREFS_NAME = "keyboard_settings"
@@ -303,6 +305,120 @@ object KeyboardManager {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                     putBoolean(KEY, !enabled)
                 }
+            }
+        }
+
+        /**
+         * 横屏悬浮键盘：横屏时键盘不再铺满整个屏幕宽度，而是以一张可拖动的小卡片悬浮在应用之上。
+         *
+         * 实现上 IME 窗口仍占满屏幕，但通过 `onComputeInsets` 只把卡片的范围报告为可触摸区域，
+         * 因此卡片之外的手势会穿透到下层应用，应用也不会被键盘顶起。
+         */
+        object Floating {
+            private const val PREFIX = "keyboard.floating"
+            const val KEY_ENABLED = "$PREFIX.enabled"
+            const val KEY_WIDTH = "$PREFIX.width"
+            const val KEY_POSITION_X = "$PREFIX.pos_x"
+            const val KEY_POSITION_Y = "$PREFIX.pos_y"
+
+            /** 用户没有手动设置宽度时的兜底值（正常会走自适应计算）。 */
+            private const val DEFAULT_WIDTH_PERCENT = 45
+
+            /** 自适应默认值的取值范围（% 屏宽）。 */
+            private const val ADAPTIVE_WIDTH_MIN = 35
+            private const val ADAPTIVE_WIDTH_MAX = 70
+
+            /** 滑杆可调范围（% 屏宽）。 */
+            const val WIDTH_PERCENT_MIN = 30
+            const val WIDTH_PERCENT_MAX = 100
+
+            /** 悬浮卡片横向位置比例：0=贴左，1=贴右，默认居中。 */
+            private const val DEFAULT_POSITION_X = 0.5f
+
+            /** 悬浮卡片纵向位置比例：0=贴顶，1=贴底，默认贴底。 */
+            private const val DEFAULT_POSITION_Y = 1f
+
+            fun isEnabled(context: Context): Boolean {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_ENABLED, true)
+            }
+
+            fun setEnabled(context: Context, enabled: Boolean) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putBoolean(KEY_ENABLED, enabled)
+                }
+            }
+
+            /** 当前是否应使用悬浮键盘：开关开启且处于横屏。 */
+            fun shouldUseFloating(context: Context): Boolean {
+                return isEnabled(context) && context.resources.configuration.orientation ==
+                    Configuration.ORIENTATION_LANDSCAPE
+            }
+
+            /**
+             * 悬浮键盘宽度（% 屏宽）。用户手动拖过滑杆就用用户值，否则用自适应默认值。
+             */
+            fun getWidthPercent(context: Context): Int {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                if (prefs.contains(KEY_WIDTH)) {
+                    return prefs.getInt(KEY_WIDTH, DEFAULT_WIDTH_PERCENT)
+                        .coerceIn(WIDTH_PERCENT_MIN, WIDTH_PERCENT_MAX)
+                }
+                return adaptiveWidthPercent(context)
+            }
+
+            /**
+             * 默认宽度：让卡片宽度约等于屏幕**短边**。
+             *
+             * 横屏时短边就是竖屏宽度，因此悬浮键盘的按键宽度与竖屏基本一致，
+             * 不会出现「又宽又扁」的横条。20:9 手机约 45%，16:9 约 56%，与方向无关。
+             */
+            private fun adaptiveWidthPercent(context: Context): Int {
+                val dm = context.resources.displayMetrics
+                val shortSide = minOf(dm.widthPixels, dm.heightPixels)
+                val longSide = maxOf(dm.widthPixels, dm.heightPixels)
+                if (longSide <= 0) return DEFAULT_WIDTH_PERCENT
+                return (shortSide * 100f / longSide).roundToInt()
+                    .coerceIn(ADAPTIVE_WIDTH_MIN, ADAPTIVE_WIDTH_MAX)
+            }
+
+            fun setWidthPercent(context: Context, percent: Int) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putInt(KEY_WIDTH, percent.coerceIn(WIDTH_PERCENT_MIN, WIDTH_PERCENT_MAX))
+                }
+            }
+
+            /** 宽度是否被用户手动设置过；未设置时滑杆显示的是自适应默认值。 */
+            fun isWidthUserSet(context: Context): Boolean =
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).contains(KEY_WIDTH)
+
+            /** 清除手动宽度，恢复自适应默认值。 */
+            fun resetWidth(context: Context) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    remove(KEY_WIDTH)
+                }
+            }
+
+            fun getPositionXRatio(context: Context): Float {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getFloat(KEY_POSITION_X, DEFAULT_POSITION_X)
+            }
+
+            fun getPositionYRatio(context: Context): Float {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getFloat(KEY_POSITION_Y, DEFAULT_POSITION_Y)
+            }
+
+            fun setPosition(context: Context, xRatio: Float, yRatio: Float) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putFloat(KEY_POSITION_X, xRatio.coerceIn(0f, 1f))
+                    putFloat(KEY_POSITION_Y, yRatio.coerceIn(0f, 1f))
+                }
+            }
+
+            /** 把悬浮卡片位置恢复到默认（水平居中、贴底）。 */
+            fun resetPosition(context: Context) {
+                setPosition(context, DEFAULT_POSITION_X, DEFAULT_POSITION_Y)
             }
         }
     }

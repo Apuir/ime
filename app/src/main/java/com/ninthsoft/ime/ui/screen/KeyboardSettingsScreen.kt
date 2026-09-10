@@ -71,6 +71,15 @@ fun KeyboardSettingsScreen(
     var keyboardHeightLandscape by remember {
         mutableFloatStateOf(KeyboardManager.Keyboard.getHeightPercentLandscape(context).toFloat())
     }
+    var landscapeFloating by remember {
+        mutableStateOf(KeyboardManager.Keyboard.Floating.isEnabled(context))
+    }
+    var floatingWidth by remember {
+        mutableFloatStateOf(KeyboardManager.Keyboard.Floating.getWidthPercent(context).toFloat())
+    }
+    var floatingWidthUserSet by remember {
+        mutableStateOf(KeyboardManager.Keyboard.Floating.isWidthUserSet(context))
+    }
     var horizontalPadding by remember {
         mutableFloatStateOf(KeyboardManager.Keyboard.Padding.getHorizontalDp(context).toFloat())
     }
@@ -262,6 +271,57 @@ fun KeyboardSettingsScreen(
                         KeyboardManager.Keyboard.setHeightPercentLandscape(context, it.toInt())
                     },
                 )
+                SwitchRow(
+                    title = stringResource(R.string.landscape_floating_keyboard),
+                    checked = landscapeFloating,
+                    onCheckedChange = {
+                        landscapeFloating = it
+                        KeyboardManager.Keyboard.Floating.setEnabled(context, it)
+                    },
+                )
+                if (landscapeFloating) {
+                    Text(
+                        text = stringResource(R.string.landscape_floating_keyboard_desc),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    SliderRow(
+                        title = stringResource(R.string.floating_keyboard_width),
+                        value = floatingWidth,
+                        valueLabel = "${floatingWidth.toInt()}%",
+                        range = KeyboardManager.Keyboard.Floating.WIDTH_PERCENT_MIN.toFloat()..
+                            KeyboardManager.Keyboard.Floating.WIDTH_PERCENT_MAX.toFloat(),
+                        onValueChange = {
+                            floatingWidth = it
+                            floatingWidthUserSet = true
+                            KeyboardManager.Keyboard.Floating.setWidthPercent(context, it.toInt())
+                        },
+                    )
+                    Text(
+                        text = stringResource(R.string.floating_keyboard_width_hint),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    if (floatingWidthUserSet) {
+                        ClickableRow(
+                            title = stringResource(R.string.floating_keyboard_reset_width),
+                            value = stringResource(R.string.floating_keyboard_width_hint_short),
+                            onClick = {
+                                KeyboardManager.Keyboard.Floating.resetWidth(context)
+                                floatingWidth =
+                                    KeyboardManager.Keyboard.Floating.getWidthPercent(context).toFloat()
+                                floatingWidthUserSet = false
+                            },
+                        )
+                    }
+                    ClickableRow(
+                        title = stringResource(R.string.floating_keyboard_reset_position),
+                        value = stringResource(R.string.floating_keyboard_reset_position_desc),
+                        onClick = { KeyboardManager.Keyboard.Floating.resetPosition(context) },
+                    )
+                }
                 SliderRow(
                     title = stringResource(R.string.horizontal_padding),
                     value = horizontalPadding,
