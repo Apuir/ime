@@ -42,6 +42,8 @@ class MenuGridView(
     )
 
     // Each inner array is one horizontally scrollable page.
+    // 每页固定塞满 8 个（4 列 × 2 行）再翻页：超过 8 个会让 onMeasure 把该页算成 3 行、
+    // 进而把**所有**页的格子一起缩小，所以这里按 8 个一行填满。
     private val items = arrayOf(
         arrayOf(
             MenuItem(
@@ -53,6 +55,11 @@ class MenuGridView(
                 context.getString(R.string.menu_symbol),
                 R.drawable.ic_keyboard_symbol,
                 PanelAction.SymbolKeyboard
+            ),
+            MenuItem(
+                context.getString(R.string.tool_resize_keyboard),
+                R.drawable.ic_keyboard_resize,
+                PanelAction.ResizeKeyboard
             ),
             MenuItem(
                 context.getString(R.string.model_prediction),
@@ -79,13 +86,13 @@ class MenuGridView(
                 R.drawable.ic_keyboard_sticker_emoji,
                 PanelAction.ToggleEmojiInput
             ),
+        ),
+        arrayOf(
             MenuItem(
                 context.getString(R.string.menu_voice),
                 R.drawable.ic_keyboard_voice,
                 PanelAction.ToggleVoice
             ),
-        ),
-        arrayOf(
             MenuItem(
                 context.getString(R.string.menu_clipboard),
                 R.drawable.ic_keyboard_clipboard,
@@ -121,6 +128,8 @@ class MenuGridView(
                 R.drawable.ic_keyboard_reload,
                 PanelAction.ReloadEngine
             ),
+        ),
+        arrayOf(
             MenuItem(
                 context.getString(R.string.menu_about),
                 R.drawable.ic_keyboard_information_outline,

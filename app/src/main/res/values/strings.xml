@@ -30,11 +30,16 @@
     <string name="landscape_floating_keyboard">横屏悬浮键盘</string>
     <string name="landscape_floating_keyboard_desc">横屏时键盘以可拖动的小窗口悬浮显示，应用界面不再被顶起</string>
     <string name="floating_keyboard_width">悬浮键盘宽度</string>
-    <string name="floating_keyboard_width_hint">默认按屏幕短边自适应，按键大小接近竖屏</string>
+    <string name="floating_keyboard_width_hint">默认按屏幕短边自适应；也可在键盘左上角菜单 →「调整键盘大小」里直接拖边框调整</string>
     <string name="floating_keyboard_width_hint_short">按屏幕短边自适应</string>
     <string name="floating_keyboard_reset_width">恢复默认宽度</string>
     <string name="floating_keyboard_reset_position">重置悬浮键盘位置</string>
     <string name="floating_keyboard_reset_position_desc">恢复到水平居中、贴近底部</string>
+    <string name="tool_resize_keyboard">调整键盘大小</string>
+    <string name="resize_hint">拖动边框调整键盘大小</string>
+    <string name="resize_size_label">宽 %1$d%% · 高 %2$d%%</string>
+    <string name="resize_done">完成</string>
+    <string name="resize_reset">重置</string>
 
     <!-- IME Setup -->
     <string name="initializing">正在初始化…</string>

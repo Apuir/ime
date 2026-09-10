@@ -22,6 +22,7 @@ sealed class PanelAction {
     data object Redo : PanelAction()
     data object Palette : PanelAction()
     data object CursorMove : PanelAction()
+    data object ResizeKeyboard : PanelAction()
     data object CloseKeyboard : PanelAction()
     data object ClearClipboard : PanelAction()
     data object ClearPhrases : PanelAction()

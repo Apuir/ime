@@ -20,6 +20,7 @@ enum class ToolbarTool(
     Undo("undo", R.string.tool_undo, R.drawable.ic_keyboard_undo, PanelAction.Undo),
     Redo("redo", R.string.tool_redo, R.drawable.ic_keyboard_redo, PanelAction.Redo),
     Cursor("cursor", R.string.menu_cursor, R.drawable.ic_keyboard_cursor_move, PanelAction.CursorMove),
+    Resize("resize", R.string.tool_resize_keyboard, R.drawable.ic_keyboard_resize, PanelAction.ResizeKeyboard),
     Clipboard("clipboard", R.string.menu_clipboard, R.drawable.ic_keyboard_clipboard, PanelAction.Clipboard),
     Phrases("phrases", R.string.phrase_tab, R.drawable.ic_keyboard_star_david, PanelAction.CommonPhrases),
     Palette("palette", R.string.menu_theme, R.drawable.ic_keyboard_palette, PanelAction.Palette),

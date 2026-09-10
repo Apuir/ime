@@ -7,7 +7,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.4.0` / `10400` |
+| versionName / versionCode | `1.5.0` / `10500` |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -78,6 +78,8 @@
 - 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）
 - **横屏悬浮键盘**：横屏时键盘自动变成一张可拖动的小卡片悬浮在应用之上（宽度可调、位置可拖动并记忆），
   应用界面不再被键盘顶起；设置 → 键盘布局里可开关与调整宽度
+- **键盘内直接调大小**：键盘左上角菜单 →「调整键盘大小」，进入编辑模式后拖上边框调高度、拖左右边框调宽度，
+  竖屏/横屏都可用，带实时百分比显示与「重置 / 完成」按钮
 - SAF 文件管理（`AppFilesDocumentsProvider`）：无需 root 即可用系统“文件”App 浏览/编辑 `files/` 下的方案与词库
 - 运行日志、崩溃日志、版本检查、按键音/震动/水波纹等细节设置
 
@@ -507,6 +509,12 @@ listOf(
    于是悬浮键盘的按键大小与竖屏基本一致，不会变成又宽又扁的横条。
 4. **位置记忆**：拖动结束后把位置换算成「可移动余量」的比例写入偏好（`keyboard.floating.pos_x/pos_y`），
    这样换尺寸/换分辨率也能合理还原。拖动过程中用内存中的比例，避免 `onMeasure` 读到旧值把卡片弹回。
+5. **键盘内实时调大小**：键盘左上角菜单 →「调整键盘大小」（`PanelAction.ResizeKeyboard`）进入编辑模式：
+   强制切到卡片布局、整窗可触摸（屏蔽按键误触），拖上边框改高度、拖左右边框改宽度，
+   顶部控制条实时显示「宽 x% · 高 y%」，另有「重置 / 完成」。完成后把宽高百分比与位置比例写回
+   当前方向的偏好（竖屏 `keyboard.width`/`keyboard.height`/`keyboard.pos_*`，横屏 `keyboard.floating.*` +
+   `keyboard.height_landscape`）；横屏缩窄时会自动打开悬浮开关。
+   > 竖屏宽度 < 100% 时同样走「全屏透明窗口 + 卡片」布局，应用不会被顶起。
 
 相关代码与设置：
 
@@ -683,6 +691,9 @@ listOf(
 | `keyboard.expand_borders` | Bool | false（**反向**） | 展开键边框 |
 | `keyboard.gesture_input` | Int | 0 | 符号/数字输入手势：0=长按，1=上滑（互斥） |
 | `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
+| `keyboard.width` | Int | 100 | 竖屏键盘宽度（% 屏宽），<100 时改用悬浮卡片布局；由「调整键盘大小」写入 |
+| `keyboard.pos_x` | Float | 0.5 | 竖屏卡片水平位置比例（拖动后写入） |
+| `keyboard.pos_y` | Float | 1.0 | 竖屏卡片垂直位置比例（拖动后写入） |
 | `keyboard.floating.enabled` | Bool | true | 横屏悬浮键盘开关 |
 | `keyboard.floating.width` | Int | 未设置=自适应 | 悬浮卡片宽度（% 屏宽）；未手动设置时取「屏短边/长边」，即按键宽度与竖屏一致（20:9 手机约 45%），拖过滑杆后才写入 |
 | `keyboard.floating.pos_x` | Float | 0.5 | 悬浮卡片水平位置比例（0=贴左，1=贴右；拖动后写入） |

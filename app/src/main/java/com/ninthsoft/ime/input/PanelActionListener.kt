@@ -28,6 +28,7 @@ class PanelActionListener(
         when (action) {
             PanelAction.CloseKeyboard -> service.requestHideSelf(0)
             PanelAction.SwitchKeyboard -> service.keyboardWindow?.view?.toggleMenu()
+            PanelAction.ResizeKeyboard -> service.keyboardWindow?.view?.toggleResizeMode()
             PanelAction.EmojiKeyboard -> service.keyboardWindow?.view?.switchKeyboard(
                 EmojiKeyboard.NAME
             )

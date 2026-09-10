@@ -8,8 +8,8 @@ import kotlin.math.roundToInt
 
 object KeyboardManager {
     const val PREFS_NAME = "keyboard_settings"
-    private const val DEFAULT_KEYBOARD_HEIGHT = 24
-    private const val DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE = 44
+    const val DEFAULT_KEYBOARD_HEIGHT = 24
+    const val DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE = 44
     private const val DEFAULT_PADDING_DP = 4
 
     object Theme {
@@ -59,6 +59,67 @@ object KeyboardManager {
         fun setHeightPercentLandscape(context: Context, percent: Int) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                 putInt("$PREFIX.height_landscape", percent)
+            }
+        }
+
+        const val KEY_WIDTH = "$PREFIX.width"
+        const val KEY_POSITION_X = "$PREFIX.pos_x"
+        const val KEY_POSITION_Y = "$PREFIX.pos_y"
+
+        /** 键盘尺寸可调范围（%），竖屏与横屏共用；键盘内的「调整大小」工具也用这两个范围。 */
+        const val WIDTH_PERCENT_MIN = 30
+        const val WIDTH_PERCENT_MAX = 100
+        const val HEIGHT_PERCENT_MIN = 15
+        const val HEIGHT_PERCENT_MAX = 70
+
+        /** 竖屏键盘宽度（% 屏宽）。100% 时按原来的「贴底全宽」布局。 */
+        fun getWidthPercent(context: Context): Int {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_WIDTH, WIDTH_PERCENT_MAX)
+                .coerceIn(WIDTH_PERCENT_MIN, WIDTH_PERCENT_MAX)
+        }
+
+        fun setWidthPercent(context: Context, percent: Int) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putInt(KEY_WIDTH, percent.coerceIn(WIDTH_PERCENT_MIN, WIDTH_PERCENT_MAX))
+            }
+        }
+
+        fun getPositionXRatio(context: Context): Float {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getFloat(KEY_POSITION_X, 0.5f)
+        }
+
+        fun getPositionYRatio(context: Context): Float {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getFloat(KEY_POSITION_Y, 1f)
+        }
+
+        fun setPosition(context: Context, xRatio: Float, yRatio: Float) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putFloat(KEY_POSITION_X, xRatio.coerceIn(0f, 1f))
+                putFloat(KEY_POSITION_Y, yRatio.coerceIn(0f, 1f))
+            }
+        }
+
+        /** 竖屏尺寸/位置恢复默认：全宽、贴底居中。 */
+        fun resetLayout(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                remove(KEY_WIDTH)
+                remove(KEY_POSITION_X)
+                remove(KEY_POSITION_Y)
+            }
+        }
+
+        fun resetHeightPercent(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putInt(KEY_HEIGHT, DEFAULT_KEYBOARD_HEIGHT)
+            }
+        }
+
+        fun resetHeightPercentLandscape(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putInt(KEY_HEIGHT_LANDSCAPE, DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE)
             }
         }
 
