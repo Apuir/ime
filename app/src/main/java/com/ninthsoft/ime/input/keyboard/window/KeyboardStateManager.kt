@@ -33,6 +33,11 @@ object KeyboardStateManager {
     private var keyboardFactory: ((String) -> IKeyboard)? = null
     private var currentKeyboardName: String? = null
     private var keyboardAttached = false
+    /**
+     * 「返回上一个键盘」导航栈：记录用户按切换键 / 面板入口之前所在的键盘。
+     * 与 [currentKeyboardName] 分离，程序化切换（换方案、换输入框）不会入栈。
+     */
+    private val backStack = ArrayDeque<String>()
     private var schemas: List<EngineMessage.Schema> = emptyList()
     private var currentSchema: EngineMessage.Schema? = null
     private var defaultKeyboardName = QwertyKeyboard.NAME
@@ -96,6 +101,7 @@ object KeyboardStateManager {
         if (schemas.isEmpty()) return ""
         val index = schemas.indexOf(currentSchema)
         currentSchema = if (index >= 0) schemas[(index + 1) % schemas.size] else schemas.first()
+        backStack.clear()
         switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
         return currentSchema?.id.orEmpty()
     }
@@ -105,6 +111,7 @@ object KeyboardStateManager {
         if (currentSchema?.id == schemaId) return schemaId
         currentSchema = schema
         EngineFactory.current()?.selectSchema(schema.id)
+        backStack.clear()
         switchTo(schema.layout.ifEmpty { QwertyKeyboard.NAME })
         return schema.id
     }
@@ -119,6 +126,7 @@ object KeyboardStateManager {
         currentSchema = schemas.firstOrNull()
         currentSchema?.id?.let { EngineFactory.current()?.selectSchema(it) }
 
+        backStack.clear()
         // 只有在已经挂载到窗口时才切换键盘布局，避免在 factory 尚未注入、
         if (keyboardAttached) {
             switchTo(currentSchema?.layout ?: defaultKeyboardName)
@@ -140,6 +148,20 @@ object KeyboardStateManager {
         kb?.updateSpaceKeyText(currentSchema?.name.orEmpty())
         kb?.updatePunctuationMode(PunctuationMode.from(currentSchema?.punctuation.orEmpty()))
         kb?.let { callback?.onKeyboardChanged(it) }
+    }
+
+    /**
+     * 用户主动切到别的键盘（键盘上的切换键 / 候选面板入口）。
+     * 与 [switchTo] 的区别：会把当前键盘压入 [backStack]，之后 [resume] 能原路返回，
+     * 因此“主键盘 → 数字 → 符号 → 返回”会回到数字键盘而不是直接回主键盘。
+     */
+    fun pushTo(name: String) {
+        val current = currentKeyboardName
+        if (name == current) return
+        if (current != null && backStack.lastOrNull() != current) {
+            backStack.addLast(current)
+        }
+        switchTo(name)
     }
 
     private fun attachNew(name: String) {
@@ -180,6 +202,7 @@ object KeyboardStateManager {
     }
 
     fun startInput(info: EditorInfo) {
+        backStack.clear()
         val start = when (info.inputType and InputType.TYPE_MASK_CLASS) {
             InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE -> NumberKeyboard.NAME
             else -> currentSchema?.layout ?: defaultKeyboardName
@@ -187,7 +210,15 @@ object KeyboardStateManager {
         switchTo(start)
     }
 
+    /** 返回上一个键盘（用户按「切换/返回」触发）；栈空时回落到当前方案的布局。 */
     fun resume() {
+        while (true) {
+            val previous = backStack.removeLastOrNull() ?: break
+            if (previous != currentKeyboardName) {
+                switchTo(previous)
+                return
+            }
+        }
         switchTo(currentSchema?.layout ?: defaultKeyboardName)
     }
 

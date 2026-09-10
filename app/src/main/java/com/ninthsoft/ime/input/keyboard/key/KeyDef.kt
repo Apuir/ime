@@ -16,6 +16,10 @@ open class KeyDef(
         val margin: Boolean,
         val viewId: Int,
         var visibility: Int = View.VISIBLE,
+        /** 纵向跨行数；>1 时该键会脱离所在行，作为跨行键参与布局（需配合 BaseKeyboard 的 span 逻辑）。 */
+        val rowSpan: Int = 1,
+        /** 跨行键是否锚定在右侧（默认左侧，用于左侧标点栏）。仅 rowSpan > 1 时生效。 */
+        val alignRight: Boolean = false,
     ) {
         enum class Variant { Normal, Alternative, Accent, AltForeground, None }
 
@@ -31,7 +35,9 @@ open class KeyDef(
             margin: Boolean = true,
             viewId: Int = -1,
             visibility: Int = View.VISIBLE,
-        ) : Appearance(percentWidth, variant, border, margin, viewId, visibility)
+            rowSpan: Int = 1,
+            alignRight: Boolean = false,
+        ) : Appearance(percentWidth, variant, border, margin, viewId, visibility, rowSpan, alignRight)
 
         class AltText(
             displayText: String,
@@ -60,14 +66,14 @@ open class KeyDef(
         )
 
         class SidePannel(
-            val rowSpan: Int = 3,
+            rowSpan: Int = 3,
             val visableRow: Int = 4,
             percentWidth: Float = 0.1f,
             variant: Variant = Variant.Normal,
             border: Border = Border.Default,
             margin: Boolean = true,
             viewId: Int = -1,
-        ) : Appearance(percentWidth, variant, border, margin, viewId)
+        ) : Appearance(percentWidth, variant, border, margin, viewId, rowSpan = rowSpan)
 
         class Image(
             @DrawableRes val src: Int,
@@ -76,7 +82,12 @@ open class KeyDef(
             border: Border = Border.Default,
             margin: Boolean = true,
             viewId: Int = -1,
-        ) : Appearance(percentWidth, variant, border, margin, viewId)
+            rowSpan: Int = 1,
+            alignRight: Boolean = false,
+        ) : Appearance(
+            percentWidth, variant, border, margin, viewId,
+            rowSpan = rowSpan, alignRight = alignRight,
+        )
 
         class ImageText(
             displayText: String,

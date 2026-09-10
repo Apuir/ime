@@ -10,16 +10,14 @@ import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.clearKey
-import com.ninthsoft.ime.input.keyboard.key.infiniteKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.mixedAlphabetKey
-import com.ninthsoft.ime.input.keyboard.key.peroidKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.segmentKey
 import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
 import com.ninthsoft.ime.input.keyboard.key.spaceKey
-import com.ninthsoft.ime.input.keyboard.key.zeroKey
+import com.ninthsoft.ime.input.keyboard.key.symbolPageKey
 
 @SuppressLint("ViewConstructor")
 class T9Keyboard(
@@ -89,14 +87,15 @@ class T9Keyboard(
                 mixedAlphabetKey("7", "PQRS"),
                 mixedAlphabetKey("8", "TUV"),
                 mixedAlphabetKey("9", "WXYZ"),
-                zeroKey()
+                // 大回车：跨第 3、4 两行，占掉原来独立 @ 键的位置
+                returnKey(percentWidth = 0.15f, rowSpan = 2),
             ),
             listOf(
-                layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = 0.15f),
+                // 底行：符号 | 中英切换 | 空格 | 数字
+                symbolPageKey(percentWidth = 0.15f),
                 schemaSwitchKey(0.13f),
                 spaceKey(percentWidth = 0.44f),
-                peroidKey(percentWidth = 0.13f),
-                returnKey(percentWidth = 0.15f),
+                layoutSwitchKey("123", NumberKeyboard.NAME, percentWidth = 0.13f),
             ),
         )
     }

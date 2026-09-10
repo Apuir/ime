@@ -62,29 +62,40 @@ abstract class BaseKeyboard(
     }
 
     protected open fun updateSidePanel(items: List<KeyDef>) {
-        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.updateItems(items)
+        sidePanelView?.updateItems(items)
     }
 
     protected open fun resetSidePanelPosition() {
-        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.resetPosition()
+        sidePanelView?.resetPosition()
     }
 
     fun setSidePanelItemListener(listener: (KeyboardAction) -> Unit) {
-        (spanPanelViews.firstOrNull() as? SidePanelKeyView)?.setOnItemActionListener(listener)
+        sidePanelView?.setOnItemActionListener(listener)
     }
 
+    /** 左侧标点栏。span 列表里可能还有跨行的大回车等，这里只取侧栏。 */
+    private val sidePanelView: SidePanelKeyView?
+        get() = spanPanelViews.filterIsInstance<SidePanelKeyView>().firstOrNull()
+
     init {
-        data class SpanDef(val def: KeyDef, val startRow: Int, val endRow: Int)
+        data class SpanDef(
+            val def: KeyDef,
+            val startRow: Int,
+            val endRow: Int,
+            val alignRight: Boolean,
+        )
 
         val spanDefs = mutableListOf<SpanDef>()
         for (ri in keyLayout.indices) {
             for (def in keyLayout[ri]) {
-                if (def.appearance is KeyDef.Appearance.SidePannel && def.appearance.rowSpan > 1) {
+                val rowSpan = def.appearance.rowSpan
+                if (rowSpan > 1) {
                     spanDefs.add(
                         SpanDef(
                             def,
                             ri,
-                            (ri + def.appearance.rowSpan - 1).coerceAtMost(keyLayout.size - 1)
+                            (ri + rowSpan - 1).coerceAtMost(keyLayout.size - 1),
+                            def.appearance.alignRight,
                         )
                     )
                 }
@@ -94,13 +105,14 @@ abstract class BaseKeyboard(
         spanPanelViews = spanViews
 
         keyRows = keyLayout.mapIndexed { rowIndex, row ->
-            val parts =
-                row.filterNot { it.appearance is KeyDef.Appearance.SidePannel && it.appearance.rowSpan > 1 }
+            val parts = row.filterNot { it.appearance.rowSpan > 1 }
             val keyViews = parts.map(::createKeyView)
-            val sidePanelAtRow = spanDefs.indexOfFirst { rowIndex in it.startRow..it.endRow }
-            val spanScale = if (sidePanelAtRow >= 0) {
-                1f / (1f - spanDefs[sidePanelAtRow].def.appearance.percentWidth)
-            } else 1f
+            // 该行被跨行键占掉的宽度：左侧标点栏 + 右侧大回车都要扣掉。
+            val spanWidth = spanDefs
+                .filter { rowIndex in it.startRow..it.endRow }
+                .sumOf { it.def.appearance.percentWidth.toDouble() }
+                .toFloat()
+            val spanScale = if (spanWidth > 0f && spanWidth < 1f) 1f / (1f - spanWidth) else 1f
 
             constraintLayout {
                 var totalWidth = 0f
@@ -151,13 +163,12 @@ abstract class BaseKeyboard(
                 else below(keyRows[index - 1])
                 if (index == keyRows.size - 1) bottomOfParent()
                 else above(keyRows[index + 1])
-                val sidePanelAtRow = spanDefs.indexOfFirst { index in it.startRow..it.endRow }
-                if (sidePanelAtRow >= 0) {
-                    leftToRightOf(spanViews[sidePanelAtRow])
-                } else {
-                    leftOfParent()
-                }
-                rightOfParent()
+                val covering =
+                    spanDefs.indices.filter { index in spanDefs[it].startRow..spanDefs[it].endRow }
+                val leftSpan = covering.lastOrNull { !spanDefs[it].alignRight }
+                val rightSpan = covering.firstOrNull { spanDefs[it].alignRight }
+                if (leftSpan != null) leftToRightOf(spanViews[leftSpan]) else leftOfParent()
+                if (rightSpan != null) rightToLeftOf(spanViews[rightSpan]) else rightOfParent()
             })
         }
 
@@ -166,7 +177,7 @@ abstract class BaseKeyboard(
             add(spanViews[i], lParams {
                 topToTop = keyRows[sd.startRow].id
                 bottomToBottom = keyRows[sd.endRow].id
-                leftOfParent()
+                if (sd.alignRight) rightOfParent() else leftOfParent()
                 matchConstraintPercentWidth = sd.def.appearance.percentWidth
             })
         }

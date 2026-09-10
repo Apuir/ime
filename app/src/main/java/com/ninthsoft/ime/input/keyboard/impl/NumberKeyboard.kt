@@ -8,12 +8,10 @@ import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
-import com.ninthsoft.ime.input.keyboard.key.atKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.clearKey
 import com.ninthsoft.ime.input.keyboard.key.commitKey
-import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
-import com.ninthsoft.ime.input.keyboard.key.symbolSwitchKey
+import com.ninthsoft.ime.input.keyboard.key.symbolPageKey
 import com.ninthsoft.ime.input.keyboard.key.miniSpaceKey
 import com.ninthsoft.ime.input.keyboard.key.resumeLayoutKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
@@ -51,16 +49,16 @@ class NumberKeyboard(
                 commitKey("7", fontSize = 22f),
                 commitKey("8", fontSize = 22f),
                 commitKey("9", fontSize = 22f),
-                miniSpaceKey()
+                // 大回车：跨第 3、4 两行，把原来上方的小空格键并进来
+                returnKey(percentWidth = 0.15f, rowSpan = 2),
             ),
             listOf(
-                resumeLayoutKey("返回", percentWidth = 0.15f),
-                symbolSwitchKey(0.13f),
-                commitKey(",", variant = Variant.Alternative, percentWidth = 0.10333f),
+                // 底行：符号 | 空格 | 0 | . | 切换（返回切进来的九键/26键）
+                symbolPageKey(percentWidth = 0.15f),
+                miniSpaceKey(percentWidth = 0.23333f),
                 commitKey("0", percentWidth = 0.23333f, variant = Variant.Alternative),
-                commitKey(".", percentWidth = 0.13f, variant = Variant.Alternative),
-                atKey(percentWidth = 0.10333f),
-                returnKey(percentWidth = 0.15f),
+                commitKey(".", percentWidth = 0.10333f, variant = Variant.Alternative),
+                resumeLayoutKey("返回", percentWidth = 0.13f),
             ),
         )
     }

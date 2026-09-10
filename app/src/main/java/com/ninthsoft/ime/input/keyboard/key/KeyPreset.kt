@@ -187,13 +187,35 @@ fun symbolSwitchKey(percentWidth: Float): KeyDef = KeyDef(
     behaviors = setOf(KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME))),
 )
 
-fun returnKey(percentWidth: Float): KeyDef = KeyDef(
+/**
+ * 符号页入口键：点按直接进入符号键盘。
+ * 取代原来“点按输入句号、长按进符号页”的 peroidKey。
+ */
+fun symbolPageKey(
+    percentWidth: Float = 0.15f,
+    displayText: String = "符号",
+): KeyDef = KeyDef(
+    appearance = KeyDef.Appearance.Text(
+        displayText = displayText,
+        textSize = 15f,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+    ),
+    behaviors = setOf(
+        KeyDef.Behavior.Press(KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME))
+    ),
+)
+
+fun returnKey(percentWidth: Float, rowSpan: Int = 1): KeyDef = KeyDef(
     appearance = KeyDef.Appearance.Image(
         src = R.drawable.ic_keyboard_return,
         viewId = KeyView.button_return,
         percentWidth = percentWidth,
         variant = Variant.Accent,
         border = Border.Special,
+        // rowSpan > 1 时作为右侧跨行大回车（如九键：占掉原 @ 键的位置）
+        rowSpan = rowSpan,
+        alignRight = rowSpan > 1,
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.ReturnAction()),
         KeyDef.Behavior.LongPress(KeyboardAction.ReturnAction(true)),

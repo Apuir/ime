@@ -110,7 +110,7 @@ class KeyboardWindowView(
             }
 
             is KeyboardAction.LayoutSwitchAction -> {
-                keyboardStateManager.switchTo(action.target)
+                keyboardStateManager.pushTo(action.target)
                 null
             }
 
@@ -721,6 +721,7 @@ class KeyboardWindowView(
         imeToastView.bringToFront()
     }
 
-    fun switchKeyboard(name: String) = keyboardStateManager.switchTo(name)
+    // 面板入口（emoji / 符号）也属于用户主动切换，走 pushTo 以便「返回」原路回退
+    fun switchKeyboard(name: String) = keyboardStateManager.pushTo(name)
     fun onDepolyFinished() = keyboardStateManager.refreshSchemas()
 }
