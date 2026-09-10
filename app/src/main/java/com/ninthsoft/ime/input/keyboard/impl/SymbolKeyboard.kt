@@ -7,8 +7,10 @@ import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
+import com.ninthsoft.ime.data.manager.RecentSymbolManager
 import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.Symbol
+import com.ninthsoft.ime.data.SymbolPair
 import com.ninthsoft.ime.input.keyboard.key.GridKeyboardView
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
@@ -31,23 +33,33 @@ class SymbolKeyboard(
         const val NAME = "Symbol"
         private const val COLUMNS = 5
         private const val ROWS = 5
-        private var categorys: List<Pair<Category, Array<String>>> = Symbol.Symbol
 
         private fun keyDef(text: String): KeyDef {
+            val close = SymbolPair.closeFor(text)
+            val press = if (close != null) {
+                // 成对符号的前半：补齐后半、光标居中，并回到进入符号页前的键盘
+                KeyDef.Behavior.Press(
+                    KeyboardAction.CommitPairAction(text, close, resume = true)
+                )
+            } else {
+                KeyDef.Behavior.Press(KeyboardAction.CommitAction(text))
+            }
             return KeyDef(
                 appearance = KeyDef.Appearance.Text(
                     displayText = text, textSize = 18f,
                     percentWidth = 1f / COLUMNS,
                     variant = KeyDef.Appearance.Variant.Alternative,
                 ),
-                behaviors = setOf(
-                    KeyDef.Behavior.Press(KeyboardAction.CommitAction(text))
-                ),
+                behaviors = setOf(press),
             )
         }
     }
 
     override var keyActionListener: KeyActionListener? = null
+
+    /** 静态分类顺序；「最近」的具体符号运行时从 [RecentSymbolManager] 取。 */
+    private val categories: List<Category> = Symbol.Symbol.map { it.first }
+    private var currentCategoryIndex = 0
 
     private val sidePanelKey = SidePanelKeyView(
         context, colors,
@@ -60,7 +72,7 @@ class SymbolKeyboard(
     )
 
     private val gridView = GridKeyboardView(context, colors, COLUMNS, ROWS).apply {
-        onKeyAction = { action -> keyActionListener?.onKeyAction(action) }
+        onKeyAction = { action -> handleKeyAction(action) }
         onKeyPressed = { key -> triggerRipple(key) }
     }
 
@@ -99,7 +111,7 @@ class SymbolKeyboard(
 
         isClickable = true
 
-        sidePanelItemDefs = categorys.map { (category, _) ->
+        sidePanelItemDefs = categories.map { category ->
             KeyDef(
                 appearance = KeyDef.Appearance.Text(
                     displayText = category.label, textSize = 15f, percentWidth = 0.5f,
@@ -111,12 +123,13 @@ class SymbolKeyboard(
         sidePanelKey.updateItems(sidePanelItemDefs)
 
         sidePanelKey.setOnItemActionListener { action ->
-            if (action is KeyboardAction.CommitAction && categorys.any { it.first.label == action.text }) {
-                val symbols = categorys.firstOrNull { it.first.label == action.text }?.second
-                    ?: return@setOnItemActionListener
-                gridView.setItems(symbols.map { keyDef(it) })
-                val index = categorys.indexOfFirst { it.first.label == action.text }
-                if (index >= 0) sidePanelKey.selectIndex(index)
+            val index = if (action is KeyboardAction.CommitAction) {
+                categories.indexOfFirst { it.label == action.text }
+            } else {
+                -1
+            }
+            if (index >= 0) {
+                showCategory(index)
             } else {
                 keyActionListener?.onKeyAction(action)
             }
@@ -181,9 +194,34 @@ class SymbolKeyboard(
     }
 
     fun reset() {
-        val (_, symbols) = categorys.first()
-        gridView.setItems(symbols.map { keyDef(it) })
-        sidePanelKey.selectIndex(0)
+        showCategory(categories.indexOfFirst { it.label == RecentSymbolManager.LABEL })
         sidePanelKey.resetPosition()
+    }
+
+    private fun showCategory(index: Int) {
+        if (index !in categories.indices) return
+        currentCategoryIndex = index
+        gridView.setItems(symbolsOf(index).map { keyDef(it) })
+        sidePanelKey.selectIndex(index)
+    }
+
+    private fun symbolsOf(index: Int): Array<String> {
+        val category = categories[index]
+        if (category.label == RecentSymbolManager.LABEL) {
+            return RecentSymbolManager.get(getContext()).toTypedArray()
+        }
+        return Symbol.Symbol.firstOrNull { it.first.label == category.label }?.second ?: emptyArray()
+    }
+
+    private fun handleKeyAction(action: KeyboardAction) {
+        val symbol = when (action) {
+            is KeyboardAction.CommitAction -> action.text
+            is KeyboardAction.CommitPairAction -> action.open
+            else -> null
+        }
+        if (symbol != null) {
+            RecentSymbolManager.record(getContext(), symbol)
+        }
+        keyActionListener?.onKeyAction(action)
     }
 }

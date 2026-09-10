@@ -20,8 +20,19 @@ class MessageHandler(
     suspend fun handle(message: EngineMessage) {
         when (message) {
             is EngineMessage.Commit -> {
-                (service as ImeInputMethodService).activeInputConnection()
-                    ?.commitText(message.text, 1)
+                val ic = (service as ImeInputMethodService).activeInputConnection()
+                if (ic != null) {
+                    ic.commitText(message.text, 1)
+                    if (message.cursorOffset > 0) {
+                        // 成对符号：提交后把光标向左回退到符号中间。
+                        // 拿不到光标前缀时不做处理，避免误把光标移到开头。
+                        val end = ic.getTextBeforeCursor(Int.MAX_VALUE, 0)?.length
+                        if (end != null && end >= message.cursorOffset) {
+                            val pos = end - message.cursorOffset
+                            ic.setSelection(pos, pos)
+                        }
+                    }
+                }
             }
 
             is EngineMessage.Candidates -> {

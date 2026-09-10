@@ -119,6 +119,12 @@ class KeyboardWindowView(
                 null
             }
 
+            is KeyboardAction.CommitPairAction -> {
+                // 先让路径回到「进入符号页前」的键盘，再把配对符号提交给输入框
+                if (action.resume) keyboardStateManager.resume()
+                action.copy(resume = false)
+            }
+
             is KeyboardAction.ShowInputMethodPickerAction -> {
                 val dialog = SchemaPickerDialog.build(
                     context = context,

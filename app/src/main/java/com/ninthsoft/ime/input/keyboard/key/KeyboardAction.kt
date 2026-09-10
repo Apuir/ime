@@ -26,6 +26,16 @@ sealed class KeyboardAction {
 
     data class CommitAction(val text: String) : KeyboardAction()
 
+    /**
+     * 提交一对成对符号（如 `（）`），并把光标停留在中间。
+     * [resume] 为 true 时（符号页场景）提交后自动切回上一个键盘。
+     */
+    data class CommitPairAction(
+        val open: String,
+        val close: String,
+        val resume: Boolean = false,
+    ) : KeyboardAction()
+
     data class SelectCandidatePinYin(val pinYin: CandidatePinYin) : KeyboardAction()
 
     data object CapsAction : KeyboardAction()

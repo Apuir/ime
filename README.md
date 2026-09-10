@@ -7,7 +7,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.2.0` / `10200` |
+| versionName / versionCode | `1.2.1` / `10201` |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -436,10 +436,24 @@ listOf(
 
 `data/Symbol.kt`：
 
-- `Symbol.Symbol: List<Pair<Category, Array<String>>>` —— 符号分类（常规/数字/序号/括号/箭头/全角/其他）
+- `Symbol.Symbol: List<Pair<Category, Array<String>>>` —— 符号分类（最近/中文/英文/数学/序号/括号/箭头/全角/其他 + `SymbolExtra` 追加的单位/货币/拼音/注音/希腊/俄文/日文/韩文/框线/天气/星座/音乐，共 21 类）
 - `Symbol.Emoji: List<Pair<Category, Array<String>>>` —— Emoji 分类
 
+`data/SymbolExtra.kt` 是符号页的补充数据，拆出来是为了不再撑大以 Emoji 为主、已 2000+ 行的 `Symbol.kt`：
+
+- `SymbolExtra.Extra: Map<String, Array<String>>` —— 给**已有分类**追加符号，key 必须与既有 `label` 完全一致；
+- `SymbolExtra.Categories` —— **新增分类**，追加在既有分类之后。
+
+`Symbol.Symbol` 会在初始化时把两者合并，并做一次 `distinct()` 去重（原始数据里本来就有 `∉ ∞ ∩ ∪ ⅸ 〉 〘 〙 ○` 等重复项）。
 直接往对应 `arrayOf(...)` 增删即可，键盘会自动按 `GridKeyboardView` 分页展示。
+
+> 注意：分类里的符号越多，切换该分类时 `GridKeyboardView.setItems()` 创建的 `KeyView` 越多（目前最大一类接近 300 个），
+> 切分类会有一次性的构建开销。滚动本身已经只做画布平移 + 视口裁剪，不受影响。
+
+其中「最近」的内容不写在 `Symbol.kt`，而是由 `data/manager/RecentSymbolManager.kt` 记录用户在符号页点过的符号
+（去重、最多 25 个、持久化到 `symbol_recent` SharedPreferences，为空时回退到一组常用符号）。
+`data/SymbolPair.kt` 维护成对符号表（前半 → 后半），符号页点前半符号时会自动补齐后半、把光标停在中间并切回上一个键盘；
+半角直引号 `'` `"` 刻意不参与配对，避免 `don't` 被补成 `don''t`。
 
 ### 9.3 键盘主题
 
@@ -533,6 +547,23 @@ listOf(
 - `abiFilters` 目前只留 `arm64-v8a`（`app/build.gradle.kts`）
 - `resource.zip` 65 MB 是大头，其中 `model/predict.marisa` 37 MB、`dicts/shici.lite` 14 MB。裁剪词库/预测模型能显著减小 APK
 - `assets/cdsp` 12.6 MB 是 QNN skel，不用语音加速可删（会回退 CPU）
+
+### 9.11 列表滚动 / 手感
+
+项目里没有用系统 `ScrollView`/`RecyclerView`，列表滚动都是自绘或自布局的：
+
+| 位置 | 实现 | 滚动方式 |
+|------|------|----------|
+| 展开候选词列表 | `input/panel/component/CandidateGridView.kt` → 内部 `gridCanvas` | `OverScroller` + `scrollOffsetY`，`onDraw` 只画可见行 |
+| 符号 / Emoji 网格 | `input/keyboard/key/GridKeyboardView.kt` | `OverScroller` + `View.scrollTo` 画布平移，视口外的 `KeyView` 置 `GONE` |
+| 侧栏（分类 / 拼音） | `input/keyboard/key/widget/SidePanelView.kt` | `OverScroller` + `scrollOffset`，Canvas 绘制 |
+
+改这块时注意几条已经踩过的坑：
+
+1. **长按任务要随滑动取消**。`CandidateGridView` 的长按用于“拖动排序 / 长按删除”，若在手指开始拖动后不 `removeCallbacks(longPressRunnable)`，长按会在滑动中途触发，`ACTION_MOVE` 里 `longPressTriggered` 分支又排在 `dragging` 之前 → 手势被接管、划到一半卡住，必须松手重划。现在：手指一旦移动超过 `touchSlop` 就取消长按，且长按任务本身在拖动中直接 return；长按落在空白区域时降级为普通滑动。
+2. **滑动过程中不要逐帧 `requestLayout()`**。符号分类有 100~390 个符号，`GridKeyboardView` 早期每次 `ACTION_MOVE` 都重新测量/布局全部 `KeyView`（每个内部还套 `ConstraintLayout`），直接掉帧。现在滚动只做 `scrollTo` + `invalidate`，仅当可见行范围变化时才 `requestLayout`，并跳过视口外的按键。
+3. **`requestDisallowInterceptTouchEvent` 不要调在自己身上**。它会把 `FLAG_DISALLOW_INTERCEPT` 设在**调用者自己**并向上传播，等于告诉系统“别调用我的 `onInterceptTouchEvent`”。在 `GridKeyboardView` 里这么写过一次，结果网格自己永远拦不到手势、完全滑不动——正确做法是 `parent.requestDisallowInterceptTouchEvent(true)`（禁的是祖先），而这里的父容器本来就不拦截，所以不需要。
+4. **`onInterceptTouchEvent` 不是每次 MOVE 都会被调用**。一旦某个 `ACTION_DOWN` 没有被子 View 接住（例如符号页最后一行右侧的空白格），`mFirstTouchTarget` 为空，后续 MOVE 会直接进 `onTouchEvent` 而不再经过拦截回调。所以拖动判定要抽成 `startDragIfNeeded()` 在两条路径上都能跑，否则从空白格起手的那次滑动是无效的。
 
 ---
 

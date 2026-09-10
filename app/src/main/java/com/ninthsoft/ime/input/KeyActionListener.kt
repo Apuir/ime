@@ -35,6 +35,11 @@ class KeyActionListener(
                 engine?.commit(action.text)
             }
 
+            is KeyboardAction.CommitPairAction -> {
+                // 提交「前半+后半」，并让光标停在后半之前
+                engine?.commit(action.open + action.close, action.close.length)
+            }
+
             is KeyboardAction.BackspaceAction, is KeyboardAction.ReturnAction, KeyboardAction.SpaceAction -> {
                 val character = when (action) {
                     KeyboardAction.BackspaceAction -> "DEL"

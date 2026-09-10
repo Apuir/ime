@@ -1,7 +1,11 @@
 package com.ninthsoft.ime.engine.data
 
 sealed class EngineMessage {
-    data class Commit(val text: String) : EngineMessage()
+    /**
+     * 提交一段文本。[cursorOffset] > 0 时，提交完成后把光标向左回退这么多字符
+     * （用于 `（）` 这类成对符号，让光标停在中间）。
+     */
+    data class Commit(val text: String, val cursorOffset: Int = 0) : EngineMessage()
     data class Composition(val preedit: String, val cursorPos: Int) : EngineMessage()
     data class Candidates(
         val list: List<Candidate>,

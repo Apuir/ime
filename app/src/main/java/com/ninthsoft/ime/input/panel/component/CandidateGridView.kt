@@ -97,8 +97,11 @@ class CandidateGridView(
         private var dragFingerX = 0f
         private var dragFingerY = 0f
         private val longPressRunnable = Runnable {
+            // 已经进入任何拖动模式时，长按不再生效：
+            // 否则长按会在滑动中途「接管」手势，导致划到一半卡住（必须松手重划）。
+            if (dragging || horizontalDrag >= 0 || dragIndex >= 0) return@Runnable
             longPressTriggered = true
-            longPressIndex = if (!dragging && horizontalDrag < 0) downIndex else -1
+            longPressIndex = downIndex
             invalidate()
         }
         private var stretch = 0f
@@ -339,6 +342,8 @@ class CandidateGridView(
                 MotionEvent.ACTION_DOWN -> {
                     parent.requestDisallowInterceptTouchEvent(true)
                     if (!scroller.isFinished) scroller.abortAnimation()
+                    // 回弹动画如果还在跑，会和新的拖动手势互相覆盖，先停掉
+                    stretchAnimator?.cancel()
 
                     velocityTracker = VelocityTracker.obtain()
                     velocityTracker?.addMovement(event)
@@ -392,32 +397,45 @@ class CandidateGridView(
                     if (longPressTriggered) {
                         val moved = absDy > touchSlop || absDx > touchSlop
                         if (moved) longPressMoved = true
-                        if (moved && longPressIndex >= 0) {
-                            dragIndex = longPressIndex
-                            dragTargetIndex = longPressIndex
-                            pressedIndex = -1
+                        // 长按落在空白区域（没有命中候选词）时，不进入排序模式，直接降级为普通滑动
+                        if (longPressIndex < 0 && absDy > touchSlop) {
                             longPressTriggered = false
-                            removeCallbacks(longPressRunnable)
-                            startShake()
-                            invalidate()
+                        } else {
+                            if (moved && longPressIndex >= 0) {
+                                dragIndex = longPressIndex
+                                dragTargetIndex = longPressIndex
+                                pressedIndex = -1
+                                longPressTriggered = false
+                                removeCallbacks(longPressRunnable)
+                                startShake()
+                                invalidate()
+                            }
+                            lastY = event.y
+                            return true
                         }
-                        lastY = event.y
-                        return true
                     }
 
-                    if (!dragging && !longPressTriggered) {
-                        if (absDy > touchSlop && absDy >= absDx) {
+                    if (!dragging && horizontalDrag < 0) {
+                        // 手指只要开始移动就不再等待长按：长按只对「静止不动」的手指生效，
+                        // 避免想滑动时先停顿一下就被判成长按排序。
+                        if (absDx > touchSlop || absDy > touchSlop) {
+                            removeCallbacks(longPressRunnable)
+                        }
+                        val pos = positions.getOrNull(pressedIndex)
+                        if (absDx > touchSlop && absDx > absDy && pos?.extraWide == true) {
+                            // 超宽词独占一行，优先横向滚动
+                            horizontalDrag = pressedIndex
+                            pressedIndex = -1
+                            removeCallbacks(longPressRunnable)
+                            invalidate()
+                        } else if (absDy > touchSlop) {
+                            // 竖直滑动优先：即使带一点横向偏移也要能立刻滚动，不能因为先判到
+                            // 横向位移就放弃这次手势
                             dragging = true
                             pressedIndex = -1
                             stretch = 0f
+                            removeCallbacks(longPressRunnable)
                             if (!scroller.isFinished) scroller.abortAnimation()
-                        } else if (absDx > touchSlop && absDx > absDy) {
-                            val pos = positions.getOrNull(pressedIndex)
-                            if (pos != null && pos.extraWide) {
-                                horizontalDrag = pressedIndex
-                                pressedIndex = -1
-                                invalidate()
-                            }
                         }
                     }
 

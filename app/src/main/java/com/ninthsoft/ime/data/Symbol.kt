@@ -4,8 +4,17 @@ object Symbol {
 
     data class Category(val label: String = "")
 
-    val Symbol: List<Pair<Category, Array<String>>> = listOf(
-        Category("常规") to arrayOf(
+    // 基础分类；SymbolExtra 负责追加到既有分类，并补齐主流输入法常见的其余分类。
+    val Symbol: List<Pair<Category, Array<String>>> = (listOf(
+        // 「最近」内容运行时来自 RecentSymbolManager，这里只占位。
+        Category("最近") to arrayOf(),
+        Category("中文") to arrayOf(
+            "，", "。", "、", "；", "：", "？", "！", "“", "”", "‘", "’",
+            "（", "）", "《", "》", "〈", "〉", "「", "」", "『", "』",
+            "【", "】", "〔", "〕", "〖", "〗", "—", "……", "·", "～",
+            "％", "￥", "℃", "‥", "…", "‰", "※", "•",
+        ),
+        Category("英文") to arrayOf(
             "~",
             "!",
             "@",
@@ -87,17 +96,7 @@ object Symbol {
             "∞",
             "→"
         ),
-        Category("数字") to arrayOf(
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "0",
+        Category("数学") to arrayOf(
             "+",
             "-",
             "×",
@@ -358,7 +357,7 @@ object Symbol {
             "﹀",
             "﹁",
             "﹂",
-            "〈 ",
+            "〖",
             "〉",
             "⌜",
             "⌝",
@@ -629,7 +628,13 @@ object Symbol {
             "❦",
             "❧"
         ),
-    )
+    ) + SymbolExtra.Categories).map { (category, symbols) ->
+        val extra = SymbolExtra.Extra[category.label]
+        val merged = if (extra == null) symbols else symbols + extra
+        // 顺手去重：原始数据里本来就有重复项（∉ ∞ ∩ ∪ ⅸ 〉 〘 〙 ○ …），
+        // 重复按键既是视觉噪音也是无效点击目标。
+        category to merged.distinct().toTypedArray()
+    }
 
     val Emoji: List<Pair<Category, Array<String>>> = listOf(
         Category("😀") to arrayOf(

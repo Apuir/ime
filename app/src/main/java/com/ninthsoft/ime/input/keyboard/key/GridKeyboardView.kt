@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.view.MotionEvent
 import android.view.VelocityTracker
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.OverScroller
@@ -40,6 +41,22 @@ class GridKeyboardView(
     private var stretchAnimator: ValueAnimator? = null
     private val overScrollLimit get() = max(height * 0.45f, 1f)
 
+    /**
+     * 上一次实际布局过的可见行范围。
+     * 符号分类动辄上百个符号，如果每次 ACTION_MOVE 都 requestLayout，
+     * 会逐帧 measure/layout 全部按键（每个 KeyView 内部还套 ConstraintLayout），
+     * 体感就是「划着划着卡住」。这里改成画布平移 + 仅在跨行时重新布局。
+     */
+    private var lastVisibleRange: IntRange = IntRange.EMPTY
+
+    private val visibleRowRange: IntRange
+        get() {
+            if (rowH <= 0 || height <= 0) return IntRange.EMPTY
+            val first = (scrollOffsetY / rowH).toInt() - 1
+            val last = ((scrollOffsetY + height) / rowH).toInt() + 1
+            return first..last
+        }
+
     private val maxScroll
         get(): Int {
             val contentH = totalRows * rowH
@@ -54,7 +71,10 @@ class GridKeyboardView(
         }
         scrollOffsetY = 0f
         stretch = 0f
+        lastVisibleRange = IntRange.EMPTY
+        stretchAnimator?.cancel()
         if (!scroller.isFinished) scroller.abortAnimation()
+        scrollTo(0, 0)
         requestLayout()
     }
 
@@ -90,9 +110,10 @@ class GridKeyboardView(
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         val colW = w / columns
-        rowH = h / rows
+        val newRowH = if (rows > 0) h / rows else h
+        if (newRowH != rowH) lastVisibleRange = IntRange.EMPTY
+        rowH = newRowH
         totalRows = (childCount + columns - 1) / columns
-        val contentH = max(totalRows * rowH, h)
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             child.measure(
@@ -105,14 +126,33 @@ class GridKeyboardView(
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val colW = (r - l) / columns
+        val range = visibleRowRange
+        lastVisibleRange = range
         for (i in 0 until childCount) {
-            val row = i / columns
-            val col = i % columns
             val child = getChildAt(i)
-            val childTop = row * rowH - scrollOffsetY.toInt()
-            child.layout(
-                col * colW, childTop, (col + 1) * colW, childTop + rowH
-            )
+            val row = i / columns
+            val visible = row in range
+            val target = if (visible) VISIBLE else GONE
+            if (child.visibility != target) child.visibility = target
+            // 视口外的按键直接 GONE：既不参与布局也不参与绘制
+            if (!visible) continue
+            val col = i % columns
+            val top = row * rowH
+            child.layout(col * colW, top, (col + 1) * colW, top + rowH)
+        }
+    }
+
+    /**
+     * 更新滚动位置：用 scrollTo 做画布平移（只 invalidate），
+     * 只有可见行范围变化时才 requestLayout 重新摆放这一屏的按键。
+     * stretch 之前完全没有参与布局，导致越界拖动零反馈，这里一并补上。
+     */
+    private fun applyScroll() {
+        scrollTo(0, (scrollOffsetY - stretch).toInt())
+        val range = visibleRowRange
+        if (range != lastVisibleRange) {
+            lastVisibleRange = range
+            requestLayout()
         }
     }
 
@@ -121,7 +161,7 @@ class GridKeyboardView(
         if (scroller.computeScrollOffset()) {
             scrollOffsetY = scroller.currY.toFloat()
             clampScroll()
-            requestLayout()
+            applyScroll()
         }
     }
 
@@ -131,7 +171,7 @@ class GridKeyboardView(
 
     private fun hitTest(x: Float, y: Float): Int {
         val adjustedY = (y + scrollOffsetY).toInt()
-        val row = adjustedY / rowH
+        val row = if (rowH > 0) adjustedY / rowH else 0
         val col = (x / ((right - left) / columns)).toInt().coerceIn(0, columns - 1)
         val i = row * columns + col
         return if (i in 0 until childCount) i else -1
@@ -171,7 +211,7 @@ class GridKeyboardView(
             scroller.springBack(
                 0, scrollOffsetY.toInt(), 0, 0, 0, maxScroll
             )
-            invalidate()
+            postInvalidateOnAnimation()
             return true
         }
         return false
@@ -183,7 +223,7 @@ class GridKeyboardView(
             duration = 260
             addUpdateListener {
                 stretch = it.animatedValue as Float
-                requestLayout()
+                applyScroll()
             }
             start()
         }
@@ -193,7 +233,7 @@ class GridKeyboardView(
         @Suppress("DEPRECATION") scroller.fling(
             0, scrollOffsetY.toInt(), 0, velocityY, 0, 0, 0, maxScroll
         )
-        invalidate()
+        postInvalidateOnAnimation()
     }
 
     private fun recycleVelocityTracker() {
@@ -205,6 +245,7 @@ class GridKeyboardView(
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                stretchAnimator?.cancel()
                 if (!scroller.isFinished) scroller.abortAnimation()
                 velocityTracker = VelocityTracker.obtain()
                 velocityTracker?.addMovement(event)
@@ -216,14 +257,8 @@ class GridKeyboardView(
 
             MotionEvent.ACTION_MOVE -> {
                 velocityTracker?.addMovement(event)
-                val dy = lastY - event.y
-                val absDy = abs(event.y - downY)
-                if (!dragging && absDy > touchSlop) {
-                    dragging = true
-                    stretch = 0f
-                    if (!scroller.isFinished) scroller.abortAnimation()
-                    return true
-                }
+                startDragIfNeeded(event.y)
+                if (dragging) return true
                 lastY = event.y
                 return false
             }
@@ -237,15 +272,29 @@ class GridKeyboardView(
         return super.onInterceptTouchEvent(event)
     }
 
+    /** 超过 touchSlop 就接管为拖动手势。放在这里是因为它可能从 intercept 或 touch 两条路径进来。 */
+    private fun startDragIfNeeded(y: Float) {
+        if (dragging) return
+        if (abs(y - downY) <= touchSlop) return
+        dragging = true
+        stretch = 0f
+        if (!scroller.isFinished) scroller.abortAnimation()
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
+            // 手势落在最后一行右侧的空白格时，没有任何子 View 成为 touch target，
+            // 后续 MOVE 不会再回到 onInterceptTouchEvent，只能在 onTouchEvent 里启动拖动。
+            MotionEvent.ACTION_DOWN -> return true
+
             MotionEvent.ACTION_MOVE -> {
                 velocityTracker?.addMovement(event)
+                startDragIfNeeded(event.y)
                 if (dragging) {
                     val dy = lastY - event.y
                     dragBy(dy)
-                    requestLayout()
+                    applyScroll()
                 }
                 lastY = event.y
                 return true

@@ -22,7 +22,7 @@ interface IEngine {
     fun segement()
     fun undo(service: InputMethodService)
     fun redo(service: InputMethodService)
-    fun commit(text: String)
+    fun commit(text: String, cursorOffset: Int = 0)
     fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
     fun deleteCandidate(index: Int): Unit?
     fun predict(commit: String = "")

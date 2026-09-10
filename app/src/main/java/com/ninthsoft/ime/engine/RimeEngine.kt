@@ -97,7 +97,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         data class SelectCandidatePinYin(val pinYin: CandidatePinYin) : Action
         data object Segment : Action
         data class SelectSchema(val schemaId: String) : Action
-        data class Commit(val text: String) : Action
+        data class Commit(val text: String, val cursorOffset: Int = 0) : Action
         data object InputCleared : Action
         data object Reload : Action
     }
@@ -377,7 +377,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 sendJob { selectSchema(action.schemaId) }
             }
 
-            is Action.Commit -> requestCommit(action.text)
+            is Action.Commit -> requestCommit(action.text, action.cursorOffset)
             Action.InputCleared -> {
                 if (state.predictionVisible) {
                     state.predictionVisible = false
@@ -673,18 +673,21 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     }
 
     //前端提交
-    override fun commit(text: String) {
-        actions.trySend(Action.Commit(text))
+    override fun commit(text: String, cursorOffset: Int) {
+        actions.trySend(Action.Commit(text, cursorOffset))
     }
 
-    private fun requestCommit(text: String) {
+    private fun requestCommit(text: String, cursorOffset: Int = 0) {
         sendJob {
             if (compositionCached.preedit?.isNotEmpty() == true) {
-                commitCurrentSelection(text)
+                // 有未上屏组合时先提交组合本身，再单独提交文本，
+                // 这样成对符号也能拿到光标偏移（提交后向左回退）。
+                commitCurrentSelection("")
+                actions.send(Action.EmitMessage(EngineMessage.Commit(text, cursorOffset)))
                 actions.send(Action.Predict(text))
                 return@sendJob
             }
-            actions.send(Action.EmitMessage(EngineMessage.Commit(text)))
+            actions.send(Action.EmitMessage(EngineMessage.Commit(text, cursorOffset)))
             actions.send(Action.Predict(text))
         }
     }
