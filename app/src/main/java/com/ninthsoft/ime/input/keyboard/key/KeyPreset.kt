@@ -47,9 +47,14 @@ fun commitKey(
     character: String, percentWidth: Float = 0.23333f,
     variant: Variant = Variant.Normal,
     fontSize: Float = 20f,
+    displayFollowsPunctuationMode: Boolean = true,
 ) = KeyDef(
     appearance = KeyDef.Appearance.Text(
-        displayText = character, textSize = fontSize, variant = variant, percentWidth = percentWidth
+        displayText = character,
+        textSize = fontSize,
+        variant = variant,
+        percentWidth = percentWidth,
+        displayFollowsPunctuationMode = displayFollowsPunctuationMode,
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CommitAction(character)),
     )

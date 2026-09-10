@@ -37,6 +37,13 @@ open class KeyDef(
             visibility: Int = View.VISIBLE,
             rowSpan: Int = 1,
             alignRight: Boolean = false,
+            /**
+             * 键盘显示的文字是否随「全角 / 半角」标点模式转换。
+             *
+             * 默认 true（如 `,` 在全角模式下显示为 `，`）。底行的 `.` / `,` 快键设为 false，
+             * 让键帽始终显示半角；它们的 `CommitAction` 仍会经过标点转换，上屏结果依旧跟随模式。
+             */
+            val displayFollowsPunctuationMode: Boolean = true,
         ) : Appearance(percentWidth, variant, border, margin, viewId, visibility, rowSpan, alignRight)
 
         class AltText(

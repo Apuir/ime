@@ -64,6 +64,10 @@ abstract class KeyView(
 
     override fun updateMode(punctuationMode: PunctuationMode) = Unit
 
+    /** 键帽文字是否随标点模式转换；见 [KeyDef.Appearance.Text.displayFollowsPunctuationMode]。 */
+    protected val displayFollowsPunctuationMode: Boolean
+        get() = (def as? KeyDef.Appearance.Text)?.displayFollowsPunctuationMode ?: true
+
     var bordered: Boolean = true
     var borderStroke: Boolean = true
         set(value) {
@@ -270,6 +274,7 @@ class TextKeyView(
     override val displayText: String? get() = mainText.text.toString()
 
     override fun updateMode(punctuationMode: PunctuationMode) {
+        if (!displayFollowsPunctuationMode) return
         val text = mainText.text.toString()
         updateText(when (punctuationMode) {
             PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
@@ -320,6 +325,7 @@ class AltTextKeyView(
     override val displayText: String? get() = mainText.text.toString()
 
     override fun updateMode(punctuationMode: PunctuationMode) {
+        if (!displayFollowsPunctuationMode) return
         val text = mainText.text.toString()
         updateText(when (punctuationMode) {
             PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)
@@ -498,6 +504,7 @@ class ImageTextKeyView(
     override val displayText: String? get() = mainText.text.toString()
 
     override fun updateMode(punctuationMode: PunctuationMode) {
+        if (!displayFollowsPunctuationMode) return
         val text = mainText.text.toString()
         updateText(when (punctuationMode) {
             PunctuationMode.FullWidth -> CharacterSet.fullWidth(text)

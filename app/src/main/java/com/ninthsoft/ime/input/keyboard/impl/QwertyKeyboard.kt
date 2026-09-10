@@ -10,11 +10,13 @@ import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
 import com.ninthsoft.ime.input.keyboard.key.alphabetKey
 import com.ninthsoft.ime.input.keyboard.key.backspaceKey
 import com.ninthsoft.ime.input.keyboard.key.capsLockKey
+import com.ninthsoft.ime.input.keyboard.key.commitKey
 import com.ninthsoft.ime.input.keyboard.key.layoutSwitchKey
 import com.ninthsoft.ime.input.keyboard.key.returnKey
 import com.ninthsoft.ime.input.keyboard.key.schemaSwitchKey
@@ -71,11 +73,25 @@ class QwertyKeyboard(
                     backspaceKey(),
                 ),
                 listOf(
-                    // 底行：符号 | 中英切换 | 空格 | 数字 | 回车（26 键不合并 @，回车保持正常尺寸）
-                    symbolPageKey(percentWidth = 0.15f),
-                    schemaSwitchKey(0.13f),
-                    spaceKey(percentWidth = 0.44f),
-                    layoutSwitchKey("123", NumberKeyboard.NAME, percentWidth = 0.13f),
+                    // 底行：符号 | 中英切换 | . | 空格 | , | 数字 | 回车
+                    // 空格两侧各放一个窄的 . / , 键。键帽固定显示半角（displayFollowsPunctuationMode
+                    // = false），但 CommitAction 仍会经过标点转换，所以全角模式下上屏的是 。/，。
+                    symbolPageKey(percentWidth = 0.13f),
+                    schemaSwitchKey(0.12f),
+                    commitKey(
+                        ".",
+                        percentWidth = 0.09f,
+                        variant = Variant.Alternative,
+                        displayFollowsPunctuationMode = false,
+                    ),
+                    spaceKey(percentWidth = 0.30f),
+                    commitKey(
+                        ",",
+                        percentWidth = 0.09f,
+                        variant = Variant.Alternative,
+                        displayFollowsPunctuationMode = false,
+                    ),
+                    layoutSwitchKey("123", NumberKeyboard.NAME, percentWidth = 0.12f),
                     returnKey(percentWidth = 0.15f),
                 ),
             )
