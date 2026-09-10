@@ -82,6 +82,8 @@
   竖屏/横屏都可用，带实时百分比显示与「重置 / 完成」按钮
 - SAF 文件管理（`AppFilesDocumentsProvider`）：无需 root 即可用系统“文件”App 浏览/编辑 `files/` 下的方案与词库
 - 运行日志、崩溃日志、版本检查、按键音/震动/水波纹等细节设置
+- **振动强度逐级可调**：按键设置 →「点击时振动」可关闭，或在 5 级强度（很轻 / 轻 / 适中 / 强 / 最强）间切换，
+  选中即时试振；默认开启「忽略系统振动设置」，让按键振动不再依赖系统「触感 / 触摸时振动」开关
 
 ---
 
@@ -681,7 +683,8 @@ listOf(
 | `keyboard.dark_theme` | String | `amoled` | 深色主题 id |
 | `keyboard.padding.horizontal` | Int | 4 dp | 两侧边距 |
 | `keyboard.padding.bottom` | Int | 4 dp | 底部边距 |
-| `keyboard.feedback.vibration` | Bool | true | 震动 |
+| `keyboard.feedback.vibration_level` | Int | 3 | 按键振动强度：0=关闭，1 很轻 → 5 最强；旧版 `keyboard.feedback.vibration` (Bool) 会自动迁移 |
+| `keyboard.feedback.vibration_ignore_system` | Bool | true | 忽略系统「触感 / 振动」开关：走媒体振动通道，系统振动总开关关闭时退回无障碍通道（Android 13+） |
 | `keyboard.feedback.sound` | Bool | true | 按键音 |
 | `keyboard.gap.horizontal` | Int | 3 dp | 键水平间隔 |
 | `keyboard.gap.vertical` | Int | 3 dp | 键垂直间隔 |

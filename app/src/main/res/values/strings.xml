@@ -15,6 +15,14 @@
     <string name="key_feedback">按键设置</string>
     <string name="key_sound">启用按键音</string>
     <string name="key_vibration">点击时振动</string>
+    <string name="vibration_strength">振动强度</string>
+    <string name="vibration_level_1">很轻</string>
+    <string name="vibration_level_2">轻</string>
+    <string name="vibration_level_3">适中</string>
+    <string name="vibration_level_4">强</string>
+    <string name="vibration_level_5">最强</string>
+    <string name="vibration_ignore_system">忽略系统振动设置</string>
+    <string name="vibration_ignore_system_desc">开启后按键振动只由本应用控制：不受系统「触感 / 触摸时振动」开关影响，系统振动总开关关闭时仍会振动。关闭后完全跟随系统设置。</string>
     <string name="key_x_gap">X轴间隔</string>
     <string name="key_y_gap">Y轴间隔</string>
     <string name="key_ripple_effect">水波纹特效</string>

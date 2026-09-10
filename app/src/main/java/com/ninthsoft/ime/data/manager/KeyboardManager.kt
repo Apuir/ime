@@ -211,14 +211,64 @@ object KeyboardManager {
         object Feedback {
             private const val PREFIX = "keyboard.feedback"
 
+            /** 振动强度等级：0 = 关闭，1..5 依次增强（1 很轻 → 5 最强）。 */
+            const val VIBRATION_LEVEL_MIN = 0
+            const val VIBRATION_LEVEL_MAX = 5
+            const val VIBRATION_LEVEL_DEFAULT = 3
+
+            private const val KEY_VIBRATION_LEVEL = "$PREFIX.vibration_level"
+            private const val KEY_VIBRATION_LEGACY = "$PREFIX.vibration"
+            private const val KEY_VIBRATION_IGNORE_SYSTEM = "$PREFIX.vibration_ignore_system"
+
+            /** 当前振动强度等级（0 表示关闭）。 */
+            fun getVibrationLevel(context: Context): Int {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                if (prefs.contains(KEY_VIBRATION_LEVEL)) {
+                    return prefs.getInt(KEY_VIBRATION_LEVEL, VIBRATION_LEVEL_DEFAULT)
+                        .coerceIn(VIBRATION_LEVEL_MIN, VIBRATION_LEVEL_MAX)
+                }
+                // 兼容旧版本只有「开 / 关」的布尔设置。
+                return if (prefs.getBoolean(KEY_VIBRATION_LEGACY, true)) {
+                    VIBRATION_LEVEL_DEFAULT
+                } else {
+                    VIBRATION_LEVEL_MIN
+                }
+            }
+
+            fun setVibrationLevel(context: Context, level: Int) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putInt(
+                        KEY_VIBRATION_LEVEL,
+                        level.coerceIn(VIBRATION_LEVEL_MIN, VIBRATION_LEVEL_MAX),
+                    )
+                }
+            }
+
             fun getVibrationEnabled(context: Context): Boolean {
-                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean("$PREFIX.vibration", true)
+                return getVibrationLevel(context) != VIBRATION_LEVEL_MIN
             }
 
             fun setVibrationEnabled(context: Context, enabled: Boolean) {
+                setVibrationLevel(
+                    context,
+                    if (enabled) VIBRATION_LEVEL_DEFAULT else VIBRATION_LEVEL_MIN,
+                )
+            }
+
+            /**
+             * 是否忽略系统「触感 / 振动」开关。
+             *
+             * 开启后按键振动只由本应用设置控制：正常走媒体振动通道（不受系统「触摸时振动」影响），
+             * 系统振动总开关关闭时退回无障碍通道继续振动。
+             */
+            fun getIgnoreSystemSettings(context: Context): Boolean {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_VIBRATION_IGNORE_SYSTEM, true)
+            }
+
+            fun setIgnoreSystemSettings(context: Context, ignore: Boolean) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                    putBoolean("$PREFIX.vibration", enabled)
+                    putBoolean(KEY_VIBRATION_IGNORE_SYSTEM, ignore)
                 }
             }
 
