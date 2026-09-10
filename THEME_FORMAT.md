@@ -7,9 +7,10 @@
 ## 1. 用户主题存储文件 `themes.json`
 
 - 位置：`App.themesDir/themes.json`（外置目录 `files/themes/`）
-- 格式：JSON 数组，最多 2 个主题（超出部分读取时截断）
+- 格式：JSON 数组，**自定义主题数量不设上限**（相同 `id` 只保留最后一个）
 - 采用**长字段名 + ARGB 十六进制颜色（`#AARRGGBB`）**，并美化排版，便于阅读与手写
 - 读取时兼容三种历史格式：`#AARRGGBB` hex → 长 key Int → 紧凑短 key
+- 主题可由应用内「键盘主题 → 新建主题」的 GUI 编辑器生成并命名保存，也可手写或扫码导入
 
 ```json
 [
@@ -50,12 +51,31 @@
 | `altText` | - | 次级文字颜色（候选注释、标签、次要说明等） |
 | `background` | - | 键盘整体背景色 |
 | `surfaceStyle` | `"Raised"` | 表面风格：`"Raised"`（凸起）/ `"Flat"`（扁平） |
+| `cornerRadius` | `5` | 按键圆角半径（dp） |
+| `keyHMargin` | `3` | 按键水平外间距（dp），对应全局「X轴间隔」 |
+| `keyVMargin` | `4` | 按键垂直外间距（dp），对应全局「Y轴间隔」 |
+| `keyBorderWidth` | `1` | 按键边框描边厚度（dp），`0` 表示不绘制边框 |
+| `keyShape` | `"Rounded"` | 按键形状：`"Rounded"`（圆角）/ `"Rectangle"`（直角）/ `"Oval"`（椭圆） |
+| `geometry` | 可省略 | 键盘几何参数快照，见下方 `geometry`；省略时切换主题不会改动键盘尺寸设置 |
 | `panel` | 必填 | 候选/工具栏面板配色，见下方 `panel` |
 | `pinner` | 必填 | 顶部拼音悬浮条配色，见下方 `pinner` |
 | `toastBackground` | `specialKeyBackground` | Toast 提示背景色（可省略） |
 | `toastText` | `keyText` | Toast 提示文字色（可省略） |
 
-### 1.3 `colors.panel`（候选/工具栏面板）
+### 1.3 `colors.geometry`（键盘几何参数快照，可省略）
+
+由主题编辑器保存的主题会内嵌该对象；应用（选择或扫码导入）该主题时，会把这些值写回应用全局键盘设置。
+内置预设与手写主题若省略它，则应用主题时保留用户当前的圆角 / 间距 / 高度设置。
+
+| 字段 | 默认值 | 含义 |
+|------|--------|------|
+| `cornerRadius` | `14` | 按键圆角（dp） |
+| `keyHMargin` | `3` | 按键水平间距（dp） |
+| `keyVMargin` | `3` | 按键垂直间距（dp） |
+| `keyboardHeightPercent` | `24` | 竖屏键盘高度（屏高百分比） |
+| `keyboardHeightLandscapePercent` | `44` | 横屏键盘高度（屏高百分比） |
+
+### 1.4 `colors.panel`（候选/工具栏面板）
 
 | 字段 | 含义 |
 |------|------|
@@ -69,7 +89,7 @@
 | `candidateDivider` | 候选词之间分隔线颜色 |
 | `toolbarPressed` | 工具栏按下状态颜色 |
 
-### 1.4 `colors.pinner`（拼音悬浮条）
+### 1.5 `colors.pinner`（拼音悬浮条）
 
 | 字段 | 含义 |
 |------|------|
@@ -119,6 +139,12 @@ IMEKBTHEME:{紧凑JSON}
 | `alt` | `altText` |
 | `bg` | `background` |
 | `ss` | `surfaceStyle` |
+| `cr` | `cornerRadius` |
+| `hm` | `keyHMargin` |
+| `vm` | `keyVMargin` |
+| `bw` | `keyBorderWidth` |
+| `ks` | `keyShape` |
+| `g` | `geometry`（几何参数快照，可省略） |
 | `p` | `panel` |
 | `pn` | `pinner` |
 | `tb` | `toastBackground` |
@@ -151,12 +177,13 @@ IMEKBTHEME:{紧凑JSON}
 ## 3. 导入规则
 
 - 扫码解析出完整主题后：
-  - 存在 **相同 `id`** 的主题 → 原位覆盖并直接导入
-  - 用户主题**未满（< 2）** → 直接追加导入
-  - 已满（= 2）→ 弹窗选择要覆盖的槽位
+  - 存在 **相同 `id`** 的主题 → 原位覆盖
+  - 否则直接追加（**数量不设上限**）
 - 导入成功后写入 `themes.json`（可读长 key 格式）、刷新列表并以该主题作为当前主题
+- 若主题带有 `geometry`，会同时把其中的圆角 / 间距 / 键盘高度写回全局键盘设置
 
 ## 4. 导出规则
 
-- 分享前弹出“选择要导出的主题”弹层，**仅列出用户主题**（最多 2 个）
+- 分享前弹出“选择要导出的主题”弹层，列出**全部用户主题**
 - 选中后按紧凑短 key 格式生成二维码，UTF-8 编码中文名称
+- 主题编辑器保存的主题同样可通过该入口分享

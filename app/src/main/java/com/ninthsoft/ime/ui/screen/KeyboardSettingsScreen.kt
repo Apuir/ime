@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,9 +36,11 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SingleChoiceDialog
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
+import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,6 +89,10 @@ fun KeyboardSettingsScreen(
     var expandBorder by remember {
         mutableStateOf(KeyboardManager.Keyboard.ExpandBorder.isEnabled(context))
     }
+    var altInputMode by remember {
+        mutableIntStateOf(KeyboardManager.Keyboard.GestureInput.getMode(context))
+    }
+    var showGestureDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -198,6 +205,32 @@ fun KeyboardSettingsScreen(
                 )
             }
 
+            SettingsGroup(title = stringResource(R.string.keyboard_gesture)) {
+                ClickableRow(
+                    title = stringResource(R.string.gesture_alt_input),
+                    value = stringResource(
+                        if (altInputMode == KeyboardManager.Keyboard.GestureInput.MODE_SWIPE_UP) {
+                            R.string.gesture_swipe_up
+                        } else {
+                            R.string.gesture_long_press
+                        }
+                    ),
+                    onClick = { showGestureDialog = true },
+                )
+                Text(
+                    text = stringResource(
+                        if (altInputMode == KeyboardManager.Keyboard.GestureInput.MODE_SWIPE_UP) {
+                            R.string.gesture_swipe_up_desc
+                        } else {
+                            R.string.gesture_long_press_desc
+                        }
+                    ),
+                    fontSize = rowSubFontSize,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+
             SettingsGroup(title = stringResource(R.string.toolbar_tools)) {
                 ClickableRow(
                     title = stringResource(R.string.toolbar_tools),
@@ -261,5 +294,27 @@ fun KeyboardSettingsScreen(
             }
             Spacer(Modifier.height(14.dp))
         }
+    }
+
+    if (showGestureDialog) {
+        SingleChoiceDialog(
+            title = stringResource(R.string.gesture_alt_input),
+            options = listOf(
+                stringResource(R.string.gesture_long_press),
+                stringResource(R.string.gesture_swipe_up),
+            ),
+            selectedIndex = if (altInputMode == KeyboardManager.Keyboard.GestureInput.MODE_SWIPE_UP) 1 else 0,
+            onSelect = { index ->
+                val mode = if (index == 1) {
+                    KeyboardManager.Keyboard.GestureInput.MODE_SWIPE_UP
+                } else {
+                    KeyboardManager.Keyboard.GestureInput.MODE_LONG_PRESS
+                }
+                KeyboardManager.Keyboard.GestureInput.setMode(context, mode)
+                altInputMode = mode
+                showGestureDialog = false
+            },
+            onDismiss = { showGestureDialog = false },
+        )
     }
 }

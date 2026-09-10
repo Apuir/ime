@@ -77,7 +77,7 @@ class T15Keyboard(
             ),
             behaviors = setOf(
                 KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(send)),
-                KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit))
+                KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit), altInput = true)
             ),
         )
 

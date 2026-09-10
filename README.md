@@ -1,13 +1,13 @@
 # 简意输入法 · 开发与定制手册
 
 > 本仓库是 [`danjian/ime`](https://github.com/danjian/ime) 的 Fork。
-> 本文档是基于当前代码（212 个 Kotlin 文件、约 3.1 万行 + C++ JNI）重新整理的**理解 + 定制**指南。
+> 本文档是基于当前代码（220 个 Kotlin 文件、约 3.3 万行 + C++ JNI）重新整理的**理解 + 定制**指南。
 
 | 项目 | 值 |
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.3.0` / `10300` |
+| versionName / versionCode | `1.4.0` / `10400` |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -72,7 +72,9 @@
 
 **其它**
 
-- 键盘主题：内置 3 套（暗夜 / 素白 / 落日）+ 最多 2 套自定义；支持二维码导入导出（`THEME_FORMAT.md`）
+- 键盘主题：内置 3 套（暗夜 / 素白 / 落日）+ **不限数量**的自定义主题；应用内 GUI 编辑器可直接调色、调按键形状/边框/圆角/间距/高度并命名保存，支持二维码导入导出（`THEME_FORMAT.md`）
+- 工具栏工具自定义：键盘上方工具栏中间那排图标可由用户勾选、排序、增删（撤销/重做/剪贴板/主题/语音/表情…）
+- 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）
 - SAF 文件管理（`AppFilesDocumentsProvider`）：无需 root 即可用系统“文件”App 浏览/编辑 `files/` 下的方案与词库
 - 运行日志、崩溃日志、版本检查、按键音/震动/水波纹等细节设置
 
@@ -377,7 +379,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | `user/` | librime `user_data_dir`（用户词典、`build/` 编译产物、`default.custom.yaml`） |
 | `model/predict.marisa` | marisa 预测模型 |
 | `model/speech/` | 语音模型（`tokens.txt` + encoder/decoder/joiner） |
-| `themes/themes.json` | 自定义键盘主题（最多 2 套） |
+| `themes/themes.json` | 自定义键盘主题（数量不限，可由 GUI 编辑器生成） |
 | `download/` | 模型下载临时目录 |
 | `log/crash.log` | 崩溃日志 |
 | `version.txt` | `resource.zip` 的 MD5 戳记（内部 `filesDir` 下另有 `checksums.json` 记录） |
@@ -458,12 +460,29 @@ listOf(
 ### 9.3 键盘主题
 
 - 内置主题：`data/keyboard/theme/KeyboardThemePresets.kt`（`Amoled` / `Light` / `Sunset`）
-- 颜色模型与默认值：`data/keyboard/theme/KeyboardColors.kt`
+- 颜色模型与默认值：`data/keyboard/theme/KeyboardColors.kt`（含 `keyBorderWidth` 边框厚度、`keyShape` 按键形状、`geometry` 几何快照）
 - 自定义主题读写：`data/ThemeStore.kt` + `data/theme/ReadableTheme.kt`（磁盘 JSON）+ `data/theme/CompactTheme.kt`（二维码短 key）
 - `themes.json` 与二维码字段格式：**详见 [`THEME_FORMAT.md`](THEME_FORMAT.md)**
 - 导入/导出/扫码界面：`ui/screen/KeyboardThemeSettingsScreen.kt`（前缀 `IMEKBTHEME:`，zxing 生成 512×512 PNG，FileProvider 分享）
+- **GUI 主题编辑器**：`ui/screen/ThemeEditorScreen.kt` + `ui/ThemeEditorActivity.kt`（含 RGBA 取色器、按键形状/边框/圆角/间距/高度滑杆；**实时预览固定在顶部**，直接嵌入真实的 26 键 / 九键 / 15 键键盘 View——可按但无输入，重建做了 60ms 防抖）
+- 按键形状与描边实际渲染：`input/keyboard/key/KeyView.kt` + `KeyDrawable.kt`（`keyBackgroundDrawable`）
 
-自定义主题上限在 `ThemeStore.MAX_CUSTOM_THEMES = 2`；运行时覆盖顺序为“内置 → 自定义”，`KeyboardTheme.byId()` 找不到会回退到 Amoled。
+自定义主题**数量不设上限**（相同 id 覆盖）；运行时覆盖顺序为“内置 → 自定义”，`KeyboardTheme.byId()` 找不到会回退到 Amoled。带 `geometry` 的主题在应用时会写回全局圆角/间距/高度设置。
+
+### 9.3.1 工具栏工具自定义
+
+- 工具目录：`input/panel/toolbar/ToolbarTools.kt`（枚举：key / 文案 / 图标 / `PanelAction`）
+- 偏好读写：`KeyboardManager.Keyboard.ToolbarTools`（`keyboard.toolbar_tools`，逗号分隔的有序 key 列表）
+- 渲染：`input/panel/toolbar/ToolbarRenderer.kt` 的中央按钮由 `ToolbarRendererResources.centerButtons`（`configuredToolbarButtons()`）动态生成；`KawaiiPanel.refreshToolbarConfig()` 在配置变更后重建渲染器
+- 配置界面：`ui/screen/ToolbarSettingsScreen.kt` + `ui/ToolbarSettingsActivity.kt`
+- 注意：菜单网格与工具栏共用「切换类」动作处理，逻辑集中在 `KawaiiPanel.handleToggleAction()`，新增工具时在这里补分支
+
+### 9.3.2 符号 / 数字输入手势（长按 vs 上滑）
+
+- 偏好：`KeyboardManager.Keyboard.GestureInput`（`keyboard.gesture_input`，`0`=长按、`1`=上滑，互斥）
+- 标记：`KeyDef.Behavior.LongPress(action, altInput = true)` 表示“次级符号/数字输入”；26 键 `alphabetKey`、九键 `mixedAlphabetKey`、T15 自定义 `mixedAlphabetKey`、`segmentKey`、`zeroKey`、`infiniteKey` 均已标记
+- 接线：`input/keyboard/impl/BaseKeyboard.kt#createKeyView`——上滑模式下把这类长按改为 `setupSwipeAltInput()`（复用 `CustomGestureView` 的上滑手势），长按不再触发
+- 设置入口：`ui/screen/KeyboardSettingsScreen.kt` 的「按键手势」分组
 
 ### 9.4 输入方案（Rime schema）
 
@@ -505,7 +524,7 @@ listOf(
 | 下一词预测 | `engine/manager/PredictionManager.kt` + `base/marisa/Prediction.kt`（`TOP_K=100`，`ln(1+count)` 加权） |
 | 候选重排 | `engine/manager/CandidateRerankManager.kt`（仅对第 1–24 个候选重排，第 0 个固定） |
 | 候选面板外观 | `input/panel/component/CandidateGridView.kt`、`input/panel/KawaiiPanelRenderer.kt` |
-| 候选条/工具栏按钮 | `input/panel/toolbar/ToolbarRenderer.kt` + `ToolbarRendererResources.kt`（图标同时在 `KawaiiPanel.kt` 与 `KawaiiPanelView.kt` 两处接线，改动要同步） |
+| 候选条/工具栏按钮 | `input/panel/toolbar/ToolbarRenderer.kt` + `ToolbarRendererResources.kt`（中间工具由 `configuredToolbarButtons()` 读取偏好生成；`KawaiiPanel.kt` 与 `KawaiiPanelView.kt` 两处构造资源，改动要同步） |
 
 ### 9.7 网络后端（重点：这是自有服务）
 
@@ -625,6 +644,8 @@ listOf(
 | `keyboard.ripple_effect` | Bool | false | 水波纹 |
 | `keyboard.key_border_stroke` | Bool | true | 绘制键边框 |
 | `keyboard.expand_borders` | Bool | false（**反向**） | 展开键边框 |
+| `keyboard.gesture_input` | Int | 0 | 符号/数字输入手势：0=长按，1=上滑（互斥） |
+| `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
 
 **`candidate_settings`**（`CandidateManager`）
 
@@ -673,7 +694,7 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
 | `light` | 素白 | 浅色默认 |
 | `sunset` | 落日 | — |
 
-自定义主题最多 2 套，存于 `themes/themes.json`；运行时 `KeyboardThemePresets.ALL = 内置 + 自定义`，`PRESETS = ALL.take(6)`。
+自定义主题数量不限，存于 `themes/themes.json`；运行时 `KeyboardThemePresets.ALL = 内置 + 自定义`，`KeyboardTheme.PRESETS = ALL`（主题选择列表）。
 
 ### 12.4 启动入口速查
 

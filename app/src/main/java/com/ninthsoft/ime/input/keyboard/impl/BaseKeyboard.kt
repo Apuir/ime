@@ -198,6 +198,7 @@ abstract class BaseKeyboard(
 
     @SuppressLint("ClickableViewAccessibility")
     protected fun createKeyView(def: KeyDef): KeyView {
+        val swipeAltInput = KeyboardManager.Keyboard.GestureInput.isSwipeUp(context)
         return when (def.appearance) {
             is KeyDef.Appearance.AltText -> AltTextKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, colors, def.appearance)
@@ -305,17 +306,22 @@ abstract class BaseKeyboard(
                     }
 
                     is KeyDef.Behavior.LongPress -> {
-                        longPressEnabled = true
-                        setOnLongClickListener {
-                            onAction(behavior.action)
-                            return@setOnLongClickListener true
-                        }
-                        if (behavior.action is KeyboardAction.VoiceInputAction) {
-                            onTouchMoveListener = { rawX, rawY ->
-                                onAction(KeyboardAction.VoiceDragPosition(rawX, rawY))
+                        if (behavior.altInput && swipeAltInput) {
+                            // 上滑手势模式：次级符号/数字改为上滑触发，长按不再触发。
+                            setupSwipeAltInput(this, behavior.action)
+                        } else {
+                            longPressEnabled = true
+                            setOnLongClickListener {
+                                onAction(behavior.action)
+                                return@setOnLongClickListener true
                             }
-                            onTouchUpListener = {
-                                onAction(KeyboardAction.VoiceDragUp)
+                            if (behavior.action is KeyboardAction.VoiceInputAction) {
+                                onTouchMoveListener = { rawX, rawY ->
+                                    onAction(KeyboardAction.VoiceDragPosition(rawX, rawY))
+                                }
+                                onTouchUpListener = {
+                                    onAction(KeyboardAction.VoiceDragUp)
+                                }
                             }
                         }
                     }
@@ -348,6 +354,28 @@ abstract class BaseKeyboard(
                         onDoubleTapListener = { onAction(behavior.action) }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 「上滑输入符号/数字」模式：把原本的长按动作改为上滑触发。
+     * 触发条件与 [KeyDef.Behavior.Swipe] 一致：手指在按键内向上滑动后抬起。
+     */
+    private fun setupSwipeAltInput(view: KeyView, action: KeyboardAction) {
+        view.swipeEnabled = true
+        view.swipeThresholdX = dp(800f)
+        view.swipeThresholdY = dp(20f)
+        view.onGestureListener = CustomGestureView.OnGestureListener { _, event ->
+            when (event.type) {
+                CustomGestureView.GestureType.Up -> {
+                    if (!event.consumed && event.totalY < 0) {
+                        onAction(action)
+                        true
+                    } else false
+                }
+
+                else -> false
             }
         }
     }

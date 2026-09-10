@@ -24,7 +24,7 @@ fun alphabetKey(
         variant = Variant.Normal
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
-        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(punctuation))
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(punctuation), altInput = true)
     )
 )
 
@@ -39,7 +39,7 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(digit)),
-        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit))
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit), altInput = true)
     ),
 )
 
@@ -254,7 +254,7 @@ fun segmentKey(percentWidth: Float = 0.23333f): KeyDef = KeyDef(
     behaviors = setOf(
         KeyDef.Behavior.Press(
             KeyboardAction.KeyCodeAction(KeyEvent.KEYCODE_APOSTROPHE)
-        ), KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("1"))
+        ), KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("1"), altInput = true)
     ),
 )
 
@@ -280,7 +280,7 @@ fun zeroKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CommitAction("@")),
-        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("0")),
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("0"), altInput = true),
     ),
 )
 
@@ -294,7 +294,7 @@ fun infiniteKey(percentWidth: Float = 0.15f): KeyDef = KeyDef(
     ),
     behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.CommitAction("0")),
-        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("∞")),
+        KeyDef.Behavior.LongPress(KeyboardAction.CommitAction("∞"), altInput = true),
     ),
 )
 

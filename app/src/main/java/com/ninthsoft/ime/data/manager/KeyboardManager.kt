@@ -248,6 +248,29 @@ object KeyboardManager {
             }
         }
 
+        /**
+         * 符号 / 数字的次级输入手势，二选一（互斥）：
+         * 长按 [MODE_LONG_PRESS] 或上滑 [MODE_SWIPE_UP]。
+         */
+        object GestureInput {
+            const val KEY = "keyboard.gesture_input"
+            const val MODE_LONG_PRESS = 0
+            const val MODE_SWIPE_UP = 1
+
+            fun getMode(context: Context): Int {
+                return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getInt(KEY, MODE_LONG_PRESS)
+            }
+
+            fun setMode(context: Context, mode: Int) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putInt(KEY, mode)
+                }
+            }
+
+            fun isSwipeUp(context: Context): Boolean = getMode(context) == MODE_SWIPE_UP
+        }
+
         /** 键盘上方工具栏中间那排可自定义的工具（有序）。 */
         object ToolbarTools {
             const val KEY = "keyboard.toolbar_tools"

@@ -104,7 +104,14 @@ open class KeyDef(
 
     sealed class Behavior {
         class Press(val action: KeyboardAction) : Behavior()
-        class LongPress(val action: KeyboardAction) : Behavior()
+
+        /**
+         * 长按行为。
+         * [altInput] 为 true 表示这是按键上次级符号/数字的输入（如 26 键字母键上的数字、
+         * 九键上的数字），开启「上滑输入」手势模式时会改为上滑触发、同时禁用长按。
+         */
+        class LongPress(val action: KeyboardAction, val altInput: Boolean = false) : Behavior()
+
         class Repeat(val action: KeyboardAction) : Behavior()
         class Swipe(val action: KeyboardAction) : Behavior()
         class DoubleTap(val action: KeyboardAction) : Behavior()

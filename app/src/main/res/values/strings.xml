@@ -156,6 +156,14 @@
     <string name="color_pinnerText">拼音条文字</string>
     <string name="color_pinnerSecondaryText">拼音条次级文字</string>
 
+    <!-- Keyboard gesture -->
+    <string name="keyboard_gesture">按键手势</string>
+    <string name="gesture_alt_input">符号 / 数字输入方式</string>
+    <string name="gesture_long_press">长按输入</string>
+    <string name="gesture_swipe_up">上滑输入</string>
+    <string name="gesture_long_press_desc">长按字母键，输入键上的符号或数字</string>
+    <string name="gesture_swipe_up_desc">在字母键上向上滑动，输入键上的符号或数字（26 键 / 九键 / 15 键）</string>
+
     <!-- Toolbar tools -->
     <string name="toolbar_tools">工具栏工具</string>
     <string name="toolbar_tools_desc">选择键盘上方工具栏显示哪些工具</string>
