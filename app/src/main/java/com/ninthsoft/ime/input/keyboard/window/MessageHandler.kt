@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.input.ImeInputMethodService
+import com.ninthsoft.ime.input.LivePreviewController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -12,6 +13,9 @@ class MessageHandler(
     private val service: InputMethodService,
 ) {
     private var window: KeyboardWindow? = null
+
+    private val livePreview: LivePreviewController?
+        get() = (service as? ImeInputMethodService)?.livePreview
 
     fun attach(window: KeyboardWindow) {
         this.window = window
@@ -33,10 +37,23 @@ class MessageHandler(
                         }
                     }
                 }
+                // 正式提交后，输入框里的预览 composing 已被 commitText 替换。
+                livePreview?.onCommitted()
             }
 
             is EngineMessage.Candidates -> {
+                livePreview?.onCandidates(message.list)
                 window?.setCandidates(message.list)
+            }
+
+            is EngineMessage.Composition -> {
+                // RimeEngine 对 InlinePreedit 只在内部消化，这里以 Composition.preedit 作为
+                // 原始输入上屏的来源。
+                livePreview?.onPreedit(message.preedit)
+            }
+
+            is EngineMessage.InlinePreedit -> {
+                livePreview?.onPreedit(message.preedit)
             }
 
             is EngineMessage.Depoly -> {

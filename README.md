@@ -62,6 +62,7 @@
 - 候选词面板：横滑候选条 + 展开 5×5 候选网格，可拖拽重排、删除/“忘记”候选
 - 候选词预测（marisa `predict.marisa`）与语法模型重排（`.gram`）；可开关
 - 文本编辑面板（光标移动、选择、剪切/复制/粘贴）、预编辑悬浮拼音条
+- 输入框实时上屏（预览）：设置 → 上屏设置里可选「不上屏 / 原始输入上屏（如 `ni'hao`）/ 首候选上屏」，并可选择切换方案、收起键盘时是否把已上屏内容正式保留
 - 剪贴板历史（Room 持久化、云同步标记、自动清理策略）+ 常用语管理
 
 **语音**
@@ -659,6 +660,8 @@ listOf(
 | `show_index` | Bool | true | 显示候选序号 |
 | `show_comment` | Bool | false | 显示候选注释 |
 | `show_border` | Bool | false（**反向**） | 绘制候选边框 |
+| `preview_mode` | Int | 0 | 输入框实时上屏：0=不上屏，1=原始输入（`ni'hao`），2=首候选 |
+| `commit_preview_on_switch` | Bool | false | 切换方案 / 收起键盘时是否保留已上屏的预览内容 |
 
 **`schema_settings`**（`SchemaManager`）
 

@@ -58,6 +58,8 @@ class KeyActionListener(
             }
 
             is KeyboardAction.SelectSchema -> {
+                // 切换方案会重置引擎组合；按设置决定已上屏的预览内容留还是丢。
+                (service as? ImeInputMethodService)?.livePreview?.finalizeForKeyboardSwitch()
                 engine?.selectSchema(action.schemaId)
             }
 
@@ -70,6 +72,8 @@ class KeyActionListener(
             }
 
             is KeyboardAction.MultiReturnAction -> {
+                // 与切换键盘一致：按设置决定已上屏的预览内容留还是丢，再执行回车动作。
+                (service as? ImeInputMethodService)?.livePreview?.finalizeForKeyboardSwitch()
                 engine?.resetComposition()
 
                 val ic = (service as ImeInputMethodService).activeInputConnection() ?: return

@@ -72,6 +72,11 @@ class MainActivity : ComponentActivity() {
                             Intent(this@MainActivity, KeyboardSettingsActivity::class.java)
                         )
                     },
+                    onOpenCommitSettings = {
+                        startActivity(
+                            Intent(this@MainActivity, CommitSettingsActivity::class.java)
+                        )
+                    },
                     onOpenKeyboardThemeSettings = {
                         startActivity(
                             Intent(this@MainActivity, KeyboardThemeSettingsActivity::class.java)

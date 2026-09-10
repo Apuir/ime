@@ -164,6 +164,19 @@
     <string name="gesture_long_press_desc">长按字母键，输入键上的符号或数字</string>
     <string name="gesture_swipe_up_desc">在字母键上向上滑动，输入键上的符号或数字（26 键 / 九键 / 15 键）</string>
 
+    <!-- Commit / preview settings -->
+    <string name="commit_settings">上屏设置</string>
+    <string name="commit_settings_desc">输入过程中输入框的实时显示内容</string>
+    <string name="preview_content_group">上屏内容</string>
+    <string name="preview_content">输入框显示内容</string>
+    <string name="preview_content_none">不上屏（仅在候选栏显示）</string>
+    <string name="preview_content_raw">原始输入（如 ni\'hao）</string>
+    <string name="preview_content_first_candidate">第一个候选词</string>
+    <string name="preview_content_desc">选择输入过程中，输入框里实时显示的内容：不显示任何内容、显示正在输入的原始编码，或直接显示当前第一个候选词。选好候选词后，输入框里的内容会被正式替换为候选词。</string>
+    <string name="preview_switch_group">切换方案 / 收起键盘</string>
+    <string name="preview_commit_on_switch">保留已上屏内容</string>
+    <string name="preview_commit_on_switch_desc">开启后，切换输入方案或收起键盘时，输入框里已经显示的预览内容会正式保留下来；关闭则什么都不留下。</string>
+
     <!-- Toolbar tools -->
     <string name="toolbar_tools">工具栏工具</string>
     <string name="toolbar_tools_desc">选择键盘上方工具栏显示哪些工具</string>

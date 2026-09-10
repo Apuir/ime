@@ -131,7 +131,14 @@ class KeyboardWindowView(
                     schemas = keyboardStateManager.getSchemas(),
                     currentSchemaId = keyboardStateManager.getCurrentSchema()?.id,
                     colors = cachedColors,
-                    onSchemaSelected = { schemaId -> keyboardStateManager.selectSchema(schemaId) })
+                    onSchemaSelected = { schemaId ->
+                        // 切换方案会重置引擎组合，按设置决定已上屏的预览内容留还是丢。
+                        if (keyboardStateManager.getCurrentSchema()?.id != schemaId) {
+                            (context as? ImeInputMethodService)?.livePreview
+                                ?.finalizeForKeyboardSwitch()
+                        }
+                        keyboardStateManager.selectSchema(schemaId)
+                    })
                 (context as ImeInputMethodService).showDialog(dialog)
                 null
             }

@@ -36,6 +36,9 @@ class ImeInputMethodService : InputMethodService() {
     var phraseAddBridgeActive = false
     val virtualInputConnection = ImeInputConnection(this)
 
+    /** 输入框实时上屏（预览）控制器。 */
+    val livePreview = LivePreviewController(this)
+
     fun activeInputConnection(): android.view.inputmethod.InputConnection? =
         if (phraseAddBridgeActive) virtualInputConnection else currentInputConnection
     var scope: CoroutineScope? = null
@@ -56,6 +59,10 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // 上屏模式变化后立即刷新当前预览，无需重新输入。
+        if (key == CandidateManager.KEY_PREVIEW_MODE) {
+            livePreview.onPreviewModeChanged()
+        }
         keyboardWindow?.onConfigChanged(key.orEmpty())
     }
 
@@ -119,6 +126,8 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         showingDialog?.dismiss()
+        // 收起键盘前按设置决定是否保留已上屏内容，再重置引擎组合。
+        livePreview.finalizeForKeyboardSwitch()
         engine?.resetComposition()
         keyboardWindow?.onFinishInputView(finishingInput)
         engine?.onFinishInputView()
