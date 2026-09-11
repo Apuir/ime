@@ -2,8 +2,10 @@ package com.ninthsoft.ime.input.keyboard.impl
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.ninthsoft.ime.base.util.PunctuationUtil
 import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
@@ -24,9 +26,6 @@ class T9Keyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
 ) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
-    private val fullWidthPunctuations = listOf("，", "。", "！", "？", "：", "~", "...")
-    private val halfWidthPunctuations = listOf(",", ".", "!", "?", ":", "~", "...")
-    var punctuations = fullWidthPunctuations
     private var state: PunctuationMode = PunctuationMode.FullWidth
 
     init {
@@ -37,7 +36,7 @@ class T9Keyboard(
     override fun onPossibleCandidatePinYin(data: List<CandidatePinYin>) {
         if (data.isEmpty()) {
             super.updateSidePanel(
-                punctuations.map { ch ->
+                sidePanelPunctuations().map { ch ->
                     KeyDef(
                         appearance = KeyDef.Appearance.Text(
                             displayText = ch,
@@ -69,33 +68,39 @@ class T9Keyboard(
     companion object {
         const val NAME = "T9"
 
+        /**
+         * 宽度：最左右两列由 0.15 加宽到 0.17，多出来的宽度从中间各列均分扣除
+         * ——上行 3 个数字键 0.23333 → 0.22，整块正好是 0.17 / 0.22 ×3 / 0.17 的 5 等列。
+         * 底行的中英切换、空格、123 与上面的九宫格同宽（0.22），符号 / 回车与外侧两列对齐（0.17），
+         * 于是底行与上面逐列对齐。
+         */
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                sidePannelKey(rowSpan = 3, visableRow = 4),
-                segmentKey(percentWidth = 0.23333f),
-                mixedAlphabetKey("2", "ABC"),
-                mixedAlphabetKey("3", "DEF"),
-                backspaceKey(),
+                sidePannelKey(rowSpan = 3, visableRow = 4, percentWidth = 0.17f),
+                segmentKey(percentWidth = 0.22f),
+                mixedAlphabetKey("2", "ABC", percentWidth = 0.22f),
+                mixedAlphabetKey("3", "DEF", percentWidth = 0.22f),
+                backspaceKey(percentWidth = 0.17f),
             ),
             listOf(
-                mixedAlphabetKey("4", "GHI"),
-                mixedAlphabetKey("5", "JKL"),
-                mixedAlphabetKey("6", "MNO"),
-                clearKey(0.15f),
+                mixedAlphabetKey("4", "GHI", percentWidth = 0.22f),
+                mixedAlphabetKey("5", "JKL", percentWidth = 0.22f),
+                mixedAlphabetKey("6", "MNO", percentWidth = 0.22f),
+                clearKey(0.17f),
             ),
             listOf(
-                mixedAlphabetKey("7", "PQRS"),
-                mixedAlphabetKey("8", "TUV"),
-                mixedAlphabetKey("9", "WXYZ"),
+                mixedAlphabetKey("7", "PQRS", percentWidth = 0.22f),
+                mixedAlphabetKey("8", "TUV", percentWidth = 0.22f),
+                mixedAlphabetKey("9", "WXYZ", percentWidth = 0.22f),
                 // 大回车：跨第 3、4 两行，占掉原来独立 @ 键的位置
-                returnKey(percentWidth = 0.15f, rowSpan = 2),
+                returnKey(percentWidth = 0.17f, rowSpan = 2),
             ),
             listOf(
-                // 底行：符号 | 中英切换 | 空格 | 数字
-                symbolPageKey(percentWidth = 0.15f),
-                schemaSwitchKey(0.13f),
-                spaceKey(percentWidth = 0.44f),
-                layoutSwitchKey("123", NumberKeyboard.NAME, percentWidth = 0.13f),
+                // 底行：符号 | 中英切换 | 空格 | 数字（与上面的九宫格逐列对齐）
+                symbolPageKey(percentWidth = 0.17f),
+                schemaSwitchKey(0.22f),
+                spaceKey(percentWidth = 0.22f),
+                layoutSwitchKey("123", NumberKeyboard.NAME, percentWidth = 0.22f),
             ),
         )
     }
@@ -112,13 +117,21 @@ class T9Keyboard(
     override fun updatePunctuationMode(mode: PunctuationMode) {
         val changed = mode != state
         state = mode
-        punctuations = when (mode) {
-            PunctuationMode.FullWidth -> fullWidthPunctuations
-            PunctuationMode.HalfWidth -> halfWidthPunctuations
-        }
         if (changed) {
             this.onPossibleCandidatePinYin(emptyList())
         }
         super.updatePunctuationMode(mode)
+    }
+
+    /**
+     * 左侧符号栏内容：读取用户在「设置 → 键盘布局 → 侧栏符号」里编辑的列表，
+     * 再按当前标点模式做半角 / 全角转换，保持与旧版本一致的手感。
+     */
+    private fun sidePanelPunctuations(): List<String> {
+        val symbols = KeyboardManager.Keyboard.SidePanelSymbols.getT9(context)
+        return when (state) {
+            PunctuationMode.FullWidth -> symbols.map { PunctuationUtil.toFullWidth(it) }
+            PunctuationMode.HalfWidth -> symbols.map { PunctuationUtil.toHalfWidth(it) }
+        }
     }
 }

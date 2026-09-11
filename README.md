@@ -7,14 +7,14 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.5.0` / `10500` |
+| versionName / versionCode | `1.6.0` / `10600`（版本规则与发布流程见 [`CHANGELOG.md`](CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
 | UI | 键盘 = 自定义 View（ConstraintLayout + Canvas）；设置 = Jetpack Compose |
 | 输入引擎 | librime（`danjian/librime` 分支）+ lua / octagram / predict 插件 |
 | 内置方案数据 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.3`（CC BY 4.0） |
-| 提交历史 | 62 commits，2026-06-12 ~ 2026-09-10 |
+| 提交历史 | 82 commits，2026-06-12 ~ 2026-09-11（其中 61 个来自上游，fork 改动从 `v1.1.0` 开始） |
 
 ---
 
@@ -75,6 +75,8 @@
 
 - 键盘主题：内置 3 套（暗夜 / 素白 / 落日）+ **不限数量**的自定义主题；应用内 GUI 编辑器可直接调色、调按键形状/边框/圆角/间距/高度并命名保存，支持二维码导入导出（`THEME_FORMAT.md`）
 - 工具栏工具自定义：键盘上方工具栏中间那排图标可由用户勾选、排序、增删（撤销/重做/剪贴板/主题/语音/表情…）
+- **侧栏快捷符号自定义**：设置 → 键盘布局 →「侧栏符号」里可编辑九键 / 数字键左侧那条可滑动符号栏的内容与顺序
+  （增删、上下移排序、恢复默认，还能添加任意自定义符号）
 - 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）
 - **横屏悬浮键盘**：横屏时键盘自动变成一张可拖动的小卡片悬浮在应用之上（宽度可调、位置可拖动并记忆），
   应用界面不再被键盘顶起；设置 → 键盘布局里可开关与调整宽度
@@ -173,7 +175,7 @@
 | `log/` | `AppLogBuffer`（Timber tree + logcat 环形缓冲 + `crash.log`） |
 | `once/` | `Once`（线程安全只执行一次） |
 
-### `data/` —— 数据模型、设置、持久化（27 文件）
+### `data/` —— 数据模型、设置、持久化（30 文件）
 
 | 文件/目录 | 内容 |
 |-----------|------|
@@ -201,7 +203,7 @@
 | `manager/` | `PredictionManager`、`CandidateRerankManager` |
 | `event/`、`data/` | `KeyEvent`/`KeyModifiers`；`EngineMessage`（UI 消息）、`CandidatePinYin`、`constant.kt` |
 
-### `input/` —— 键盘与 IME 服务（65 文件）
+### `input/` —— 键盘与 IME 服务（67 文件）
 
 | 目录 | 内容 |
 |------|------|
@@ -216,7 +218,7 @@
 | `speech/` | 语音可视化 View（粒子波/频谱波） |
 | `dialog/` | 方案选择对话框 |
 
-### `ui/` —— Compose 设置界面（25 文件）
+### `ui/` —— Compose 设置界面（33 文件）
 
 `MainActivity`（首页/路由）→ `InitActivity`（初始化闪屏）、`SetupActivity`（引导启用/设为默认）
 → `MainScreen` 里的入口：`SchemaSettingsScreen`、`KeyboardSettingsScreen`、`KeyboardThemeSettingsScreen`（扫码/分享）、`ClipboardScreen`、`CandidateSettingsScreen`、`VoiceSettingsScreen`、`AboutScreen`、`LogScreen` + `AppFilesDocumentsProvider`。
@@ -411,10 +413,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 需求 | 位置 |
 |------|------|
-| 改 Qwerty 全键盘 | `input/keyboard/impl/QwertyKeyboard.kt` → `buildLayout()` |
-| 改数字键盘 | `input/keyboard/impl/NumberKeyboard.kt` → `Layout` |
-| 改九宫格 / 15 键 | `input/keyboard/impl/T9Keyboard.kt` / `T15Keyboard.kt` |
-| 符号 / Emoji 键盘 | `input/keyboard/impl/SymbolKeyboard.kt` / `EmojiKeyboard.kt` + `data/Symbol.kt` |
+| 改 Qwerty 全键盘 | `input/keyboard/impl/QwertyKeyboard.kt` → `buildLayout()`（底行：符号 0.13 / 中英 0.12 / `.` 0.09 / 空格 0.30 / `,` 0.09 / 数字 0.12 / 回车 0.15；`.`/`,` 键帽固定半角，`CommitAction` 仍跟随全角-半角标点模式） |
+| 改数字键盘 | `input/keyboard/impl/NumberKeyboard.kt` → `Layout`（4 行 × 5 等列，列宽 `0.17 / 0.22 ×3 / 0.17`：`1 2 3 ⌫` / `4 5 6 @` / `7 8 9 .` / `符号 空格 0 返回 回车`；底行与上面逐列对齐，回车只占底行一格、不再跨行） |
+| 改九宫格 / 15 键 | `input/keyboard/impl/T9Keyboard.kt` / `T15Keyboard.kt`（九键：侧栏 + 4 列，列宽同数字键盘，底行 `符号 中英 空格 123` 与九宫格逐列对齐，大回车跨第 3、4 行；15 键：`0.17 + 中间 5×0.132 + 0.17`） |
+| 非 26 键键盘列宽 | 最左 / 最右两列由 0.15 加宽到 0.17，多出来的宽度由该行中间各列**均分扣除**（9 键 / 数字键的 0.23333 → 0.22，底行直接与上行对齐；15 键的 0.13998 → 0.132，底行 0.13/0.44/0.13 各让 1/75）；26 键既没有侧栏、分布也不等分，不适用 |
+| 符号 / Emoji 键盘 | `input/keyboard/impl/SymbolKeyboard.kt` / `EmojiKeyboard.kt` + `data/Symbol.kt`（左侧栏与其它键盘最左列对齐，占屏宽 0.17——展开的候选词面板 `CandidateGridView` 侧栏同为 0.17；右侧网格仍是 5 等分） |
 | 布局数据模型 | `input/keyboard/key/KeyDef.kt`（`KeyDef(appearance, behaviors, popups)`，行是 `List<KeyDef>`，宽度用 `percentWidth` 分数，每行和 ≈ 1） |
 | 按键工厂 | `input/keyboard/key/KeyPreset.kt`（`alphabetKey`/`spaceKey`/`returnKey`/`capsLockKey`/`schemaSwitchKey`/`sidePannelKey`…） |
 | 手势阈值 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms、重复 100ms、滑动阈值） |
@@ -530,6 +533,23 @@ listOf(
 
 > 注意：悬浮模式下只有卡片的矩形区域（或添加常用语 / 语音时的整窗口）可触摸，其余区域会穿透到下层应用，
 > 因此若要新增“浮动在卡片之外”的交互元素，必须同步扩展 `KeyboardWindowView.floatingTouchableRegion()`。
+
+### 9.3.4 侧栏快捷符号自定义（九键 / 数字键）
+
+九键、数字键左侧那条竖排、可上下滑动的符号栏，其内容和顺序由用户在应用内编辑。
+
+- 偏好读写：`KeyboardManager.Keyboard.SidePanelSymbols`（`keyboard.side_panel_symbols.t9` / `.number`，
+  用不可见控制符 `\u001F` 分隔的有序字符串；未设置时用 `DEFAULT_T9` / `DEFAULT_NUMBER`）
+- 九键：`input/keyboard/impl/T9Keyboard.kt#sidePanelPunctuations()` 读取用户列表后，**仍按全角 / 半角标点模式各转换一次**
+  （`PunctuationUtil.toFullWidth/toHalfWidth`），因此默认列表与旧版行为一致（唯一差别：全角模式下 `~` 会变成 `～`，
+  与 26 键字母键长按 `~` 的既有行为相同）
+- 数字键：`input/keyboard/impl/NumberKeyboard.kt#onPossibleCandidatePinYin()` 原样使用列表（数字键盘没有标点模式）
+- 配置界面：`ui/screen/SidePanelSymbolsScreen.kt` + `ui/SidePanelSymbolsActivity.kt`
+  （入口：设置 → 键盘布局 →「侧栏符号」；支持上下移、删除、从备选池点选添加、自定义符号、恢复默认）
+- 注意：编辑结果在下一次键盘弹出（`onAttach()` → `onPossibleCandidatePinYin(emptyList())`）时生效
+
+> T15（15 键）也有一条侧栏，但仍使用 `T15Keyboard.kt` 里写死的 `fullWidthPunctuations` /
+> `halfWidthPunctuations`，未接入本设置。
 
 ### 9.4 输入方案（Rime schema）
 
@@ -694,6 +714,8 @@ listOf(
 | `keyboard.expand_borders` | Bool | false（**反向**） | 展开键边框 |
 | `keyboard.gesture_input` | Int | 0 | 符号/数字输入手势：0=长按，1=上滑（互斥） |
 | `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
+| `keyboard.side_panel_symbols.t9` | String | `，。！？：~...` | 九键左侧符号栏的有序符号列表（`\u001F` 分隔；显示/上屏时仍跟随全角-半角标点模式） |
+| `keyboard.side_panel_symbols.number` | String | `+-*/=~?!` | 数字键左侧符号栏的有序符号列表（`\u001F` 分隔，原样使用） |
 | `keyboard.width` | Int | 100 | 竖屏键盘宽度（% 屏宽），<100 时改用悬浮卡片布局；由「调整键盘大小」写入 |
 | `keyboard.pos_x` | Float | 0.5 | 竖屏卡片水平位置比例（拖动后写入） |
 | `keyboard.pos_y` | Float | 1.0 | 竖屏卡片垂直位置比例（拖动后写入） |

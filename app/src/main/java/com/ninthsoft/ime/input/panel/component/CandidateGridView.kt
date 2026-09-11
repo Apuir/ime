@@ -671,7 +671,8 @@ class CandidateGridView(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val tw = MeasureSpec.getSize(widthMeasureSpec)
         val th = MeasureSpec.getSize(heightMeasureSpec)
-        val sw = (tw * 0.15f).toInt()
+        // 与键盘最左列保持一致（0.15 加宽到 0.17），展开时侧栏边界能对上
+        val sw = (tw * 0.17f).toInt()
         val gw = tw - sw
         sidePanelKey.measure(mES(sw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
         gridCanvas.measure(mES(gw, MeasureSpec.EXACTLY), mES(th, MeasureSpec.EXACTLY))
@@ -680,7 +681,7 @@ class CandidateGridView(
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val h = b - t
-        val sw = ((r - l) * 0.15f).toInt()
+        val sw = ((r - l) * 0.17f).toInt()
         sidePanelKey.layout(0, 0, sw, h)
         gridCanvas.layout(sw, 0, r - l, h)
     }

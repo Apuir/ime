@@ -83,6 +83,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.SidePanelSymbolsActivity"
+            android:exported="false"
+            android:label="@string/side_panel_symbols"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"

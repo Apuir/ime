@@ -404,6 +404,57 @@ object KeyboardManager {
             }
         }
 
+        /**
+         * 九键 / 数字键左侧那条可滑动的快捷符号栏：内容与顺序都可由用户在应用内编辑。
+         *
+         * 九键的列表存的是「基础符号」，显示 / 上屏时仍会跟随全角 / 半角标点模式转换，
+         * 因此默认值与旧版行为完全一致；数字键没有标点模式，列表按原样使用。
+         */
+        object SidePanelSymbols {
+            private const val PREFIX = "keyboard.side_panel_symbols"
+            private const val KEY_T9 = "$PREFIX.t9"
+            private const val KEY_NUMBER = "$PREFIX.number"
+
+            /** 用不可见控制字符分隔，避免与符号本身（如逗号）冲突。 */
+            private const val SEPARATOR = "\u001F"
+
+            val DEFAULT_T9 = listOf("，", "。", "！", "？", "：", "~", "...")
+            val DEFAULT_NUMBER = listOf("+", "-", "*", "/", "=", "~", "?", "!")
+
+            fun getT9(context: Context): List<String> = read(context, KEY_T9, DEFAULT_T9)
+
+            fun setT9(context: Context, symbols: List<String>) = write(context, KEY_T9, symbols)
+
+            fun resetT9(context: Context) = clear(context, KEY_T9)
+
+            fun getNumber(context: Context): List<String> = read(context, KEY_NUMBER, DEFAULT_NUMBER)
+
+            fun setNumber(context: Context, symbols: List<String>) {
+                write(context, KEY_NUMBER, symbols)
+            }
+
+            fun resetNumber(context: Context) = clear(context, KEY_NUMBER)
+
+            private fun read(context: Context, key: String, default: List<String>): List<String> {
+                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getString(key, null) ?: return default
+                if (raw.isEmpty()) return emptyList()
+                return raw.split(SEPARATOR).filter { it.isNotEmpty() }
+            }
+
+            private fun write(context: Context, key: String, symbols: List<String>) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putString(key, symbols.joinToString(SEPARATOR))
+                }
+            }
+
+            private fun clear(context: Context, key: String) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    remove(key)
+                }
+            }
+        }
+
         object ExpandBorder {
             const val KEY = "keyboard.expand_borders"
 

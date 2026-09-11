@@ -198,6 +198,19 @@
     <string name="preview_commit_on_switch">保留已上屏内容</string>
     <string name="preview_commit_on_switch_desc">开启后，切换输入方案或收起键盘时，输入框里已经显示的预览内容会正式保留下来；关闭则什么都不留下。</string>
 
+    <!-- Side panel symbols -->
+    <string name="side_panel_symbols">侧栏符号</string>
+    <string name="side_panel_symbols_desc">九键 / 数字键左侧符号栏</string>
+    <string name="side_panel_symbols_t9">九键侧栏符号</string>
+    <string name="side_panel_symbols_number">数字键侧栏符号</string>
+    <string name="side_panel_symbols_hint">用上下箭头调整顺序，点右侧 × 删除；上滑侧栏即可输入这些符号。</string>
+    <string name="side_panel_symbols_available">点击添加</string>
+    <string name="side_panel_symbols_empty">还没有符号，从下方添加</string>
+    <string name="side_panel_symbols_reset">恢复默认符号</string>
+    <string name="side_panel_symbols_custom">自定义符号…</string>
+    <string name="side_panel_symbols_custom_title">添加自定义符号</string>
+    <string name="side_panel_symbols_custom_hint">输入要添加的符号</string>
+
     <!-- Toolbar tools -->
     <string name="toolbar_tools">工具栏工具</string>
     <string name="toolbar_tools_desc">选择键盘上方工具栏显示哪些工具</string>

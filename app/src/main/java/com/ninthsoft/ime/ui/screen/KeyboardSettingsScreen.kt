@@ -48,6 +48,7 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 fun KeyboardSettingsScreen(
     onBack: () -> Unit,
     onOpenToolbarSettings: () -> Unit = {},
+    onOpenSidePanelSymbols: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -278,6 +279,14 @@ fun KeyboardSettingsScreen(
                     title = stringResource(R.string.toolbar_tools),
                     value = stringResource(R.string.toolbar_tools_desc),
                     onClick = onOpenToolbarSettings,
+                )
+            }
+
+            SettingsGroup(title = stringResource(R.string.side_panel_symbols)) {
+                ClickableRow(
+                    title = stringResource(R.string.side_panel_symbols),
+                    value = stringResource(R.string.side_panel_symbols_desc),
+                    onClick = onOpenSidePanelSymbols,
                 )
             }
 

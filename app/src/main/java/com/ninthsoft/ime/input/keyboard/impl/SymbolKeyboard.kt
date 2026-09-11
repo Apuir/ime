@@ -144,7 +144,8 @@ class SymbolKeyboard(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val tw = MeasureSpec.getSize(widthMeasureSpec)
         val th = MeasureSpec.getSize(heightMeasureSpec)
-        val sw = (tw * 0.15f).toInt()
+        // 侧栏与其它键盘最左列保持一致：0.15 加宽到 0.17
+        val sw = (tw * 0.17f).toInt()
         val gw = tw - sw
         val sidePanelH = th * 3 / 4
         sidePanelKey.measure(mES(sw, MeasureSpec.EXACTLY), mES(sidePanelH, MeasureSpec.EXACTLY))
@@ -156,7 +157,7 @@ class SymbolKeyboard(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val sw = ((r - l) * 0.15f).toInt()
+        val sw = ((r - l) * 0.17f).toInt()
         val sidePanelH = (b - t) * 3 / 4
         sidePanelKey.layout(0, 0, sw, sidePanelH)
         sideReturnBtn.layout(0, sidePanelH, sw, b - t)

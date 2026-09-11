@@ -56,8 +56,13 @@ class T15Keyboard(
     companion object {
         const val NAME = "T15"
 
-        const val percentWidth = 0.13998f
-        const val npercentWidth = 0.15f
+        /**
+         * 宽度：最左右两列由 0.15 加宽到 0.17（即 [npercentWidth]），
+         * 多出来的 0.04 由中间 5 列均分，每列让出 0.008：0.13998 → 0.132。
+         * 底行中间三列同理，0.13 / 0.44 / 0.13 各让出 1/75。
+         */
+        const val percentWidth = 0.132f
+        const val npercentWidth = 0.17f
 
         fun mixedAlphabetKey(
             digit: String,
@@ -114,9 +119,9 @@ class T15Keyboard(
             ),
             listOf(
                 layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = npercentWidth),
-                schemaSwitchKey(0.13f),
-                spaceKey(percentWidth = 0.44f),
-                peroidKey(percentWidth = 0.13f),
+                schemaSwitchKey(0.11667f),
+                spaceKey(percentWidth = 0.42667f),
+                peroidKey(percentWidth = 0.11667f),
                 returnKey(percentWidth = npercentWidth),
             ),
         )
