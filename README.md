@@ -1,6 +1,7 @@
 # 简意输入法 · 开发与定制手册
 
-> 本仓库是 [`danjian/ime`](https://github.com/danjian/ime) 的 Fork。
+> 本仓库 `ime` 基于 [`danjian/ime`](https://github.com/danjian/ime)（该上游仓库没有 LICENSE 文件），
+> 作为个人 fork 维护。
 > 本文档是基于当前代码（220 个 Kotlin 文件、约 3.3 万行 + C++ JNI）重新整理的**理解 + 定制**指南。
 
 | 项目 | 值 |
@@ -84,8 +85,10 @@
   竖屏/横屏都可用，带实时百分比显示与「重置 / 完成」按钮
 - SAF 文件管理（`AppFilesDocumentsProvider`）：无需 root 即可用系统“文件”App 浏览/编辑 `files/` 下的方案与词库
 - 运行日志、崩溃日志、版本检查、按键音/震动/水波纹等细节设置
-- **振动强度逐级可调**：按键设置 →「点击时振动」可关闭，或在 5 级强度（很轻 / 轻 / 适中 / 强 / 最强）间切换，
-  选中即时试振；默认开启「忽略系统振动设置」，让按键振动不再依赖系统「触感 / 触摸时振动」开关
+- **按键振动可切换效果来源**：按键设置 →「点击时振动」可关闭，并可在两种模式间切换 ——
+  「系统触感」（默认）把按键触感原样交给系统渲染 `HapticFeedbackConstants.KEYBOARD_TAP`，走厂商调校过的预置效果（驱动带 overdrive / active braking，没有多余余振），
+  与系统键盘、系统 UI 同一条通路；「自定义强度」提供 10 级强度（极弱 / 很弱 / 较弱 / 偏弱 / 轻微 / 很轻 / 轻 / 适中 / 强 / 最强），
+  可做出比系统更轻的手感并可忽略系统开关，但振感取决于设备 HAL 对自定义波形的处理
 
 ---
 
@@ -674,14 +677,24 @@ listOf(
 
 ## 11. 上游与许可
 
-- **本仓库**：上游 `danjian/ime`（均为 “mirror” 描述，无 LICENSE 文件）。
+- **本仓库**：`Apuir/ime`，基于上游 `danjian/ime`；两者均无仓库级 LICENSE 文件。
 - **Native/引擎**：
   - librime：GPL-3.0-or-later（`cpp/CMakeLists.txt` 带 SPDX 头）
   - librime_jni：Apache-2.0（文件 SPDX 头）
   - OpenCC、snappy、glog、yaml-cpp、leveldb、marisa-trie：各自开源许可
 - **方案数据**：万象拼音 [rime-wanxiang](https://github.com/amzxyz/rime-wanxiang)（CC BY 4.0），随 `resource.zip` 分发，文档见 `shared/README.md`
 - **语音**：sherpa-onnx（Apache-2.0）
-- ⚠️ 由于未声明仓库级 LICENSE，若要**再分发**，请自行确认各组件许可（尤其 librime 的 GPL-3.0 传染性）。
+- **QNN/CDSP**：`app/src/main/assets/cdsp/*.so` 为高通（Qualcomm）运行库，随本项目捆绑，仅供本机自用。
+
+### 11.1 自用 vs 分发（重要）
+
+只要不分发 APK 或源码，GPL / CC BY 的义务不会触发。
+一旦要**分发**（发 APK 给他人、公开仓库、上应用商店），就必须同时做到：
+
+1. 随附 librime 及其衍生部分（含本项目 JNI 与 native 构建产物）的**完整对应源码**，并保留 GPL-3.0-or-later 许可证全文与版权声明；
+2. 保留万象拼音的 **CC BY 4.0** 署名与来源链接；
+3. 不再宣称上游未声明 LICENSE 就等于“随便用”——上游没写许可证不改变其内部各组件的既有许可。
+
 
 ---
 
@@ -703,7 +716,9 @@ listOf(
 | `keyboard.dark_theme` | String | `amoled` | 深色主题 id |
 | `keyboard.padding.horizontal` | Int | 4 dp | 两侧边距 |
 | `keyboard.padding.bottom` | Int | 4 dp | 底部边距 |
-| `keyboard.feedback.vibration_level` | Int | 3 | 按键振动强度：0=关闭，1 很轻 → 5 最强；旧版 `keyboard.feedback.vibration` (Bool) 会自动迁移 |
+| `keyboard.feedback.vibration_effect` | Int | 0 | 振动效果来源：0=系统触感（走厂商预置效果，最干脆），1=应用自定义强度（配合 `vibration_level`） |
+| `keyboard.feedback.vibration_level` | Int | 8 | 按键振动强度（仅「自定义强度」模式生效）：0=关闭，1 极弱 → 10 最强（其中 6~10 等同旧版 1~5 的力度）；旧版 `keyboard.feedback.vibration` (Bool) 与五档时代的存量档位都会自动迁移 |
+| `keyboard.feedback.vibration_scale` | Int | 2 | 档位代次标记（内部使用，用于把五档时代的存量档位一次性平移到 6~10） |
 | `keyboard.feedback.vibration_ignore_system` | Bool | true | 忽略系统「触感 / 振动」开关：走媒体振动通道，系统振动总开关关闭时退回无障碍通道（Android 13+） |
 | `keyboard.feedback.sound` | Bool | true | 按键音 |
 | `keyboard.gap.horizontal` | Int | 3 dp | 键水平间隔 |

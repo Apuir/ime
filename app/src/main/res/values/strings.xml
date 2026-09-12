@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">简意输入法</string>
-    <string name="done">done</string>
+    <string name="done">完成</string>
     <string name="rime_deploy_success">引擎部署成功</string>
     <string name="rime_deploy_failure">引擎部署失败</string>
     <string name="deploy_progress">引擎部署进度</string>
@@ -16,13 +16,22 @@
     <string name="key_sound">启用按键音</string>
     <string name="key_vibration">点击时振动</string>
     <string name="vibration_strength">振动强度</string>
-    <string name="vibration_level_1">很轻</string>
-    <string name="vibration_level_2">轻</string>
-    <string name="vibration_level_3">适中</string>
-    <string name="vibration_level_4">强</string>
-    <string name="vibration_level_5">最强</string>
+    <string name="vibration_effect">振动效果</string>
+    <string name="vibration_effect_system">系统触感</string>
+    <string name="vibration_effect_custom">自定义强度</string>
+    <string name="vibration_effect_system_desc">强度跟随系统「触感」设置。</string>
+    <string name="vibration_level_1">极弱</string>
+    <string name="vibration_level_2">很弱</string>
+    <string name="vibration_level_3">较弱</string>
+    <string name="vibration_level_4">偏弱</string>
+    <string name="vibration_level_5">轻微</string>
+    <string name="vibration_level_6">很轻</string>
+    <string name="vibration_level_7">轻</string>
+    <string name="vibration_level_8">适中</string>
+    <string name="vibration_level_9">强</string>
+    <string name="vibration_level_10">最强</string>
     <string name="vibration_ignore_system">忽略系统振动设置</string>
-    <string name="vibration_ignore_system_desc">开启后按键振动只由本应用控制：不受系统「触感 / 触摸时振动」开关影响，系统振动总开关关闭时仍会振动。关闭后完全跟随系统设置。</string>
+    <string name="vibration_ignore_system_desc">不受系统「触感」开关影响，系统振动关闭时也会振动。</string>
     <string name="key_x_gap">X轴间隔</string>
     <string name="key_y_gap">Y轴间隔</string>
     <string name="key_ripple_effect">水波纹特效</string>
@@ -193,10 +202,10 @@
     <string name="preview_content_none">不上屏（仅在候选栏显示）</string>
     <string name="preview_content_raw">原始输入（如 ni\'hao）</string>
     <string name="preview_content_first_candidate">第一个候选词</string>
-    <string name="preview_content_desc">选择输入过程中，输入框里实时显示的内容：不显示任何内容、显示正在输入的原始编码，或直接显示当前第一个候选词。选好候选词后，输入框里的内容会被正式替换为候选词。</string>
+    <string name="preview_content_desc">选好候选词后，输入框里的内容会被替换为候选词。</string>
     <string name="preview_switch_group">切换方案 / 收起键盘</string>
     <string name="preview_commit_on_switch">保留已上屏内容</string>
-    <string name="preview_commit_on_switch_desc">开启后，切换输入方案或收起键盘时，输入框里已经显示的预览内容会正式保留下来；关闭则什么都不留下。</string>
+    <string name="preview_commit_on_switch_desc">关闭时，切换方案或收起键盘会丢弃这些预览内容。</string>
 
     <!-- Side panel symbols -->
     <string name="side_panel_symbols">侧栏符号</string>
@@ -237,14 +246,14 @@
     <string name="drag_to_reorder">长按拖动排序</string>
     <string name="extended_features">组件功能</string>
     <string name="clipboard_manager">剪切板</string>
-    <string name="clipboard_manager_desc">云同步、历史记录</string>
+    <string name="clipboard_manager_desc">历史记录、常用语</string>
 
     <string name="about">关于</string>
     <string name="about_us">关于我们</string>
     <string name="about_us_desc">应用信息、版本更新</string>
     <string name="about_app_info">应用信息</string>
     <string name="about_description">应用简介</string>
-    <string name="about_description_text">简意输入法是一款简洁、高效的智能拼音输入法，支持多种输入方案，致力于提供流畅舒适的输入体验。</string>
+    <string name="about_description_text">一款简洁的拼音输入法，支持多种输入方案。</string>
     <string name="about_update">版本更新</string>
     <string name="check_update">检查更新</string>
     <string name="current_version">当前版本 v%1$s</string>

@@ -25,3 +25,6 @@ signing.properties
 *.aab
 /app/debug/
 /app/release/
+
+# git filter-repo 分析/备份产物
+.git/filter-repo/

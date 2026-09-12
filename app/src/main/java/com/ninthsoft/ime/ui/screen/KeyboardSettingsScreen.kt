@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,8 @@ fun KeyboardSettingsScreen(
     onOpenSidePanelSymbols: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 「系统触感」模式只能通过 View 才能拿到厂商预置的按键效果，所以预览也需要它。
+    val view = LocalView.current
 
     var keySoundEnabled by remember {
         mutableStateOf(KeyboardManager.Keyboard.Feedback.getSoundEnabled(context))
@@ -58,10 +61,14 @@ fun KeyboardSettingsScreen(
     var keyVibrationLevel by remember {
         mutableIntStateOf(KeyboardManager.Keyboard.Feedback.getVibrationLevel(context))
     }
+    var vibrationEffect by remember {
+        mutableIntStateOf(KeyboardManager.Keyboard.Feedback.getVibrationEffect(context))
+    }
     var ignoreSystemVibration by remember {
         mutableStateOf(KeyboardManager.Keyboard.Feedback.getIgnoreSystemSettings(context))
     }
     var showVibrationLevelDialog by remember { mutableStateOf(false) }
+    var showVibrationEffectDialog by remember { mutableStateOf(false) }
     var keyBorderEnabled by remember {
         mutableStateOf(KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context))
     }
@@ -165,30 +172,50 @@ fun KeyboardSettingsScreen(
                         }
                         keyVibrationLevel = level
                         KeyboardManager.Keyboard.Feedback.setVibrationLevel(context, level)
-                        if (enabled) InputFeedbacks.previewVibration(context, level)
+                        if (enabled) InputFeedbacks.previewVibration(view, level)
                     },
                 )
                 if (keyVibrationLevel > KeyboardManager.Keyboard.Feedback.VIBRATION_LEVEL_MIN) {
+                    val systemEffect = vibrationEffect ==
+                        KeyboardManager.Keyboard.Feedback.VIBRATION_EFFECT_SYSTEM
                     ClickableRow(
-                        title = stringResource(R.string.vibration_strength),
-                        value = vibrationLevelLabel(keyVibrationLevel),
-                        onClick = { showVibrationLevelDialog = true },
+                        title = stringResource(R.string.vibration_effect),
+                        value = vibrationEffectLabel(vibrationEffect),
+                        onClick = { showVibrationEffectDialog = true },
                     )
-                    SwitchRow(
-                        title = stringResource(R.string.vibration_ignore_system),
-                        checked = ignoreSystemVibration,
-                        onCheckedChange = {
-                            ignoreSystemVibration = it
-                            KeyboardManager.Keyboard.Feedback.setIgnoreSystemSettings(context, it)
-                            if (it) InputFeedbacks.previewVibration(context, keyVibrationLevel)
-                        },
-                    )
-                    Text(
-                        text = stringResource(R.string.vibration_ignore_system_desc),
-                        fontSize = rowSubFontSize,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
+                    if (systemEffect) {
+                        // 系统触感模式下强度和开关都由系统决定，隐藏自定义档位与忽略开关。
+                        Text(
+                            text = stringResource(R.string.vibration_effect_system_desc),
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    } else {
+                        ClickableRow(
+                            title = stringResource(R.string.vibration_strength),
+                            value = vibrationLevelLabel(keyVibrationLevel),
+                            onClick = { showVibrationLevelDialog = true },
+                        )
+                        SwitchRow(
+                            title = stringResource(R.string.vibration_ignore_system),
+                            checked = ignoreSystemVibration,
+                            onCheckedChange = {
+                                ignoreSystemVibration = it
+                                KeyboardManager.Keyboard.Feedback.setIgnoreSystemSettings(
+                                    context,
+                                    it,
+                                )
+                                if (it) InputFeedbacks.previewVibration(view, keyVibrationLevel)
+                            },
+                        )
+                        Text(
+                            text = stringResource(R.string.vibration_ignore_system_desc),
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
                 }
                 SwitchRow(
                     title = stringResource(R.string.key_ripple_effect),
@@ -420,32 +447,81 @@ fun KeyboardSettingsScreen(
         )
     }
 
+    if (showVibrationEffectDialog) {
+        SingleChoiceDialog(
+            title = stringResource(R.string.vibration_effect),
+            options = listOf(
+                stringResource(R.string.vibration_effect_system),
+                stringResource(R.string.vibration_effect_custom),
+            ),
+            selectedIndex = if (vibrationEffect ==
+                KeyboardManager.Keyboard.Feedback.VIBRATION_EFFECT_SYSTEM
+            ) {
+                0
+            } else {
+                1
+            },
+            onSelect = { index ->
+                val effect = if (index == 0) {
+                    KeyboardManager.Keyboard.Feedback.VIBRATION_EFFECT_SYSTEM
+                } else {
+                    KeyboardManager.Keyboard.Feedback.VIBRATION_EFFECT_CUSTOM
+                }
+                vibrationEffect = effect
+                KeyboardManager.Keyboard.Feedback.setVibrationEffect(context, effect)
+                // 不关闭弹窗，方便两种效果来回对比。
+                InputFeedbacks.previewVibration(view, keyVibrationLevel)
+            },
+            onDismiss = { showVibrationEffectDialog = false },
+        )
+    }
+
     if (showVibrationLevelDialog) {
+        val maxLevel = KeyboardManager.Keyboard.Feedback.VIBRATION_LEVEL_MAX
         SingleChoiceDialog(
             title = stringResource(R.string.vibration_strength),
-            options = (1..5).map { vibrationLevelLabel(it) },
-            selectedIndex = (keyVibrationLevel - 1).coerceIn(0, 4),
+            options = (1..maxLevel).map { vibrationLevelLabel(it) },
+            selectedIndex = (keyVibrationLevel - 1).coerceIn(0, maxLevel - 1),
             onSelect = { index ->
                 val level = index + 1
                 keyVibrationLevel = level
                 KeyboardManager.Keyboard.Feedback.setVibrationLevel(context, level)
                 // 立即试振，方便逐级对比力度。
-                InputFeedbacks.previewVibration(context, level)
+                InputFeedbacks.previewVibration(view, level)
             },
             onDismiss = { showVibrationLevelDialog = false },
         )
     }
 }
 
+/** 振动效果来源的显示文案。 */
 @Composable
-private fun vibrationLevelLabel(level: Int): String {
+private fun vibrationEffectLabel(effect: Int): String {
     return stringResource(
-        when (level) {
-            1 -> R.string.vibration_level_1
-            2 -> R.string.vibration_level_2
-            3 -> R.string.vibration_level_3
-            4 -> R.string.vibration_level_4
-            else -> R.string.vibration_level_5
+        if (effect == KeyboardManager.Keyboard.Feedback.VIBRATION_EFFECT_SYSTEM) {
+            R.string.vibration_effect_system
+        } else {
+            R.string.vibration_effect_custom
         }
     )
+}
+
+/** 等级 1..10 对应的文案资源，顺序与 [KeyboardManager.Keyboard.Feedback.VIBRATION_LEVEL_MAX] 对齐。 */
+private val VIBRATION_LEVEL_LABEL_RES = intArrayOf(
+    R.string.vibration_level_1,
+    R.string.vibration_level_2,
+    R.string.vibration_level_3,
+    R.string.vibration_level_4,
+    R.string.vibration_level_5,
+    R.string.vibration_level_6,
+    R.string.vibration_level_7,
+    R.string.vibration_level_8,
+    R.string.vibration_level_9,
+    R.string.vibration_level_10,
+)
+
+@Composable
+private fun vibrationLevelLabel(level: Int): String {
+    val index = (level - 1).coerceIn(0, VIBRATION_LEVEL_LABEL_RES.lastIndex)
+    return stringResource(VIBRATION_LEVEL_LABEL_RES[index])
 }

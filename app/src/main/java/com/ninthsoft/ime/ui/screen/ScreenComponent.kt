@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
@@ -455,7 +457,10 @@ object ScreenComponent {
                 )
             },
             text = {
-                Column {
+                // 选项可能较多（例如 10 档振动强度）：交给外层弹窗限高，超出即可滚动，避免被裁掉。
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
                     options.forEachIndexed { index, option ->
                         val isSelected = index == selectedIndex
                         Row(

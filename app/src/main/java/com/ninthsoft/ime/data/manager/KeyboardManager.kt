@@ -211,21 +211,56 @@ object KeyboardManager {
         object Feedback {
             private const val PREFIX = "keyboard.feedback"
 
-            /** 振动强度等级：0 = 关闭，1..5 依次增强（1 很轻 → 5 最强）。 */
+            /** 振动强度等级：0 = 关闭，1..10 依次增强（1 最弱 → 10 最强）。 */
             const val VIBRATION_LEVEL_MIN = 0
-            const val VIBRATION_LEVEL_MAX = 5
-            const val VIBRATION_LEVEL_DEFAULT = 3
+            const val VIBRATION_LEVEL_MAX = 10
+            const val VIBRATION_LEVEL_DEFAULT = 8
+
+            /**
+             * 振动效果来源。
+             *
+             * - [VIBRATION_EFFECT_SYSTEM]：把按键触感原样交给系统渲染
+             *   （`HapticFeedbackConstants.KEYBOARD_TAP`），走厂商调校过的预置效果 ——
+             *   驱动带 overdrive / active braking，没有多余的余振，最干脆，
+             *   与系统键盘、系统 UI 是同一条通路。代价是强度由系统和厂商决定，
+             *   且完全跟随系统「触感 / 触摸时振动」开关。
+             * - [VIBRATION_EFFECT_CUSTOM]：用应用自己的 [VIBRATION_LEVEL_MAX] 档强度，
+             *   可以比系统更轻，也可以忽略系统开关，但振感取决于设备 HAL 对自定义波形的处理。
+             */
+            const val VIBRATION_EFFECT_SYSTEM = 0
+            const val VIBRATION_EFFECT_CUSTOM = 1
+            const val VIBRATION_EFFECT_DEFAULT = VIBRATION_EFFECT_SYSTEM
+
+            /**
+             * 档位代次：1 = 早期的五档（1..5），2 = 现在的十档（1..10）。
+             *
+             * 扩档时把旧档位整体平移到 6..10，振幅与原值一一对应，存量用户手感不变；
+             * 新增的 1..5 是更弱的档位。缺少 [KEY_VIBRATION_SCALE] 的存量设置按第 1 代迁移一次。
+             */
+            private const val VIBRATION_LEVEL_SCALE = 2
+            private const val LEGACY_LEVEL_OFFSET = 5
 
             private const val KEY_VIBRATION_LEVEL = "$PREFIX.vibration_level"
             private const val KEY_VIBRATION_LEGACY = "$PREFIX.vibration"
+            private const val KEY_VIBRATION_SCALE = "$PREFIX.vibration_scale"
+            private const val KEY_VIBRATION_EFFECT = "$PREFIX.vibration_effect"
             private const val KEY_VIBRATION_IGNORE_SYSTEM = "$PREFIX.vibration_ignore_system"
 
             /** 当前振动强度等级（0 表示关闭）。 */
             fun getVibrationLevel(context: Context): Int {
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 if (prefs.contains(KEY_VIBRATION_LEVEL)) {
-                    return prefs.getInt(KEY_VIBRATION_LEVEL, VIBRATION_LEVEL_DEFAULT)
-                        .coerceIn(VIBRATION_LEVEL_MIN, VIBRATION_LEVEL_MAX)
+                    val stored = prefs.getInt(KEY_VIBRATION_LEVEL, VIBRATION_LEVEL_DEFAULT)
+                    // 五档时代的存量档位：平移后落盘，保证只迁移一次。
+                    if (!prefs.contains(KEY_VIBRATION_SCALE)) {
+                        val migrated = migrateLegacyVibrationLevel(stored)
+                        prefs.edit {
+                            putInt(KEY_VIBRATION_LEVEL, migrated)
+                            putInt(KEY_VIBRATION_SCALE, VIBRATION_LEVEL_SCALE)
+                        }
+                        return migrated
+                    }
+                    return stored.coerceIn(VIBRATION_LEVEL_MIN, VIBRATION_LEVEL_MAX)
                 }
                 // 兼容旧版本只有「开 / 关」的布尔设置。
                 return if (prefs.getBoolean(KEY_VIBRATION_LEGACY, true)) {
@@ -235,17 +270,54 @@ object KeyboardManager {
                 }
             }
 
+            /** 五档时代的 0..5 映射到十档时代的 0 与 6..10（振幅保持不变）。 */
+            private fun migrateLegacyVibrationLevel(stored: Int): Int {
+                if (stored <= VIBRATION_LEVEL_MIN) return VIBRATION_LEVEL_MIN
+                return (stored + LEGACY_LEVEL_OFFSET).coerceAtMost(VIBRATION_LEVEL_MAX)
+            }
+
             fun setVibrationLevel(context: Context, level: Int) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
                     putInt(
                         KEY_VIBRATION_LEVEL,
                         level.coerceIn(VIBRATION_LEVEL_MIN, VIBRATION_LEVEL_MAX),
                     )
+                    // 同时写入代次标记，避免刚存下的新档位被当成旧档位再平移一次。
+                    putInt(KEY_VIBRATION_SCALE, VIBRATION_LEVEL_SCALE)
                 }
             }
 
             fun getVibrationEnabled(context: Context): Boolean {
                 return getVibrationLevel(context) != VIBRATION_LEVEL_MIN
+            }
+
+            /**
+             * 振动效果来源，取值 [VIBRATION_EFFECT_SYSTEM] 或 [VIBRATION_EFFECT_CUSTOM]。
+             *
+             * 没有存过这个键的设置（含全部存量用户）都会拿到默认的「系统触感」，
+             * 升级后按键手感直接对齐系统键盘；想回到 10 档自定义强度在设置里切一下即可。
+             */
+            fun getVibrationEffect(context: Context): Int {
+                val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getInt(KEY_VIBRATION_EFFECT, VIBRATION_EFFECT_DEFAULT)
+                return if (stored == VIBRATION_EFFECT_CUSTOM) {
+                    VIBRATION_EFFECT_CUSTOM
+                } else {
+                    VIBRATION_EFFECT_SYSTEM
+                }
+            }
+
+            fun setVibrationEffect(context: Context, effect: Int) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putInt(
+                        KEY_VIBRATION_EFFECT,
+                        if (effect == VIBRATION_EFFECT_CUSTOM) {
+                            VIBRATION_EFFECT_CUSTOM
+                        } else {
+                            VIBRATION_EFFECT_SYSTEM
+                        },
+                    )
+                }
             }
 
             fun setVibrationEnabled(context: Context, enabled: Boolean) {
