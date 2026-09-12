@@ -15,6 +15,14 @@ object ResourceExtractorUtil {
         "PaxHeader",
     )
 
+    /**
+     * 这个资源包是手工打的，用 `zip -r resource.zip resource/` 那种打法会多出一层 `resource/`，
+     * 而解压结果必须是 `<外部目录>/shared` 和 `<外部目录>/model`，所以这里统一把这层壳剥掉。
+     * 压缩包本来就以 shared/ 和 model/ 开头时，这个前缀不会命中，等于什么都不做。
+     */
+    private const val WRAPPER_PREFIX = "resource/"
+    private const val WRAPPER_DIR = "resource"
+
     fun extract(context: Context, assetName: String, destDir: File) {
         Timber.d("Extracting %s to: %s", assetName, destDir.absolutePath)
         context.assets.open(assetName).use { input ->
@@ -29,7 +37,13 @@ object ResourceExtractorUtil {
             var entry: ZipEntry? = zip.nextEntry
 
             while (entry != null) {
-                val name = entry.name.trimEnd('/')
+                val rawName = entry.name.trimEnd('/')
+                // 壳目录自身映射成空名，交给下面的 shouldSkip 丢掉
+                val name = if (rawName == WRAPPER_DIR) {
+                    ""
+                } else {
+                    rawName.removePrefix(WRAPPER_PREFIX)
+                }
                 val simpleName = File(name).name
 
                 if (shouldSkip(name, simpleName)) {

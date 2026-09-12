@@ -344,6 +344,10 @@ model/
 ```
 
 > 修改/替换 `resource.zip` 后无需其他操作：`AppStartup` 靠 MD5 判断，下一次启动会自动重新解压。
+>
+> 解压是**原样落到外部目录**，所以压缩包根目录必须直接是 `shared/` 和 `model/`——
+> 打包时用 `cd resource && zip -r ../resource.zip .`，别用 `zip -r resource.zip resource/`（那会多出一层壳）。
+> 多套一层 `resource/` 也能用（`ResourceExtractorUtil` 会自动剥掉），但以文档这套结构为准。
 
 ### 7.3 构建步骤
 
