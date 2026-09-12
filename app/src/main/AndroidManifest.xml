@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <attribution
-        android:tag="@string/empty_attribution_tag"
+        android:tag="@string/vibration_attribution_tag"
         android:label="@string/attribution_label" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

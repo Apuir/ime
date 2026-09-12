@@ -33,6 +33,18 @@ git push origin main --tags
 
 ---
 
+## [2.0.0] — 2026-09-12
+
+改名换包名，并彻底去掉对上游服务器的依赖。
+
+- **不兼容**：applicationId / namespace 改为 `com.ninthsoft.ime`，应用名改为「简意输入法」。
+  这是另一个应用，装之前要先卸载旧的 `com.ninthsoft.ime`，旧版的 IME 启用状态和设置不会带过来
+- `chore(ime)`: 语音模型直连 k2-fsa/sherpa-onnx 官方发布地址（国内优先走 gh-proxy 镜像），md5 固定在本地
+- `chore(ime)`: 语法模型直连万象拼音作者发布地址（CNB 优先，GitHub 备用）
+- `chore(ime)`: 版本信息地址留空，暂不提供在线检查更新（入口隐藏）；删除 lutrip 后端协议层
+- `chore(build)`: librime 依赖固定到 commit `95d3e11`，仓库地址可用 `LIBRIME_REPO` 覆盖
+- `fix(ime)`: manifest 里 `<attribution>` 的 tag 改为与代码一致的 `keyboard_feedback`
+
 ## [1.7.1] — 2026-09-12
 
 设置页文案收拾干净。

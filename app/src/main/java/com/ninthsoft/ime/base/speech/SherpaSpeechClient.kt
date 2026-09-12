@@ -165,10 +165,9 @@ object SherpaSpeechClient {
     }
 
     suspend fun downloadModel(
-        context: Context,
         onProgress: (ModelDownloader.Progress) -> Unit = {},
         onExtract: (current: Long, total: Long) -> Unit = { _, _ -> },
-    ): Boolean = ModelDownloader.download(context, onProgress, onExtract)
+    ): Boolean = ModelDownloader.download(onProgress, onExtract)
 
     fun startHoldSession(service: ImeInputMethodService) {
         if (!holding.compareAndSet(false, true)) return

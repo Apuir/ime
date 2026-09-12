@@ -83,7 +83,6 @@ fun VoiceSettingsScreen(
         scope.launch {
             val ok = runCatching {
                 SherpaSpeechClient.downloadModel(
-                    context = context,
                     onProgress = { p ->
                         scope.launch(Dispatchers.Main.immediate) {
                             val fileFraction = if (p.total > 0) {

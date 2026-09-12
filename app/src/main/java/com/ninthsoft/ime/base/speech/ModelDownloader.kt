@@ -1,9 +1,8 @@
 package com.ninthsoft.ime.base.speech
 
-import android.content.Context
-import com.ninthsoft.ime.base.net.HttpUtil
-import com.ninthsoft.ime.data.App
 import com.ninthsoft.ime.base.util.TarBz2ExtractorUtil
+import com.ninthsoft.ime.base.util.ToastUtil
+import com.ninthsoft.ime.data.App
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -36,6 +35,27 @@ object ModelDownloader {
 
     private val MODEL_EXTENSIONS = setOf(BIN_EXTENSION, ONNX_EXTENSION, SO_EXTENSION)
     private val MODEL_COMPONENTS = listOf(ENCODER_NAME, DECODER_NAME, JOINER_NAME)
+
+    /** 官方模型文件名与 md5，来自 k2-fsa/sherpa-onnx 的 asr-models 发布。 */
+    private const val SPEECH_MODEL_FILE =
+        "sherpa-onnx-x-asr-160ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05.tar.bz2"
+    private const val SPEECH_MODEL_MD5 = "b822fa8bc747b5f18eff2bb6deef4390"
+
+    /**
+     * 语音识别模型的下载地址，按顺序尝试。
+     *
+     * 模型是 k2-fsa/sherpa-onnx 官方发布的流式 zipformer 中英标点 int8 模型，这里直接指向
+     * 作者的发布地址，不再经过任何中间服务器。国内直连 GitHub Releases 通常很慢，所以优先
+     * 走 gh-proxy 镜像，失败了再回退官方地址。
+     *
+     * 以后有自建服务器时，把这里换成自己的地址即可。
+     */
+    private val SPEECH_MODEL_URLS = listOf(
+        "https://gh-proxy.org/https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+            "asr-models/$SPEECH_MODEL_FILE",
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+            "asr-models/$SPEECH_MODEL_FILE",
+    )
     private val client =
         OkHttpClient.Builder().connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS).build()
@@ -56,23 +76,16 @@ object ModelDownloader {
     )
 
     suspend fun download(
-        context: Context,
         onProgress: (Progress) -> Unit = {},
         onExtract: (current: Long, total: Long) -> Unit = { _, _ -> },
     ): Boolean = withContext(Dispatchers.IO) {
-        val manifest = SpeechModelApi.fetchManifest(context)
-        val link = manifest.link.trim()
-        if (link.isEmpty()) {
-            Timber.w("Speech model manifest has no download link")
-            return@withContext false
-        }
         val tempDir = App.downloadDir
         val modelDir = App.speechModelDir
-        val archiveName = link.substringAfterLast('/').ifBlank { DEFAULT_ARCHIVE_NAME }
+        val archiveName = SPEECH_MODEL_FILE.ifBlank { DEFAULT_ARCHIVE_NAME }
         val archiveFile = File(tempDir, archiveName)
         val stageDir = File(tempDir, STAGE_DIR)
         if (!currentCoroutineContext().isActive) return@withContext false
-        if (!ensureArchive(link, archiveFile, manifest.md5, onProgress)) return@withContext false
+        if (!ensureArchive(archiveFile, onProgress)) return@withContext false
         if (!currentCoroutineContext().isActive) return@withContext false
         extractAndInstall(archiveFile, stageDir, modelDir, onExtract)
     }
@@ -80,38 +93,35 @@ object ModelDownloader {
     private data class DownloadResult(val md5: String)
 
     private suspend fun ensureArchive(
-        url: String,
         archiveFile: File,
-        expectedMd5: String,
         onProgress: (Progress) -> Unit,
     ): Boolean {
-        val md5 = expectedMd5.trim()
-        val reusable = archiveFile.isFile && (md5.isEmpty() || md5Of(archiveFile).equals(md5, true))
-        if (reusable) {
+        // 已经下过且校验通过就直接复用，不必重下。
+        if (archiveFile.isFile && md5Of(archiveFile).equals(SPEECH_MODEL_MD5, true)) {
             Timber.i("Reusing cached archive: %s", archiveFile.absolutePath)
             return true
         }
-        if (archiveFile.exists()) archiveFile.delete()
-        Timber.i("Speech model download start: %s", url)
-        val result = downloadFile(url, archiveFile) { read, total ->
-            onProgress(
-                Progress(DOWNLOAD_FILE_INDEX, DOWNLOAD_FILE_COUNT, archiveFile.name, read, total)
-            )
-        } ?: run {
+        archiveFile.delete()
+        for ((index, url) in SPEECH_MODEL_URLS.withIndex()) {
+            if (!currentCoroutineContext().isActive) return false
+            Timber.i("Speech model download start (mirror %d): %s", index, url)
+            val result = downloadFile(url, archiveFile) { read, total ->
+                onProgress(
+                    Progress(DOWNLOAD_FILE_INDEX, DOWNLOAD_FILE_COUNT, archiveFile.name, read, total)
+                )
+            }
+            if (result != null && result.md5.equals(SPEECH_MODEL_MD5, true)) {
+                Timber.i(
+                    "Speech model archive ready: %s (%d bytes)",
+                    archiveFile.absolutePath,
+                    archiveFile.length()
+                )
+                return true
+            }
+            Timber.w("Speech model mirror %d failed, trying next", index)
             archiveFile.delete()
-            return false
         }
-        if (md5.isNotEmpty() && !result.md5.equals(md5, true)) {
-            Timber.e("Speech model archive MD5 mismatch: %s", archiveFile.absolutePath)
-            archiveFile.delete()
-            return false
-        }
-        Timber.i(
-            "Speech model archive ready: %s (%d bytes)",
-            archiveFile.absolutePath,
-            archiveFile.length()
-        )
-        return true
+        return false
     }
 
     private fun extractAndInstall(
@@ -233,7 +243,7 @@ object ModelDownloader {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     Timber.w("Model download failed: HTTP %d", response.code)
-                    HttpUtil.showToast("语音模型下载失败：HTTP ${response.code}")
+                    ToastUtil.showToast("语音模型下载失败：HTTP ${response.code}")
                     return null
                 }
                 val body = response.body ?: return null
@@ -264,7 +274,7 @@ object ModelDownloader {
         } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Timber.e(e, "Speech model download failed")
-            HttpUtil.showToast("语音模型下载失败：${e.message ?: "网络错误"}")
+            ToastUtil.showToast("语音模型下载失败：${e.message ?: "网络错误"}")
             null
         }
     }

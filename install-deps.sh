@@ -10,17 +10,40 @@ BOOST_DIR="$DEPS_DIR/boost" # 解压到根目录下的 boost 文件夹
 BOOST_URL="https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz"
 BOOST_HASH="67acec02d0d118b5de9eb441f5fb707b3a1cdd884be00ca24b9a73c995511f74"
 
+# --- librime：固定 commit，不再跟着别人的 main 走 ---
+# 默认仍指向上游 danjian/librime。把它 fork 到自己的账号后，改这一行（或设同名环境变量），
+# 构建就不再依赖上游仓库是否还在。版本固定到具体 commit，上游推新代码也不会突然把构建搞坏。
+LIBRIME_REPO="${LIBRIME_REPO:-https://github.com/danjian/librime.git}"
+LIBRIME_COMMIT="${LIBRIME_COMMIT:-95d3e11b335d484baa2e80346dea517565b463bb}"
+LIBRIME_DIR="$DEPS_DIR/librime"
+
 # Git 依赖定义
 DEPS=(
     "$DEPS_DIR/OpenCC|https://github.com/BYVoid/OpenCC.git|master"
     "$DEPS_DIR/snappy|https://github.com/google/snappy.git|main"
-    "$DEPS_DIR/librime|https://github.com/danjian/librime.git|main"
     "$DEPS_DIR/librime-lua|https://github.com/hchunhui/librime-lua.git|master"
     "$DEPS_DIR/librime-lua-deps|https://github.com/hchunhui/librime-lua.git|thirdparty"
     "$DEPS_DIR/librime-octagram|https://github.com/lotem/librime-octagram.git|master"
     "$DEPS_DIR/librime-predict|https://github.com/rime/librime-predict.git|master"
     "$DEPS_DIR/llama.cpp|https://github.com/ggml-org/llama.cpp.git|master"
 )
+
+echo ">>> 同步 librime（固定 commit: $LIBRIME_COMMIT）..."
+if [ ! -d "$LIBRIME_DIR/.git" ]; then
+    if [ -d "$LIBRIME_DIR" ]; then
+        echo ">>> 清理非 git 残留目录: $LIBRIME_DIR"
+        rm -rf "$LIBRIME_DIR"
+    fi
+    echo ">>> 克隆: $LIBRIME_DIR"
+    mkdir -p "$DEPS_DIR"
+    # 需要按 commit 检出，所以不能用 --depth 1 -b <branch>
+    git clone "$LIBRIME_REPO" "$LIBRIME_DIR"
+else
+    echo ">>> 更新: $LIBRIME_DIR"
+    git -C "$LIBRIME_DIR" remote set-url origin "$LIBRIME_REPO"
+    git -C "$LIBRIME_DIR" fetch origin --tags
+fi
+git -C "$LIBRIME_DIR" checkout --detach "$LIBRIME_COMMIT"
 
 echo ">>> 开始同步 Git 依赖..."
 for item in "${DEPS[@]}"; do
@@ -101,10 +124,10 @@ for item in "${RIME_DEPS[@]}"; do
 done
 
 # --- 给 librime 补上 C API 的 kind 字段 ---
-# 上游 danjian/librime 的 95d3e11 只加了内部 Schema::kind_，忘了暴露到
+# 固定的那份 librime（见文件开头的 LIBRIME_COMMIT）只加了内部 Schema::kind_，忘了暴露到
 # RimeSchemaListItem，而 librime_jni/rime_data.h 直接读 item.kind，
 # 不补会导致 native 编译报 “no member named 'kind'”。
-# 若上游将来自己加上，这里会自动跳过。
+# 如果换成已经自带该字段的版本，这里会自动跳过。
 LIBRIME_SRC="$DEPS_DIR/librime/src"
 if [ -f "$LIBRIME_SRC/rime_api.h" ] && ! grep -qE "char\s*\*\s*kind;" "$LIBRIME_SRC/rime_api.h"; then
     echo ">>> 给 librime 打补丁：把 schema kind 暴露到 C API"

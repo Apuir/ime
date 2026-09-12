@@ -15,7 +15,7 @@ val keystoreProps = Properties().apply {
 val signingProp: (String, String) -> String? = { key, env ->
     System.getenv(env) ?: keystoreProps.getProperty(key)
 }
-val releaseStoreFile: String? = signingProp("storeFile", "JIME_STORE_FILE")
+val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
 
 @Suppress("UnstableApiUsage") android {
     namespace = "com.ninthsoft.ime"
@@ -26,8 +26,8 @@ val releaseStoreFile: String? = signingProp("storeFile", "JIME_STORE_FILE")
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 10701
-        versionName = "1.7.1"
+        versionCode = 20000
+        versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -56,9 +56,9 @@ val releaseStoreFile: String? = signingProp("storeFile", "JIME_STORE_FILE")
         if (storePath != null) {
             create("release") {
                 storeFile = rootProject.file(storePath)
-                storePassword = signingProp("storePassword", "JIME_STORE_PASSWORD")
-                keyAlias = signingProp("keyAlias", "JIME_KEY_ALIAS")
-                keyPassword = signingProp("keyPassword", "JIME_KEY_PASSWORD")
+                storePassword = signingProp("storePassword", "IME_STORE_PASSWORD")
+                keyAlias = signingProp("keyAlias", "IME_KEY_ALIAS")
+                keyPassword = signingProp("keyPassword", "IME_KEY_PASSWORD")
             }
         }
     }

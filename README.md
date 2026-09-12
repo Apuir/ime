@@ -1,4 +1,4 @@
-# 简意输入法 · 开发与定制手册
+# 简意输入法（ime）· Fork 开发者手册
 
 > 本仓库 `ime` 基于 [`danjian/ime`](https://github.com/danjian/ime)（该上游仓库没有 LICENSE 文件），
 > 作为个人 fork 维护。
@@ -8,7 +8,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `1.6.0` / `10600`（版本规则与发布流程见 [`CHANGELOG.md`](CHANGELOG.md)） |
+| versionName / versionCode | `2.0.0` / `20000`（版本规则与发布流程见 [`CHANGELOG.md`](CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -168,10 +168,10 @@
 
 | 目录 | 内容 |
 |------|------|
-| `speech/` | `SherpaSpeechClient`（主进程客户端）、`SpeechRecognitionService`（`:speech` 进程，AudioRecord + sherpa-onnx）、`SpeechIpc`（Messenger 协议）、`ModelDownloader`、`SpeechModelApi`、`SpeechUiBridge`、`SpeechPermissionActivity` |
+| `speech/` | `SherpaSpeechClient`（主进程客户端）、`SpeechRecognitionService`（`:speech` 进程，AudioRecord + sherpa-onnx）、`SpeechIpc`（Messenger 协议）、`ModelDownloader`、`SpeechUiBridge`、`SpeechPermissionActivity` |
 | `ngram/` | `GramDb`（mmap 读 `.gram`）、`DoubleArrayTrie`、`GramEncoding`（Rime table.bin 编解码）、`GramModelDownloader` |
 | `marisa/` | `MarisaTrie`（JNI）、`Prediction`（读 `predict.marisa` 做下一词预测） |
-| `net/` | `ApiConfig`（`BASE_URL=https://mapi.lutrip.com/`）、`HttpUtil`（OkHttp + `{code,msg,data}` 信封）、`VersionChecker` |
+| `net/` | `VersionChecker`（在线检查更新；地址留空即关闭，入口也会隐藏） |
 | `util/` | `TraditionalConverter`（简繁 FMM）、`PinYinUtil`、`ResourceExtractorUtil`/`ResourceUtil`/`TarBz2ExtractorUtil`、`FontManager`、`InputConnectionUtil`、`TextUtil`、`PunctuationUtil`、`ProcessUtil`、`ViewAnimationUtil`、`AssetExtractionProviderUtil` 等 |
 | `priority/` | `PriorityCalculator`（候选打分权重） |
 | `feedback/` | `InputFeedbacks`（SoundPool + 震动） |
@@ -305,11 +305,12 @@ KeyView 事件
 | `resource.zip` | `app/src/main/assets/resource.zip` | **必需**。65 MB 的万象拼音方案/词库 + `predict.marisa`。见下方获取步骤 |
 | native 依赖 | `app/src/main/cpp/deps/` | 运行 `./install-deps.sh` 生成（含 Boost 1.89.0） |
 | SDK 路径 | `local.properties` | 写入 `sdk.dir=/path/to/Android/Sdk` |
-| 签名 | `release.keystore` | 可选。`app/build.gradle.kts` 未配置 release 签名，release 默认不签名 |
+| 签名 | `keystore.properties`（已 gitignore） | 可选。填了就用 `release` 签名，不填则产出未签名的 release 包。CI 可用 `IME_STORE_FILE` / `IME_STORE_PASSWORD` / `IME_KEY_ALIAS` / `IME_KEY_PASSWORD` 环境变量覆盖 |
 
 #### 获取 `resource.zip`
 
-上游 release APK 内就打包了它，直接抽取即可（无需 clone 上游源码）：
+上游 release APK 内就打包了它，直接抽取即可（无需 clone 上游源码）。
+`JIme-v1.0.5.apk` 是**上游 release 的文件名**，照抄即可，改名会让下载地址失效：
 
 ```bash
 # 1) 下载上游 release（约 110 MB）
@@ -596,17 +597,20 @@ listOf(
 | 候选面板外观 | `input/panel/component/CandidateGridView.kt`、`input/panel/KawaiiPanelRenderer.kt` |
 | 候选条/工具栏按钮 | `input/panel/toolbar/ToolbarRenderer.kt` + `ToolbarRendererResources.kt`（中间工具由 `configuredToolbarButtons()` 读取偏好生成；`KawaiiPanel.kt` 与 `KawaiiPanelView.kt` 两处构造资源，改动要同步） |
 
-### 9.7 网络后端（重点：这是自有服务）
+### 9.7 在线能力（不再依赖任何中间服务器）
 
-所有在线能力都指向 `https://mapi.lutrip.com/`：
+需要联网的只有三处，全部直连内容作者自己的发布地址；地址都写在各自文件顶部，想换成自己的服务器只改那一个常量：
 
-- `base/net/ApiConfig.kt`：`BASE_URL`、超时
-- `app/version`：版本检查（`VersionChecker`）
-- `model/grammar?language=...`：语法模型下载（`GramModelDownloader`）
-- `speech/model?type=qnn|cpu&soc=...`：语音模型清单（`SpeechModelApi`）→ 返回 `.tar.bz2` 链接
-- `HttpUtil` 统一追加 `version=<versionName>`，并解析 `{code,msg,data}` 信封
+| 能力 | 现在的地址 | 位置 |
+|------|-----------|------|
+| 语音模型 | k2-fsa/sherpa-onnx 官方 release（优先 `gh-proxy.org` 镜像，失败回退官方） | `base/speech/ModelDownloader.kt` → `SPEECH_MODEL_URLS` |
+| 语法模型 | 万象拼音作者发布（CNB 优先，GitHub 备用） | `base/ngram/GramModelDownloader.kt` → `GRAMMAR_MODEL_URLS` |
+| 检查更新 | **暂时留空**（未配置时设置页不显示入口，只显示当前版本号） | `base/net/VersionChecker.kt` → `UPDATE_INFO_URL` |
 
-若自建服务，改 `ApiConfig.BASE_URL` 并保证接口返回结构一致即可。
+- 语音模型是 `sherpa-onnx-x-asr-160ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05`，md5 已固定成本地常量，不再由服务器下发。
+- 语法模型对应方案里 `grammar/language` 声明的 `wanxiang-lts-zh-hans`，下载后存成 `<language>.gram`。
+- 上游原本的 `mapi.lutrip.com` 后端（`ApiConfig` / `HttpUtil` / `SpeechModelApi`）已整个删除。
+- 以后要恢复在线检查更新：填上 `UPDATE_INFO_URL`，返回 `{"latestVersion": "…", "website": "…"}` 即可。
 
 ### 9.8 语音
 

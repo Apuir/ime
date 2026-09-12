@@ -28,6 +28,10 @@ class InputFeedbacks private constructor() {
         private var popSoundId: Int = 0
         private var isPopLoaded = false
         private val lock = Any()
+        /**
+         * 振动归因标签，必须与 AndroidManifest 里 `<attribution android:tag=...>`
+         * （字符串资源 `vibration_attribution_tag`）保持一致。
+         */
         private const val VIBRATION_ATTRIBUTION_TAG = "keyboard_feedback"
 
         /** [VibrationEffect] 支持的最大振幅，框架里对应 @hide 常量。 */

@@ -152,7 +152,8 @@ fun AboutScreen(onBack: () -> Unit, onOpenLogs: () -> Unit = {}) {
                     title = stringResource(R.string.current_version, versionName),
                     subtitle = null,
                     trailing = {
-                        Button(
+                        // 没配置版本信息地址时不显示入口（版本号本身仍然照常展示）。
+                        if (VersionChecker.isConfigured) Button(
                             onClick = {
                                 if (checkingUpdate) return@Button
                                 checkingUpdate = true
