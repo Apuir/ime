@@ -8,14 +8,14 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `2.0.0` / `20000`（版本规则与发布流程见 [`CHANGELOG.md`](CHANGELOG.md)） |
+| versionName / versionCode | `2.1.1` / `20101`（版本规则与发布流程见 [`CHANGELOG.md`](CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
 | UI | 键盘 = 自定义 View（ConstraintLayout + Canvas）；设置 = Jetpack Compose |
 | 输入引擎 | librime（`danjian/librime` 分支）+ lua / octagram / predict 插件 |
 | 内置方案数据 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.3`（CC BY 4.0） |
-| 提交历史 | 82 commits，2026-06-12 ~ 2026-09-11（其中 61 个来自上游，fork 改动从 `v1.1.0` 开始） |
+| 提交历史 | 92 commits，2026-06-12 ~ 2026-09-12（其中 61 个来自上游，fork 改动从 `v1.1.0` 开始） |
 
 ---
 
@@ -78,7 +78,14 @@
 - 工具栏工具自定义：键盘上方工具栏中间那排图标可由用户勾选、排序、增删（撤销/重做/剪贴板/主题/语音/表情…）
 - **侧栏快捷符号自定义**：设置 → 键盘布局 →「侧栏符号」里可编辑九键 / 数字键左侧那条可滑动符号栏的内容与顺序
   （增删、上下移排序、恢复默认，还能添加任意自定义符号）
-- 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）
+- **按键映射自定义**：设置 → 键盘布局 →「按键映射」里可改 26 键每个字母键下的符号 / 数字（`q→1`、`g→$` …）、
+  九键每个数字键包含的字母（`2→abc`、`7→pqrs`）；改完键帽显示、气泡内容、上屏结果三处同时生效
+- **按键气泡**：在字母键 / 九宫格数字键上长按（或上滑后停住约 0.3s）弹出带尾巴的气泡——边框 / 圆角与键帽一致，
+  手指按住不放左右滑动切换高亮项、松开输入；26 键气泡为「小写字母 / 符号 / 大写字母」，九键为「数字 / 该键的每个字母」。
+  顶行按键自动翻到下方弹出，屏幕边缘自动夹取；**快速上滑仍然直接输入符号 / 数字**，气泡只在你想选别的候选项时出现。
+  可在「按键映射」页开关（关闭即回到原来的直接输入）
+- 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）；
+  开启「按键气泡」后该设置只决定气泡的触发方式（长按还是上滑）
 - **横屏悬浮键盘**：横屏时键盘自动变成一张可拖动的小卡片悬浮在应用之上（宽度可调、位置可拖动并记忆），
   应用界面不再被键盘顶起；设置 → 键盘布局里可开关与调整宽度
 - **键盘内直接调大小**：键盘左上角菜单 →「调整键盘大小」，进入编辑模式后拖上边框调高度、拖左右边框调宽度，
@@ -365,17 +372,30 @@ chmod +x install-deps.sh
 # 3) 放入 resource.zip（见 7.2）
 ls -lh app/src/main/assets/resource.zip
 
-# 4) 编译
+# 4) 编译（发布用 release，调试试 debug）
+./gradlew :app:assembleRelease
+# 产物：app/build/outputs/apk/release/ime-<版本号>.apk
+
 ./gradlew :app:assembleDebug
-# 产物：app/build/outputs/apk/debug/app-debug.apk
+# 产物：app/build/outputs/apk/debug/ime-<版本号>-debug.apk
 ```
 
 首次 native 编译耗时较长（librime + Boost + OpenCC）。`install-deps.sh` 是**幂等**的：已存在的目录会 `git fetch + reset --hard`，Boost 已存在则跳过。
 
+**APK 命名**：`app/build.gradle.kts` 末尾在两个 `assemble<BuildType>` 后面挂了 `rename<BuildType>Apk`
+（`assembleDebug` / `assembleRelease` 结束后自动执行，也可以单独 `./gradlew :app:renameReleaseApk`），
+把 AGP 默认的 `app-<buildType>.apk` 改成 `ime-<versionName>.apk` / `ime-<versionName>-debug.apk`。
+之所以用后置改名而不是 AGP 的 `outputFileName`：AGP 9 的新 Variant API 已经移除了这个可写入口
+（`applicationVariants` / `outputFileName` 都不可用），改名是版本无关的做法。
+
+> release 需要签名：仓库根的 `keystore.properties`（已 `.gitignore`）或环境变量
+> `IME_STORE_FILE` / `IME_STORE_PASSWORD` / `IME_KEY_ALIAS` / `IME_KEY_PASSWORD`；
+> 两者都没有时 `assembleRelease` 产出的是未签名的 `ime-<版本号>.apk`（装不上，需要先签名）。
+
 ### 7.4 安装与首次使用
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/release/ime-2.1.1.apk
 ```
 
 打开 App → `InitActivity` 等待资源解压/引擎部署 → `SetupActivity` 引导：
@@ -421,14 +441,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 需求 | 位置 |
 |------|------|
-| 改 Qwerty 全键盘 | `input/keyboard/impl/QwertyKeyboard.kt` → `buildLayout()`（底行：符号 0.13 / 中英 0.12 / `.` 0.09 / 空格 0.30 / `,` 0.09 / 数字 0.12 / 回车 0.15；`.`/`,` 键帽固定半角，`CommitAction` 仍跟随全角-半角标点模式） |
+| 改 Qwerty 全键盘 | `input/keyboard/impl/QwertyKeyboard.kt` → `buildLayout(context)`（字母键的次级符号 / 气泡内容来自 `KeyboardKeyMapping`，其余仍写死；底行：符号 0.13 / 中英 0.12 / `.` 0.09 / 空格 0.30 / `,` 0.09 / 数字 0.12 / 回车 0.15；`.`/`,` 键帽固定半角，`CommitAction` 仍跟随全角-半角标点模式） |
 | 改数字键盘 | `input/keyboard/impl/NumberKeyboard.kt` → `Layout`（4 行 × 5 等列，列宽 `0.17 / 0.22 ×3 / 0.17`：`1 2 3 ⌫` / `4 5 6 @` / `7 8 9 .` / `符号 空格 0 返回 回车`；底行与上面逐列对齐，回车只占底行一格、不再跨行） |
 | 改九宫格 / 15 键 | `input/keyboard/impl/T9Keyboard.kt` / `T15Keyboard.kt`（九键：侧栏 + 4 列，列宽同数字键盘，底行 `符号 中英 空格 123` 与九宫格逐列对齐，大回车跨第 3、4 行；15 键：`0.17 + 中间 5×0.132 + 0.17`） |
 | 非 26 键键盘列宽 | 最左 / 最右两列由 0.15 加宽到 0.17，多出来的宽度由该行中间各列**均分扣除**（9 键 / 数字键的 0.23333 → 0.22，底行直接与上行对齐；15 键的 0.13998 → 0.132，底行 0.13/0.44/0.13 各让 1/75）；26 键既没有侧栏、分布也不等分，不适用 |
 | 符号 / Emoji 键盘 | `input/keyboard/impl/SymbolKeyboard.kt` / `EmojiKeyboard.kt` + `data/Symbol.kt`（左侧栏与其它键盘最左列对齐，占屏宽 0.17——展开的候选词面板 `CandidateGridView` 侧栏同为 0.17；右侧网格仍是 5 等分） |
-| 布局数据模型 | `input/keyboard/key/KeyDef.kt`（`KeyDef(appearance, behaviors, popups)`，行是 `List<KeyDef>`，宽度用 `percentWidth` 分数，每行和 ≈ 1） |
+| 布局数据模型 | `input/keyboard/key/KeyDef.kt`（`KeyDef(appearance, behaviors, popups, bubble)`，行是 `List<KeyDef>`，宽度用 `percentWidth` 分数，每行和 ≈ 1；`bubble` 是该键长按 / 上滑时的气泡内容） |
 | 按键工厂 | `input/keyboard/key/KeyPreset.kt`（`alphabetKey`/`spaceKey`/`returnKey`/`capsLockKey`/`schemaSwitchKey`/`sidePannelKey`…） |
-| 手势阈值 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms、重复 100ms、滑动阈值） |
+| 手势阈值 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms、重复 100ms、滑动阈值；按键气泡也在这套状态机里） |
 | 按键外观 / 圆角 / 描边 | `input/keyboard/key/KeyView.kt`、`KeyDrawable.kt`、`data/keyboard/theme/KeyboardColors.kt` |
 | 新增键盘类型 | 实现 `input/keyboard/impl/IKeyboard.kt`（侧栏再加 `ISidePanelKeyboard`），并在 `KeyboardWindowView.createKeyboard()` 注册 |
 
@@ -559,6 +579,81 @@ listOf(
 > T15（15 键）也有一条侧栏，但仍使用 `T15Keyboard.kt` 里写死的 `fullWidthPunctuations` /
 > `halfWidthPunctuations`，未接入本设置。
 
+### 9.3.5 按键映射自定义（26 键符号 / 九键字母）
+
+26 键每个字母键下面的符号或数字（`q→1`、`g→$` …）、九键每个数字键包含的字母（`2→abc`、`7→pqrs`）
+都可以在应用内改，键帽显示、长按气泡内容、点击上屏三处同时生效。
+
+- 偏好读写：`data/manager/KeyboardKeyMapping.kt`（`keyboard.key_mapping.qwerty` / `.t9`，只存**用户改过的键**，
+  未改动的回落到 `DEFAULT_QWERTY_SYMBOLS` / `DEFAULT_T9_LETTERS`，所以以后调默认值老用户也能跟上）
+- 存储格式：`键\u001F值\u001E键\u001F值…`（记录分隔 `\u001E`、键值分隔 `\u001F`，都不会和符号本身撞车）
+- 26 键建键：`QwertyKeyboard.buildLayout(context)` → `alphabetKey(character, KeyboardKeyMapping.qwertySymbol(ctx, ch), …)`
+- 九键建键：`T9Keyboard.buildLayout(context)` → `mixedAlphabetKey(digit, KeyboardKeyMapping.t9Letters(ctx, digit), …)`
+- 配置界面：`ui/screen/KeyMappingScreen.kt` + `ui/KeyMappingActivity.kt`
+  （入口：设置 → 键盘布局 →「按键映射」；26 键是可点的迷你键盘预览，九键是数字行列表，支持符号池点选与恢复默认）
+- 生效时机：改完立刻写偏好，`KeyboardWindowView.onConfigChanged()` 收到这几个 key 后调用
+  `KeyboardStateManager.rebuild()` 重建键盘（`refreshColors()` 只重建视图、不会重跑 `buildLayout`）
+- 回归测试：`app/src/test/java/com/ninthsoft/ime/KeyMappingDefaultsTest.kt` 钉住默认键位（必须与旧版写死的一致）
+- 注意：15 键**不接入**九键字母映射 —— 15 键自己有一套「数字键 ≈ 声母/韵母」的键位（`4` 管 `r` 和 `rf`），
+  与九宫格的 ABC/DEF 分组不是一回事。15 键的字母串仍写死在 `T15Keyboard.buildLayout(context)` 里，
+  只有气泡复用了 `KeyboardKeyMapping.t9BubbleItems()`
+
+> ⚠️ `data/manager/` 下已有 `engine/rime/core/KeyMapping`（Rime 的键码常量表），
+> 所以按键映射的偏好对象取名 **`KeyboardKeyMapping`**，不要写回 `KeyMapping`（会撞名、编译期直接 Unresolved）。
+
+### 9.3.6 按键气泡（长按 / 上滑弹候选）
+
+在字母键或九宫格数字键上长按（「按键手势」设为上滑时为上滑）弹出气泡：一块圆角矩形 + 指向按键的三角尾巴，
+手指**不离开屏幕**左右滑动切换高亮项，松开输入高亮项。26 键气泡是「小写字母 / 该键符号 / 大写字母」，
+九键是「数字 / 该键的每个字母」，15 键是「数字 / 该键现有字母」。
+
+| 需求 | 位置 |
+|------|------|
+| 气泡外观与几何 | `input/keyboard/key/KeyBubblePopup.kt`（`PathMeasure` 正反两段轮廓合成「圆角矩形 + 圆角尾巴」；顶行按键自动翻到下方、屏幕边缘夹取、尾巴始终对准按键中心） |
+| 手势状态机 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms 起气泡；滑动按**气泡的屏幕坐标**取最近一项，与手指位置一一对应；抬手提交） |
+| 内容与配色 | `HasKeyBubble` 接口；`BaseKeyboard.attachKeyBubble()` 把 `KeyDef.bubble` 与主题色交进去（背景色与键盘背景合成成不透明，高亮色用 `accentKeyBackground` + 按亮度自动选黑/白字） |
+| 气泡内容生成 | `KeyboardKeyMapping.qwertyBubbleItems()`（小写 → 符号 → 大写，符号走 `CommitAction` 以跟随全角/半角标点模式，字母走 `KeySequenceAction` 交给 Rime）、`KeyboardKeyMapping.t9BubbleItems()`（数字走 `CommitAction`，字母走 `KeySequenceAction`） |
+| 开关 | `KeyboardKeyMapping.isBubbleEnabled()`（`keyboard.key_bubble`，默认开）；关闭后回到旧行为：长按 / 上滑直接上屏符号或数字 |
+| 与「按键手势」的关系 | 只决定**触发方式和时长**，见下表 |
+| 描边 / 圆角 | 与键帽同一套：`keyBorderStroke` 颜色 + `keyBorderWidth` 厚度 + `keyRadius` 圆角；描边走的是「圆角矩形 + 尾巴」的同一条轮廓（`ShapeDrawable.paint` 设成 `FILL_AND_STROKE`），关掉「绘制键边框」时气泡也不描边 |
+| 入口 | 设置 → 键盘布局 →「按键映射」页顶部的开关；也可从 README 提到的 `keyboard.key_bubble` 直接改 |
+
+> 气泡第一项固定是「点一下这个键本来会输入的内容」（26 键小写字母、九键数字），
+> 所以弹出后不滑动直接抬手 = 普通点击，不会因为长按误上屏符号。
+>
+> 气泡用 `PopupWindow` + `setClippingEnabled(false)` 实现，可以画到 IME 窗口之外（键盘高度调大时也不会被裁掉）。
+
+**触发时序（26 键 / 九键共用一套状态机，常量在 `CustomGestureView`）**
+
+| 操作 | 结果 |
+|------|------|
+| 轻点 | 普通输入（26 键打字母、九键进候选） |
+| 按住 250ms（`bubblePressDelay`） | 弹气泡，左右划选，抬手提交 |
+| 快速上滑抬手（位移 > `bubbleSwipeSlop`，约 2 倍 touchSlop） | **直接输入符号 / 数字**（气泡不出现） |
+| 上滑后停住（长按那一档到时） | 弹气泡 |
+
+**长按一律弹气泡**，不再跟着「按键手势」摇摆 —— 少一个互相打架的维度；那个设置只影响上滑行为的次要细节。
+
+> ⚠️ 上滑识别**不能**挂在「长按弹气泡」这个标志下面。这里也踩过坑：曾写成
+> `if (bubbleController != null && !bubbleTriggerOnLongPress)`，而长按弹气泡时该标志恒为 `true`，
+> 上滑分支直接变成死代码，表现就是「普通上滑再也输入不了数字 / 符号，只能长按或上滑停留出气泡」。
+> 现在上滑判定只看位移，与长按弹不弹气泡完全解耦（回归见 `BubbleSelectionMathTest`）。
+
+> ⚠️ **不要在气泡弹出前用「手指离按键多远」当闸门**。这里踩过坑：最早用
+> `(downY - y) > height || |x - downX| > width` 判断「手指飘走就取消」，结果 26 键键宽只有 ~35px，
+> 长按/上滑时手指的自然漂移（实测 dy 能到 220～330px）几乎必然超标，气泡几乎永远弹不出来
+> （真机日志：`showBubble: finger moved too far dy=222 h=157 w=259`）。
+> 现在改成：**定时器一旦启动就必须跑到点**，由 `showBubble()` 决定弹不弹，靠「弹出来之后手指往哪儿滑」决定选哪一项。
+> 另外气泡是浮层，背景必须是不透明实色（主题里的 `specialKeyBackground` / `accentKeyBackground` 都带 alpha，
+> 用之前先和键盘背景合成；见 `BaseKeyboard.attachKeyBubble()`），否则会看起来像没画出来。
+
+> 诊断：`adb logcat -s ImeBubble:I`（或 设置 → 关于 → 运行日志 里搜 `ImeBubble`）。
+> 气泡弹出时会打 `showBubble: labels=[...] showing=true left=... width=...`；没弹会打原因；
+> 气泡路径下没弹出气泡时还会补一次普通点击，保证不会「按了没反应」。
+
+相关：T15 的混合键在 `T15Keyboard.buildLayout(context)` 里通过 `KeyboardKeyMapping.t9BubbleItems()` 取气泡，
+字母串仍写死在布局里（见 9.3.5 的注意）。
+
 ### 9.4 输入方案（Rime schema）
 
 方案数据在 `shared/`，用户补丁在 `user/`。常见做法：
@@ -678,8 +773,9 @@ listOf(
 8. **`compileSdk 37` / `targetSdk 36`**：需要较新的 Android SDK（37 可能是预览版平台），老环境需先 `sdkmanager "platforms;android-37"`。
 9. **Manifest 申请了 `MANAGE_EXTERNAL_STORAGE`**（`AndroidManifest.xml`），上架应用商店可能被拒；常规使用其实靠 SAF Provider 即可。
 10. **两个 `KeyActionListener` 同名**：`input/KeyActionListener.kt` 是引擎桥接，`input/keyboard/key/KeyActionListener.kt` 是 `fun interface`，改动时注意 import。
+    **`KeyMapping` 也同名**：`engine/rime/core/KeyMapping.kt` 是 Rime 键码常量，按键映射的偏好对象叫 `KeyboardKeyMapping`，别再取回 `KeyMapping`。
 11. **死代码/未使用类**：`KeyboardThemeSettingsScreen` 引用之外，`input/dialog/SchemaPickerEntryUi.kt`、`SchemaPickerListAdapter.kt`、`panel/toolbar/ToolbarButton.ToggleImageButton` 当前未使用。
-12. **release 未配置签名**：`app/build.gradle.kts` 里没有 `signingConfigs`，`assembleRelease` 产物未签名。
+12. **release 签名依赖本机材料**：`keystore.properties`（已 gitignore）或 `IME_*` 环境变量，缺一个都产出未签名 APK。
 
 ---
 
@@ -739,6 +835,9 @@ listOf(
 | `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
 | `keyboard.side_panel_symbols.t9` | String | `，。！？：~...` | 九键左侧符号栏的有序符号列表（`\u001F` 分隔；显示/上屏时仍跟随全角-半角标点模式） |
 | `keyboard.side_panel_symbols.number` | String | `+-*/=~?!` | 数字键左侧符号栏的有序符号列表（`\u001F` 分隔，原样使用） |
+| `keyboard.key_mapping.qwerty` | String | 未设置=全默认 | 26 键字母键的次级符号 / 数字；只存用户改过的键，格式 `键\u001F值\u001E…` |
+| `keyboard.key_mapping.t9` | String | 未设置=全默认 | 九键 / 15 键气泡里每个数字键包含的字母；只存用户改过的键，格式同上 |
+| `keyboard.key_bubble` | Bool | true | 长按 / 上滑是否弹出按键气泡；关闭后直接上屏符号 / 数字 |
 | `keyboard.width` | Int | 100 | 竖屏键盘宽度（% 屏宽），<100 时改用悬浮卡片布局；由「调整键盘大小」写入 |
 | `keyboard.pos_x` | Float | 0.5 | 竖屏卡片水平位置比例（拖动后写入） |
 | `keyboard.pos_y` | Float | 1.0 | 竖屏卡片垂直位置比例（拖动后写入） |

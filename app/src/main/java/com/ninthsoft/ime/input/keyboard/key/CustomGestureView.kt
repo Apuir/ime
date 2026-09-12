@@ -4,11 +4,13 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -88,6 +90,47 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     private var lastClickTime = 0L
     private var maybeDoubleTap = false
 
+    // ------------------------------------------------------------ 按键气泡
+
+    /**
+     * 长按 / 上滑停留时弹出的候选气泡。由 [HasKeyBubble] 提供，默认不启用。
+     * 气泡展示后手指不离开屏幕，左右滑动切换高亮项，抬手提交高亮项。
+     */
+    var bubbleController: HasKeyBubble? = null
+
+    /** 气泡是否只由长按触发（否则上滑停留也触发）。默认 true，即长按。 */
+    var bubbleTriggerOnLongPress = true
+
+    /**
+     * 上滑模式下的次级输入动作（26 键键帽上的符号 / 数字）。
+     *
+     * 有它才能区分「快速上滑」和「上滑后停住」：抬手时气泡还没弹出来就把这个动作直接上屏，
+     * 弹出来了（说明手指停住了）就改成由气泡的左右划选决定输入什么。
+     */
+    var bubbleSwipeAltAction: KeyboardAction? = null
+
+    /** 气泡延迟弹出的毫秒数，与长按判定保持一致。 */
+    var bubblePressDelay: Long = longPressDelay
+
+    /** 上滑后要停留多久才弹气泡；比长按短一点，因为上滑本身已经是一次明确动作了。 */
+    var bubbleSwipeDelay: Long = 200L
+
+    /** 气泡高亮项被提交时回调（抬手时触发一次）。 */
+    var onBubbleAction: ((KeyboardAction) -> Unit)? = null
+
+    private var bubbleView: KeyBubblePopup? = null
+    private var bubbleTriggered = false
+    private var bubbleJob: Job? = null
+    private var bubbleSwipeJob: Job? = null
+
+    /** 本次手势是否已经上滑超过阈值（决定抬手时要不要补一次「直接上滑输入」）。 */
+    private var bubbleSwipedUp = false
+
+    /** 本次按下的起点 x / y，用于判断上滑与「手指是否还停在键附近」。 */
+    private var downX = 0f
+    private var downY = 0f
+
+
     var onTouchMoveListener: ((Float, Float) -> Unit)? = null
     var onTouchDownListener: ((View) -> Unit)? = null
     var onTouchUpListener: ((View) -> Unit)? = null
@@ -96,6 +139,10 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var onGestureListener: OnGestureListener? = null
     var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
+
+    /** 气泡模式下「算一次上滑」的纵向阈值。 */
+    private val bubbleSwipeSlop: Float = touchSlop * 2f
+
 
     init {
         // disable system sound effect and haptic feedback
@@ -135,7 +182,97 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             swipeTotalY = 0
             gestureConsumed = false
         }
+        cancelBubbleTimer()
+        hideBubble()
         // double tap state should be preserved on touch up
+    }
+
+    /** 取消「按住 / 上滑停留一会儿再弹气泡」的两个定时器。 */
+    private fun cancelBubbleTimer() {
+        bubbleJob?.cancel()
+        bubbleJob = null
+        bubbleSwipeJob?.cancel()
+        bubbleSwipeJob = null
+    }
+
+    /**
+     * 长按：按住 [bubblePressDelay] 后弹气泡。
+     *
+     * 定时器一旦启动就要能跑到点：中途手指轻微抖动不应该把它掐掉（那样用户会「按住很久也没反应」），
+     * 真正决定弹不弹的是 [showBubble] 里的「手指还在不在键附近」。只有明确飘远了（MOVE 里判断）
+     * 才取消。
+     */
+    private fun startBubbleTimer() {
+        if (bubbleJob != null || bubbleTriggered) return
+        bubbleJob = lifecycleScope.launch {
+            delay(bubblePressDelay)
+            bubbleJob = null
+            showBubble()
+        }
+    }
+
+    /** 上滑：手指必须在键附近停住 [bubbleSwipeDelay] 才弹气泡，快速上滑不会弹。 */
+    private fun startBubbleSwipeTimer() {
+        if (bubbleTriggerOnLongPress || bubbleTriggered || bubbleSwipeJob != null) return
+        bubbleSwipeJob = lifecycleScope.launch {
+            delay(bubbleSwipeDelay)
+            bubbleSwipeJob = null
+            showBubble()
+        }
+    }
+
+    private fun showBubble() {
+        if (bubbleView != null || bubbleTriggered) return
+        val controller = bubbleController ?: run {
+            Log.w(BUBBLE_TAG, "showBubble: bubbleController == null")
+            return
+        }
+        if (!isAttachedToWindow) {
+            Log.w(BUBBLE_TAG, "showBubble: view not attached")
+            return
+        }
+        // 这里刻意不再判断「手指离按键多远」：长按和上滑本来就会让手指离开键帽，
+        // 26 键的键宽只有 35px 上下，按漂移量做闸门会把气泡几乎全部挡掉。
+        // 真正决定「要不要选气泡里的项」的是接下来手指往哪儿滑 —— 滑动即切换高亮。
+        val popup = KeyBubblePopup(context)
+        popup.show(
+            anchor = this,
+            items = controller.bubbleItems,
+            normalTextColor = controller.bubbleTextColor,
+            selectedTextColor = controller.bubbleSelectedTextColor,
+            bgColor = controller.bubbleBackgroundColor,
+            selectedBgColor = controller.bubbleSelectedBackgroundColor,
+            cornerRadius = controller.bubbleCornerRadius,
+            strokeColor = controller.bubbleStrokeColor,
+            strokeWidth = controller.bubbleStrokeWidth,
+        )
+        bubbleView = popup
+        bubbleTriggered = true
+        Log.i(
+            BUBBLE_TAG,
+            "showBubble: labels=${controller.bubbleItems.map { it.label }} " +
+                "showing=${popup.isShowing} left=${popup.contentLeft} width=${popup.contentWidth}",
+        )
+        // 气泡出现时补一次长按触感，让「弹出来了」有明确反馈。
+        InputFeedbacks.hapticFeedback(this, true)
+    }
+
+    private fun hideBubble() {
+        bubbleView?.dismiss()
+        bubbleView = null
+        bubbleTriggered = false
+    }
+
+    /**
+     * 抬手时如果气泡没弹出来，把这次上滑当作「直接输入次级符号 / 数字」处理。
+     * 这是「快速上滑 = 输入数字，上滑后停住 = 弹气泡」的分界点。
+     */
+    private fun fireSwipeAltActionIfNeeded(): Boolean {
+        if (!bubbleSwipedUp || bubbleTriggered) return false
+        val action = bubbleSwipeAltAction ?: return false
+        resetState()
+        onBubbleAction?.invoke(action)
+        return true
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -147,6 +284,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 if (!isEnabled) return false
                 drawableHotspotChanged(x, y)
                 isPressed = true
+                downX = x
+                downY = y
+                bubbleSwipedUp = false
                 InputFeedbacks.hapticFeedback(this)
                 InputFeedbacks.soundEffect(context, soundEffect)
                 onTouchDownListener?.invoke(this)
@@ -169,12 +309,27 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                     swipeLastX = x
                     swipeLastY = y
                 }
+                if (bubbleController != null && bubbleTriggerOnLongPress) {
+                    startBubbleTimer()
+                }
             }
 
             MotionEvent.ACTION_UP -> {
                 isPressed = false
                 onTouchUpListener?.invoke(this)
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
+                if (bubbleView != null) {
+                    commitBubbleSelection()
+                    return true
+                }
+                // 上滑了但气泡还没弹出来（手指没停住）→ 按「直接上滑输入」处理。
+                if (fireSwipeAltActionIfNeeded()) return true
+                // 气泡模式却没弹出气泡：别把这次点击吞掉。
+                if (bubbleController != null && !bubbleTriggered) {
+                    resetState()
+                    bubbleFallbackClick()
+                    return true
+                }
                 val shouldPerformClick =
                     !(touchMovedOutside || longPressTriggered || repeatStarted || swipeRepeatTriggered || gestureConsumed)
                 resetState()
@@ -208,12 +363,34 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                         longPressJob?.cancel()
                         longPressJob = null
                     }
+                    // 气泡的定时器不在这里取消：长按 / 上滑本来就会让手指离开键帽，
+                    // 一移动就取消的话，「按住等气泡」几乎不可能成功。
                     if (repeatEnabled) {
                         repeatHandler.removeCallbacks(repeatRunnable)
                     }
                     if (repeatStarted || (!swipeEnabled && !keyboardGestureEnabled)) {
                         isPressed = false
                     }
+                }
+                // 气泡展示期间：完全由气泡接管，左右滑切项、上下滑不动，抬手才提交。
+                if (bubbleView != null) {
+                    moveBubbleSelection(x)
+                    return true
+                }
+                // 上滑识别（跟「长按弹不弹气泡」无关，否则快速上滑会被漏掉）：
+                //   快速上滑抬手 → ACTION_UP 里直接输入符号 / 数字；
+                //   上滑后停住   → 弹气泡（长按那一档已经弹出来的话就直接用它的结果）。
+                if (bubbleController != null) {
+                    if (y - downY < -bubbleSwipeSlop) {
+                        bubbleSwipedUp = true
+                        startBubbleSwipeTimer()
+                    } else if (bubbleSwipedUp) {
+                        // 上滑之后又滑回键内：这次不算上滑输入，交回长按 / 点击那条路。
+                        bubbleSwipedUp = false
+                        cancelBubbleTimer()
+                    }
+                    // 气泡路径接管了上滑：不再走下面那套上滑手势，否则抬手会被重复触发一次。
+                    if (bubbleSwipedUp) return true
                 }
                 if ((!swipeEnabled && !keyboardGestureEnabled) || (longPressTriggered && !keyboardGestureEnabled && !swipeEnabled) || repeatStarted) return true
                 val countX = consumeSwipe(x, SwipeAxis.X)
@@ -238,6 +415,64 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             }
         }
         return true
+    }
+
+    /**
+     * 把当前 x 坐标换算成气泡里的高亮项。
+     *
+     * 高亮项按气泡的**屏幕坐标**取最近一项，而不是按手指相对按键的位移，
+     * 这样手指滑到气泡哪一项，高亮的就是哪一项（主流输入法的手感）；
+     * 滑出气泡左右边界时夹到首尾两项，避免「划出去就没反应」。
+     */
+    private fun moveBubbleSelection(x: Float) {
+        val popup = bubbleView ?: return
+        if (popup.itemCount == 0) return
+        val step = popup.itemStep
+        if (step <= 0f) return
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        val screenX = location[0] + x
+        val rawIndex = ((screenX - popup.contentLeft) / step).toInt()
+        val target = when {
+            screenX < popup.contentLeft -> 0
+            screenX >= popup.contentLeft + popup.contentWidth -> popup.itemCount - 1
+            else -> rawIndex.coerceIn(0, popup.itemCount - 1)
+        }
+        if (target == popup.selectedIndex) return
+        val controller = bubbleController ?: return
+        if (popup.selectIndex(
+                index = target,
+                normalTextColor = controller.bubbleTextColor,
+                selectedTextColor = controller.bubbleSelectedTextColor,
+                selectedBgColor = controller.bubbleSelectedBackgroundColor,
+            )
+        ) {
+            InputFeedbacks.hapticFeedback(this)
+        }
+    }
+
+    /** 抬手：提交气泡里高亮的那一项；顺带清掉可能还挂着的长按 / 上滑定时器。 */
+    private fun commitBubbleSelection() {
+        val popup = bubbleView
+        val controller = bubbleController
+        val action = controller?.bubbleItems?.getOrNull(popup?.selectedIndex ?: 0)?.action
+        hideBubble()
+        resetState()
+        if (action != null) {
+            onBubbleAction?.invoke(action)
+        }
+    }
+
+    /**
+     * 气泡路径下「原本会被吞掉」的那次点击。
+     *
+     * 气泡模式会摘掉按键自己的长按监听（长按改成弹气泡），所以一旦气泡没能显示出来，
+     * 用户按下去就会「什么都不发生」。这时补一次普通点击，结果等同于轻点这个键
+     * （26 键打字、九键进候选），不会丢输入。
+     */
+    private fun bubbleFallbackClick() {
+        Log.w(BUBBLE_TAG, "bubble not shown -> fallback click on $this")
+        performClick()
     }
 
     private fun dispatchGestureEvent(
@@ -308,6 +543,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     }
 
     companion object {
+        /** 气泡诊断日志的 tag；日志在应用内「设置 → 运行日志」里能直接看到。 */
+        const val BUBBLE_TAG = "ImeBubble"
+
         const val longPressDelay = 250L
         const val RepeatInterval = 100L
     }

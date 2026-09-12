@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.KeyboardKeyMapping
 import com.ninthsoft.ime.engine.data.CandidatePinYin
+import com.ninthsoft.ime.input.keyboard.key.KeyBubbleItem
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
@@ -22,7 +24,7 @@ import com.ninthsoft.ime.input.keyboard.key.zeroKey
 class T15Keyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
+) : BaseKeyboard(context, colors, { ctx -> buildLayout(ctx) }), ISidePanelKeyboard {
     private val fullWidthPunctuations = listOf("，", "。", "！", "？", "：", "~", "...")
     private val halfWidthPunctuations = listOf(",", ".", "!", "?", ":", "~", "...")
     var punctuations = fullWidthPunctuations
@@ -70,7 +72,8 @@ class T15Keyboard(
             letters: String,
             percentWidth: Float = 0.23333f,
             mainTextTranslationY: Int = 0,
-            altTextTranslationY: Int = 4
+            altTextTranslationY: Int = 4,
+            bubble: List<KeyBubbleItem>? = null,
         ) = KeyDef(
             appearance = KeyDef.Appearance.AltText(
                 displayText = letters,
@@ -84,47 +87,70 @@ class T15Keyboard(
                 KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(send)),
                 KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit), altInput = true)
             ),
+            bubble = bubble,
         )
 
-        val Layout: List<List<KeyDef>> = listOf(
-            listOf(
-                sidePannelKey(rowSpan = 3, visableRow = 4, percentWidth = npercentWidth),
-                mixedAlphabetKey("1", "q", "b", percentWidth = percentWidth),
-                mixedAlphabetKey("2", "w", "p", percentWidth = percentWidth),
-                mixedAlphabetKey("3", "e", "m", percentWidth = percentWidth),
-                mixedAlphabetKey("4", "r", "rf", percentWidth = percentWidth),
-                mixedAlphabetKey("5", "t", "ẑz", percentWidth = percentWidth),
-                backspaceKey(percentWidth = npercentWidth),
-            ),
-            listOf(
-                mixedAlphabetKey("6", "a", "d", percentWidth = percentWidth),
-                mixedAlphabetKey("7", "s", "t", percentWidth = percentWidth),
-                mixedAlphabetKey("8", "d", "n", percentWidth = percentWidth),
-                mixedAlphabetKey("9", "f", "l", percentWidth = percentWidth),
-                mixedAlphabetKey("0", "g", "ĉc", percentWidth = percentWidth),
-                clearKey(percentWidth = npercentWidth),
-            ),
-            listOf(
-                mixedAlphabetKey(
-                    "&", "z", "gj", percentWidth = percentWidth, altTextTranslationY = 0
-                ), mixedAlphabetKey(
-                    "*", "x", "kq", percentWidth = percentWidth, altTextTranslationY = 4
-                ), mixedAlphabetKey(
-                    "^", "c", "hx", percentWidth = percentWidth, altTextTranslationY = 6
-                ), mixedAlphabetKey(
-                    "#", "v", "yw", percentWidth = percentWidth, altTextTranslationY = 2
-                ), mixedAlphabetKey(
-                    ";", "b", "ŝs", percentWidth = percentWidth, altTextTranslationY = 2
-                ), zeroKey(percentWidth = npercentWidth)
-            ),
-            listOf(
-                layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = npercentWidth),
-                schemaSwitchKey(0.11667f),
-                spaceKey(percentWidth = 0.42667f),
-                peroidKey(percentWidth = 0.11667f),
-                returnKey(percentWidth = npercentWidth),
-            ),
-        )
+        /**
+         * 15 键布局。
+         *
+         * 15 键自己有一套「数字键 ≈ 一组声母 / 韵母」的键位（如 `4` 同时管 `r`，`rf` 两个韵母），
+         * 和九宫格按 ABC/DEF 分组的字母不是一回事，所以这里**不接入九键的字母映射**，
+         * 保持原有键位；只是给每个键补上气泡（主键 + 该键现有的字母），
+         * 让长按 / 上滑时有和 26 键一致的左右划选体验。
+         */
+        fun buildLayout(context: Context): List<List<KeyDef>> {
+            fun mixed(
+                digit: String,
+                send: String,
+                letters: String,
+                percentWidth: Float = this.percentWidth,
+                mainTextTranslationY: Int = 0,
+                altTextTranslationY: Int = 4,
+            ): KeyDef = mixedAlphabetKey(
+                digit = digit,
+                send = send,
+                letters = letters,
+                percentWidth = percentWidth,
+                mainTextTranslationY = mainTextTranslationY,
+                altTextTranslationY = altTextTranslationY,
+                bubble = KeyboardKeyMapping.t9BubbleItems(context, digit, letters),
+            )
+
+            return listOf(
+                listOf(
+                    sidePannelKey(rowSpan = 3, visableRow = 4, percentWidth = npercentWidth),
+                    mixed("1", "q", "b", percentWidth = percentWidth),
+                    mixed("2", "w", "p", percentWidth = percentWidth),
+                    mixed("3", "e", "m", percentWidth = percentWidth),
+                    mixed("4", "r", "rf", percentWidth = percentWidth),
+                    mixed("5", "t", "ẑz", percentWidth = percentWidth),
+                    backspaceKey(percentWidth = npercentWidth),
+                ),
+                listOf(
+                    mixed("6", "a", "d", percentWidth = percentWidth),
+                    mixed("7", "s", "t", percentWidth = percentWidth),
+                    mixed("8", "d", "n", percentWidth = percentWidth),
+                    mixed("9", "f", "l", percentWidth = percentWidth),
+                    mixed("0", "g", "ĉc", percentWidth = percentWidth),
+                    clearKey(percentWidth = npercentWidth),
+                ),
+                listOf(
+                    mixed("&", "z", "gj", altTextTranslationY = 0),
+                    mixed("*", "x", "kq", altTextTranslationY = 4),
+                    mixed("^", "c", "hx", altTextTranslationY = 6),
+                    mixed("#", "v", "yw", altTextTranslationY = 2),
+                    mixed(";", "b", "ŝs", altTextTranslationY = 2),
+                    zeroKey(percentWidth = npercentWidth),
+                ),
+                listOf(
+                    layoutSwitchKey("?123", NumberKeyboard.NAME, percentWidth = npercentWidth),
+                    schemaSwitchKey(0.11667f),
+                    spaceKey(percentWidth = 0.42667f),
+                    peroidKey(percentWidth = 0.11667f),
+                    returnKey(percentWidth = npercentWidth),
+                ),
+            )
+        }
     }
 
     override fun name(): String {

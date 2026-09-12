@@ -24,6 +24,9 @@ class KeyboardSettingsActivity : ComponentActivity() {
                     onOpenSidePanelSymbols = {
                         startActivity(Intent(this, SidePanelSymbolsActivity::class.java))
                     },
+                    onOpenKeyMapping = {
+                        startActivity(Intent(this, KeyMappingActivity::class.java))
+                    },
                 )
             }
         }

@@ -191,8 +191,8 @@
     <string name="gesture_alt_input">符号 / 数字输入方式</string>
     <string name="gesture_long_press">长按输入</string>
     <string name="gesture_swipe_up">上滑输入</string>
-    <string name="gesture_long_press_desc">长按字母键，输入键上的符号或数字</string>
-    <string name="gesture_swipe_up_desc">在字母键上向上滑动，输入键上的符号或数字（26 键 / 九键 / 15 键）</string>
+    <string name="gesture_long_press_desc">长按字母键，输入键上的符号或数字（开启「按键气泡」时为弹出气泡）</string>
+    <string name="gesture_swipe_up_desc">在字母键上向上滑动，输入键上的符号或数字；开启「按键气泡」时改为弹出气泡，左右滑动选择（26 键 / 九键 / 15 键）</string>
 
     <!-- Commit / preview settings -->
     <string name="commit_settings">上屏设置</string>
@@ -219,6 +219,25 @@
     <string name="side_panel_symbols_custom">自定义符号…</string>
     <string name="side_panel_symbols_custom_title">添加自定义符号</string>
     <string name="side_panel_symbols_custom_hint">输入要添加的符号</string>
+
+    <!-- Key mapping / key bubble -->
+    <string name="key_mapping">按键映射</string>
+    <string name="key_mapping_qwerty">26 键字母键</string>
+    <string name="key_mapping_qwerty_desc">字母键下的符号 / 数字</string>
+    <string name="key_mapping_qwerty_hint">点任意字母键，改它下面的符号或数字；改了以后键帽右下角和长按气泡都会跟着变。</string>
+    <string name="key_mapping_t9">九键字母</string>
+    <string name="key_mapping_t9_desc">2～9 每个数字键包含的字母</string>
+    <string name="key_mapping_t9_hint">点任意数字键，改它包含的字母；键帽上显示的字母和长按气泡里的候选项都会跟着变。</string>
+    <string name="key_mapping_quick_pick">点击填入</string>
+    <string name="key_mapping_reset">恢复默认</string>
+    <string name="key_mapping_restore_default">恢复默认值</string>
+    <string name="key_mapping_symbol_title">%1$s 键下的符号</string>
+    <string name="key_mapping_symbol_hint">符号或数字</string>
+    <string name="key_mapping_letters_title">%1$s 键的字母</string>
+    <string name="key_mapping_letters_hint">如 abc</string>
+    <string name="key_bubble">按键气泡</string>
+    <string name="key_bubble_enabled">长按 / 上滑弹出气泡</string>
+    <string name="key_bubble_desc">在字母键或九宫格数字键上长按（「按键手势」设为上滑时为上滑）会弹出气泡，气泡里是该键的各个候选项；手指按住不放左右滑动切换，松开输入高亮的那一项。关闭后回到直接输入符号 / 数字的旧行为。</string>
 
     <!-- Toolbar tools -->
     <string name="toolbar_tools">工具栏工具</string>

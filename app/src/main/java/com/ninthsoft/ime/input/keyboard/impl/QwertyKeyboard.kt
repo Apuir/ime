@@ -6,6 +6,7 @@ import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.util.PunctuationUtil
 import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.KeyboardKeyMapping
 import com.ninthsoft.ime.engine.event.KeyEvent
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
@@ -27,7 +28,7 @@ import com.ninthsoft.ime.input.keyboard.key.symbolPageKey
 class QwertyKeyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-) : BaseKeyboard(context, colors, buildLayout()) {
+) : BaseKeyboard(context, colors, { ctx -> buildLayout(ctx) }) {
 
     enum class CapsState { None, Once, Lock }
 
@@ -36,40 +37,42 @@ class QwertyKeyboard(
     companion object {
         const val NAME = "Qwerty"
 
-        fun buildLayout(): List<List<KeyDef>> {
+        /** 字母键上主文字 / 次级文字的微调，保持旧版写死布局里的手工对齐。 */
+        private val keyTextOffsets: Map<String, Pair<Int, Int>> = mapOf(
+            // 字母 -> (altTextTranslationY, mainTextTranslationY)
+            "g" to (2 to -2),
+            "j" to (4 to -2),
+            "l" to (4 to -2),
+        )
+
+        /**
+         * 26 键布局。字母键下的符号 / 数字来自用户映射（[KeyboardKeyMapping]），
+         * 没改过的键就是旧版写死的那套（q→1、g→$ …），因此默认行为不变。
+         *
+         * [withBubble] 同时给字母键带上气泡内容：小写字母 → 该键的符号 / 数字 → 大写字母。
+         */
+        fun buildLayout(context: Context, withBubble: Boolean = true): List<List<KeyDef>> {
+            fun letter(character: String): KeyDef {
+                val (altY, mainY) = keyTextOffsets[character] ?: (2 to -2)
+                return alphabetKey(
+                    character = character,
+                    punctuation = KeyboardKeyMapping.qwertySymbol(context, character),
+                    altTextTranslationY = altY,
+                    mainTextTranslationY = mainY,
+                    bubble = if (withBubble) {
+                        KeyboardKeyMapping.qwertyBubbleItems(context, character)
+                    } else {
+                        null
+                    },
+                )
+            }
+
             return listOf(
-                listOf(
-                    alphabetKey("q", "1"),
-                    alphabetKey("w", "2"),
-                    alphabetKey("e", "3"),
-                    alphabetKey("r", "4"),
-                    alphabetKey("t", "5"),
-                    alphabetKey("y", "6"),
-                    alphabetKey("u", "7"),
-                    alphabetKey("i", "8"),
-                    alphabetKey("o", "9"),
-                    alphabetKey("p", "0"),
-                ),
-                listOf(
-                    alphabetKey("a", "~"),
-                    alphabetKey("s", "!"),
-                    alphabetKey("d", "@"),
-                    alphabetKey("f", "#"),
-                    alphabetKey("g", "$", mainTextTranslationY = -2),
-                    alphabetKey("h", "%"),
-                    alphabetKey("j", "^", altTextTranslationY = 4),
-                    alphabetKey("k", "&"),
-                    alphabetKey("l", "*", altTextTranslationY = 4),
-                ),
+                listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p").map(::letter),
+                listOf("a", "s", "d", "f", "g", "h", "j", "k", "l").map(::letter),
                 listOf(
                     capsLockKey(),
-                    alphabetKey("z", "("),
-                    alphabetKey("x", ")"),
-                    alphabetKey("c", ":"),
-                    alphabetKey("v", ";"),
-                    alphabetKey("b", ","),
-                    alphabetKey("n", "?"),
-                    alphabetKey("m", "/"),
+                    *listOf("z", "x", "c", "v", "b", "n", "m").map(::letter).toTypedArray(),
                     backspaceKey(),
                 ),
                 listOf(
@@ -96,6 +99,7 @@ class QwertyKeyboard(
                 ),
             )
         }
+
     }
 
     private var capsState = CapsState.None

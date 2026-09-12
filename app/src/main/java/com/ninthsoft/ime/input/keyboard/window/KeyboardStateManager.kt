@@ -73,12 +73,16 @@ object KeyboardStateManager {
             return
         }
         if (keyboardAttached) return
-        currentKeyboardName?.let { name ->
-            keyboards[name]?.let { kb ->
-                kb.onAttach()
-                callback?.onShowKeyboard(kb)
-            }
+        val name = currentKeyboardName
+        val keyboard = name?.let { keyboards[it] }
+        if (keyboard == null) {
+            // 注册表被 rebuild 清空后名字可能还留着：按新配置重新创建，
+            // 不要只把 keyboardAttached 置真却没有任何键盘可显示。
+            switchTo(name ?: currentSchema?.layout ?: defaultKeyboardName)
+            return
         }
+        keyboard.onAttach()
+        callback?.onShowKeyboard(keyboard)
         keyboardAttached = true
     }
 
@@ -186,11 +190,22 @@ object KeyboardStateManager {
         keyboardAttached = false
     }
 
+    /**
+     * 丢弃注册表里缓存的键盘实例，让下次创建重新走 [keyboardFactory]（含主题配色）。
+     *
+     * 主题切换通常发生在键盘收起时（在设置页里改配色）：此时 [keyboardAttached] 为 false，
+     * 不能像已挂载时那样立刻建好并挂上去，但**必须把旧实例清掉**——键盘实例在创建时就把
+     * `ColorScheme` 固化进 KeyView 了，留着它们会让 [onAttach] 复用「上一个主题」的键盘，
+     * 出现「面板 / 背景已经换色、键帽还是旧配色」的半刷新状态，自定义主题也会看起来没生效。
+     */
     fun rebuild() {
+        val wasAttached = keyboardAttached
         val currentName = currentKeyboardName
         detachCurrent()
         keyboards.clear()
-        if (currentName != null) {
+        // 已挂载：立刻用新配色重建当前键盘；未挂载：保持 currentKeyboardName 为空，
+        // 下次 onAttach / startInput 会按新配置重新创建。
+        if (wasAttached && currentName != null) {
             switchTo(currentName)
         }
     }

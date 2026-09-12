@@ -50,6 +50,7 @@ fun KeyboardSettingsScreen(
     onBack: () -> Unit,
     onOpenToolbarSettings: () -> Unit = {},
     onOpenSidePanelSymbols: () -> Unit = {},
+    onOpenKeyMapping: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // 「系统触感」模式只能通过 View 才能拿到厂商预置的按键效果，所以预览也需要它。
@@ -314,6 +315,20 @@ fun KeyboardSettingsScreen(
                     title = stringResource(R.string.side_panel_symbols),
                     value = stringResource(R.string.side_panel_symbols_desc),
                     onClick = onOpenSidePanelSymbols,
+                )
+            }
+
+            SettingsGroup(title = stringResource(R.string.key_mapping)) {
+                ClickableRow(
+                    title = stringResource(R.string.key_mapping_qwerty),
+                    value = stringResource(R.string.key_mapping_qwerty_desc),
+                    onClick = onOpenKeyMapping,
+                )
+                ClickableRow(
+                    title = stringResource(R.string.key_mapping_t9),
+                    value = stringResource(R.string.key_mapping_t9_desc),
+                    onClick = onOpenKeyMapping,
+                    showDivider = false,
                 )
             }
 

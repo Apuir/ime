@@ -8,6 +8,14 @@ open class KeyDef(
     val appearance: Appearance,
     val behaviors: Set<Behavior>,
     val popups: Array<Popup>? = null,
+    /**
+     * 长按 / 上滑时按键上方弹出的气泡内容（从左到右）。
+     *
+     * 与 [popups] 里那套「长按弹菜单 / 弹小键盘」是两条独立通路：气泡由
+     * `CustomGestureView` 直接接管触摸并支持左右划选，是 26 键 / 九宫格的主交互；
+     * [popups] 留给符号键盘等需要弹一整排按键的场景。为空表示这个键不弹气泡。
+     */
+    val bubble: List<KeyBubbleItem>? = null,
 ) {
     sealed class Appearance(
         val percentWidth: Float,

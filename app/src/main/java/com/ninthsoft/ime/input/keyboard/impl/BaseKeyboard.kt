@@ -5,13 +5,17 @@ import android.content.Context
 import android.graphics.Color
 import android.view.inputmethod.EditorInfo
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.updateLayoutParams
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.PunctuationMode
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.KeyboardKeyMapping
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.keyboard.key.AltTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
+import com.ninthsoft.ime.input.keyboard.key.HasKeyBubble
+import com.ninthsoft.ime.input.keyboard.key.KeyBubbleItem
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
 import com.ninthsoft.ime.input.keyboard.key.ImageTextKeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
@@ -23,6 +27,7 @@ import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import com.ninthsoft.ime.input.keyboard.key.TextKeyView
+import android.util.Log
 import kotlin.math.roundToInt
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.above
@@ -43,7 +48,12 @@ import timber.log.Timber
 abstract class BaseKeyboard(
     context: Context,
     protected val colors: KeyboardColors.ColorScheme,
-    private val keyLayout: List<List<KeyDef>>,
+    /**
+     * 布局工厂。用工厂而不是直接传 `List<List<KeyDef>>`，是因为 26 键 / 九键的键帽
+     * 需要读用户的按键映射（26 键字母键下的符号、九键每个数字键下的字母），
+     * 而 `buildLayout()` 只有在子类构造完成后才能安全地用 `context`。
+     */
+    private val keyLayoutFactory: (Context) -> List<List<KeyDef>>,
 ) : ConstraintLayout(context), IKeyboard {
     override var keyActionListener: KeyActionListener? = null
     var expandKeypressArea = false
@@ -56,6 +66,12 @@ abstract class BaseKeyboard(
     private var spaceKeyView: TextKeyView? = null
     private var returnKeyView: ImageKeyView? = null
     private var returnKeyIcon: Int = 0
+
+    /** 按键气泡开关：关闭后回到旧行为（长按 / 上滑直接上屏符号或数字）。 */
+    private val keyBubbleEnabled: Boolean = KeyboardKeyMapping.isBubbleEnabled(context)
+
+    /** 次级符号 / 数字的触发手势，与「按键手势」设置共用。 */
+    private val swipeAltInput: Boolean = KeyboardManager.Keyboard.GestureInput.isSwipeUp(context)
 
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.updateText(text)
@@ -84,6 +100,8 @@ abstract class BaseKeyboard(
             val endRow: Int,
             val alignRight: Boolean,
         )
+
+        val keyLayout = keyLayoutFactory(context)
 
         val spanDefs = mutableListOf<SpanDef>()
         for (ri in keyLayout.indices) {
@@ -198,7 +216,6 @@ abstract class BaseKeyboard(
 
     @SuppressLint("ClickableViewAccessibility")
     protected fun createKeyView(def: KeyDef): KeyView {
-        val swipeAltInput = KeyboardManager.Keyboard.GestureInput.isSwipeUp(context)
         return when (def.appearance) {
             is KeyDef.Appearance.AltText -> AltTextKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, colors, def.appearance)
@@ -211,6 +228,13 @@ abstract class BaseKeyboard(
             }
             if (def.appearance.viewId == KeyView.button_space && this is TextKeyView) {
                 spaceKeyView = this
+            }
+            val bubbleItems = def.bubble.orEmpty()
+            val pressAction = def.behaviors.filterIsInstance<KeyDef.Behavior.Press>()
+                .firstOrNull()?.action
+            val bubbleActive = keyBubbleEnabled && bubbleItems.isNotEmpty() && pressAction != null
+            if (bubbleActive && pressAction != null) {
+                attachKeyBubble(this, bubbleItems, pressAction)
             }
             borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
             onPressedChanged = { key ->
@@ -306,7 +330,14 @@ abstract class BaseKeyboard(
                     }
 
                     is KeyDef.Behavior.LongPress -> {
-                        if (behavior.altInput && swipeAltInput) {
+                        if (bubbleActive && this is AltTextKeyView) {
+                            // 气泡模式：长按一律弹气泡（不再跟着「按键手势」摇摆，少一个互相打架的维度）。
+                            // 「按键手势」只影响上滑：
+                            //   上滑模式下快速上滑抬手 = 直接输入符号 / 数字（bubbleSwipeAltAction），
+                            //   上滑后停住 = 弹气泡；长按模式下按键不上滑，就是长按弹气泡。
+                            bubbleTriggerOnLongPress = true
+                            bubbleSwipeAltAction = behavior.action.takeIf { behavior.altInput }
+                        } else if (behavior.altInput && swipeAltInput) {
                             // 上滑手势模式：次级符号/数字改为上滑触发，长按不再触发。
                             setupSwipeAltInput(this, behavior.action)
                         } else {
@@ -356,6 +387,46 @@ abstract class BaseKeyboard(
                 }
             }
         }
+    }
+
+    /**
+     * 给按键接上「长按 / 上滑弹气泡」。
+     *
+     * 只负责把内容和配色交给手势层，具体的按下 / 滑动 / 抬手分发在
+     * [CustomGestureView] 里完成（它已经管着长按、上滑、重复这些定时器，
+     * 气泡用同一套状态机才不会和它们打架）。
+     *
+     * 气泡第一项固定是「点一下这个键本来会输入的内容」（26 键是小写字母、九宫格是数字），
+     * 所以长按后不滑动直接抬手不会出现意外结果。
+     */
+    private fun attachKeyBubble(view: KeyView, items: List<KeyBubbleItem>, pressAction: KeyboardAction) {
+        // 气泡是浮在键盘上的一层，必须是不透明色：主题里的 specialKeyBackground /
+        // accentKeyBackground 都带 alpha（半透明键帽），直接拿去画会透出下层内容。
+        // 这里统一先与键盘背景合成，得到不透明的等效颜色。
+        val bubbleBg = ColorUtils.compositeColors(colors.specialKeyBackground, colors.background)
+        val bubbleSelectedBg = ColorUtils.compositeColors(colors.accentKeyBackground, colors.background)
+        // 描边与键帽同一套：同样的圆角、同样的描边色 / 厚度，气泡才像是键盘的一部分。
+        // 边框由「按键设置 → 绘制键边框」统一控制，关掉就一起不画。
+        val strokeColor = if (KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)) {
+            colors.keyBorderStroke
+        } else {
+            Color.TRANSPARENT
+        }
+        view.bubbleController = object : HasKeyBubble {
+            override val bubbleItems: List<KeyBubbleItem> = items
+            override val bubbleBackgroundColor: Int = bubbleBg
+            override val bubbleSelectedBackgroundColor: Int = bubbleSelectedBg
+            override val bubbleTextColor: Int = colors.keyText
+            override val bubbleSelectedTextColor: Int =
+                if (ColorUtils.calculateLuminance(bubbleSelectedBg) > 0.5) Color.BLACK else Color.WHITE
+            override val bubbleCornerRadius: Float = dp(colors.cornerRadius).toFloat()
+            override val bubbleStrokeColor: Int = strokeColor
+            override val bubbleStrokeWidth: Int = dp(colors.keyBorderWidth).toInt()
+        }
+        view.onBubbleAction = { action -> onAction(action) }
+        // 兜底：气泡路径会接管长按 / 上滑，万一气泡没能显示出来（例如 PopupWindow 被系统拒绝），
+        // 抬手时还可以走一次普通点击，至少不会「按了没反应」。
+        view.setOnClickListener { onAction(pressAction) }
     }
 
     /**

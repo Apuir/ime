@@ -26,8 +26,8 @@ val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 20000
-        versionName = "2.0.0"
+        versionCode = 20101
+        versionName = "2.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -69,10 +69,11 @@ val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             )
-            // 有 keystore.properties 时自动签名；没有则产出 app-release-unsigned.apk
+            // 有 keystore.properties 时自动签名；没有则产出未签名 APK
             signingConfig = signingConfigs.findByName("release")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -136,4 +137,47 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// ---------------------------------------------------------------------------
+// APK 文件名：ime-<版本号>.apk / ime-<版本号>-debug.apk
+//
+// 为什么要用后置改名而不是 AGP 的 outputFileName：AGP 9 的新 Variant API 里
+// 已没有输出文件名的可写入口（`applicationVariants` / `outputFileName` 都不再可用），
+// 这里在 assemble 完成后把产物改名，产物目录仍是 outputs/apk/<buildType>/。
+// ---------------------------------------------------------------------------
+val apkVersionName: String = android.defaultConfig.versionName ?: "unknown"
+
+listOf("Debug" to "-debug", "Release" to "").forEach { (buildType, suffix) ->
+    tasks.register("rename${buildType}Apk") {
+        group = "build"
+        description = "把 $buildType APK 改名为 ime-$apkVersionName$suffix.apk"
+        val outputDir = layout.buildDirectory.dir("outputs/apk/${buildType.lowercase()}")
+        val apkSuffix = suffix
+        doLast {
+            val dir = outputDir.get().asFile
+            if (!dir.isDirectory) return@doLast
+            dir.listFiles { f -> f.isFile && f.name.endsWith(".apk") }
+                .orEmpty()
+                .sortedBy { it.name }
+                // 多输出（如按 ABI 拆分）时后面的会带上序号，避免重名互相覆盖。
+                .forEachIndexed { index, file ->
+                    val extra = if (index == 0) "" else "-abi$index"
+                    val target = File(dir, "ime-$apkVersionName$apkSuffix$extra.apk")
+                    if (file != target) {
+                        target.delete()
+                        file.renameTo(target)
+                    }
+                }
+        }
+    }
+}
+
+// AGP 的 assemble<BuildType> 是配置后期才注册的，所以要等 afterEvaluate 里再挂 finalizedBy。
+afterEvaluate {
+    listOf("Debug", "Release").forEach { buildType ->
+        val assembleTask = tasks.findByName("assemble$buildType") ?: return@forEach
+        val renameTask = tasks.named("rename${buildType}Apk")
+        assembleTask.finalizedBy(renameTask)
+    }
 }

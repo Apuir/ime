@@ -90,6 +90,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.KeyMappingActivity"
+            android:exported="false"
+            android:label="@string/key_mapping"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"

@@ -28,6 +28,7 @@ import androidx.core.view.isGone
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.CandidateManager
+import com.ninthsoft.ime.data.manager.KeyboardKeyMapping
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
@@ -327,6 +328,13 @@ class KeyboardWindowView(
             -> post { refreshColors() }
 
             KeyboardManager.Keyboard.ToolbarTools.KEY -> post { panel.refreshToolbarConfig() }
+
+            // 按键映射 / 气泡开关改的是 KeyDef 里的布局与行为，必须整块重建键盘才生效
+            // （refreshColors 只重建视图、不会重新执行 buildLayout）。
+            KeyboardKeyMapping.KEY_QWERTY,
+            KeyboardKeyMapping.KEY_T9,
+            KeyboardKeyMapping.KEY_BUBBLE_ENABLED,
+            -> post { keyboardStateManager.rebuild() }
 
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {
                 keyboardStateManager.setRippleEnabled(

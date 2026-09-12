@@ -14,6 +14,7 @@ fun alphabetKey(
     punctuation: String,
     altTextTranslationY: Int = 2,
     mainTextTranslationY: Int = -2,
+    bubble: List<KeyBubbleItem>? = null,
 ) = KeyDef(
     appearance = KeyDef.Appearance.AltText(
         displayText = character,
@@ -25,10 +26,22 @@ fun alphabetKey(
     ), behaviors = setOf(
         KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(character)),
         KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(punctuation), altInput = true)
-    )
+    ),
+    bubble = bubble,
 )
 
-fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.23333f) = KeyDef(
+/**
+ * 九宫格 / 15 键的数字键。
+ *
+ * [bubble] 是长按 / 上滑时弹出的候选项（数字 + 该键下的字母）；
+ * 与 26 键不同，九宫格的数字键主键本身就是数字，所以气泡的第一项就是它。
+ */
+fun mixedAlphabetKey(
+    digit: String,
+    letters: String,
+    percentWidth: Float = 0.23333f,
+    bubble: List<KeyBubbleItem>? = null,
+) = KeyDef(
     appearance = KeyDef.Appearance.AltText(
         displayText = letters,
         altText = digit,
@@ -41,6 +54,7 @@ fun mixedAlphabetKey(digit: String, letters: String, percentWidth: Float = 0.233
         KeyDef.Behavior.Press(KeyboardAction.KeySequenceAction(digit)),
         KeyDef.Behavior.LongPress(KeyboardAction.CommitAction(digit), altInput = true)
     ),
+    bubble = bubble,
 )
 
 fun commitKey(

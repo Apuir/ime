@@ -22,7 +22,7 @@ import com.ninthsoft.ime.input.keyboard.key.sidePannelKey
 class NumberKeyboard(
     context: Context,
     colors: KeyboardColors.ColorScheme,
-) : BaseKeyboard(context, colors, Layout), ISidePanelKeyboard {
+) : BaseKeyboard(context, colors, { Layout }), ISidePanelKeyboard {
 
     init {
         this.onPossibleCandidatePinYin(emptyList())
