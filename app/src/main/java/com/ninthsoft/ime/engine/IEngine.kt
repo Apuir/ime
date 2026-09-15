@@ -24,7 +24,14 @@ interface IEngine {
     fun redo(service: InputMethodService)
     fun commit(text: String, cursorOffset: Int = 0)
     fun resortCandidates(candidates: List<EngineMessage.Candidate>): Unit?
-    fun deleteCandidate(index: Int): Unit?
+
+    /**
+     * 「忘记 / 删除」某个候选。
+     *
+     * 传整个候选而不是序号：除了让引擎把它从用户词典里删掉（`delete_candidate`），
+     * 还要按文本记一条**负反馈**（误选降权），只有序号拿不到文本。
+     */
+    fun deleteCandidate(candidate: EngineMessage.Candidate): Unit?
     fun predict(commit: String = "")
     fun reload()
     fun onStartInputView(ic: InputConnection)

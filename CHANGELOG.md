@@ -35,6 +35,86 @@ git push origin main --tags
 
 ---
 
+## [2.2.0] — 2026-09-15
+
+输入质量优化：**模糊音全开**、**常用词判断重做**、**误选后自动降权**，并把内置的
+万象拼音方案数据从 `17.2.4` 升级到 `17.9.9`（与作者桌面一致）。
+
+### 方案数据
+
+- `feat(schema)`: 内置万象拼音升级 `17.2.4` → `17.9.9`。新增
+  `context_reorder`（上下文调频）、`super_sequence`（手动排序）、`random_tools`
+  （UUID / 随机密码）、`unicode_conversion`、`number_conversion` 等模块，
+  `wanxiang_algebra.yaml` 从 133 KB 涨到 152 KB。
+- `feat(schema)`: **模糊音默认开启**（`safe` 档 6 组：zh/z、ch/c、sh/s、n/l、
+  an/ang、en/eng、in/ing）。`zongguo` → 中国。规则本身是万象自带的
+  （`wanxiang_algebra.yaml` 的 `模糊音_*` 节点），本次只是把它们从注释状态启用；
+  档位与取舍见下方「升级提示」与 [`docs/DEVELOPMENT.md` 9.4](docs/DEVELOPMENT.md#模糊音本项目默认全开)。
+- `feat(schema)`: 开启万象原生的 `enable_fallback_reorder`（同码回删再输首次交换），
+  作为「误选到第 0 个候选」时的引擎侧兜底。
+- `chore(schema)`: 方案文件由脚本注入 app 桥接字段（`schema/layout`、
+  `punctuation`、`kind`、`candidateKind` 与顶层 `options:` 块）。这些是上游
+  `danjian/ime` 加的，万象官方包里没有，缺了会导致键盘不随方案切换、简繁/Emoji/
+  英文模式三个设置失效。
+
+### 候选排序与学习
+
+- `feat(ime)`: **语法模型真正接入重排**。`RimeEngine` 之前恒传 `gramDb = null`，
+  导致权重最大的语法分（0.5）永远为 0 —— 下载并加载了 `.gram` 却完全没用上。
+- `feat(ime)`: 打分引入**位次先验**（`WeightConfig.rankPrior` 0.40，最大项）。
+  改造前只用「点击数的对数 + 词长」，会无条件把长词抬前并整段打乱 Rime 的排序。
+- `feat(ime)`: 用户偏好改为**可正可负的净分**（`base/priority/PreferenceScorer`）：
+  正向用 `ln1p` 软压、负向线性见效，按 **24 h 半衰期**衰减（7 天后残值 < 1%），
+  正负双向封顶。
+- `feat(ime)`: **误选后自动降权** —— 候选上屏后又在 8 秒内被删掉，即判为误选，
+  记一条负反馈；长按删除候选同样记。对应需求「手快选错了、删掉重打时那个词应该降权」。
+- `chore(ime)`: 移除 `CandidateFeature.candidateCount`。它取「这一批候选的个数」，
+  对所有候选都是同一个值、对排序没有任何影响（原来还恒传 0）。
+- `refactor(ime)`: `CandidateRerankManager` 从「覆盖引擎顺序」改为「在引擎顺序上做
+  有依据的调整」；同分按原始位次兜底，结果是确定的。仍只重排第 1–24 位，
+  **第 0 个候选固定不动**（它是「按空格上屏」的目标，漂移会毁掉肌肉记忆）。
+- `feat(ui)`: 设置 → 候选词 → 新增「学习数据」分组，可查看记录条数并一键重置
+  （剪贴板与常用语不受影响）。
+
+### 修复
+
+- `fix(db)`: 补 `MIGRATION_8_9` —— `candidate_prefers` 增加 `bad_count` /
+  `last_bad_at` 两列。**必须有迁移**：库启用了 `fallbackToDestructiveMigration()`，
+  缺迁移会静默清空用户的剪贴板历史、常用语与候选排序记录。
+  （`7→8` 的迁移仍然缺失，是上游遗留，见 `docs/DEVELOPMENT.md` 第 10 节。）
+- `fix(ime)`: 退格删除时改为一次读取光标前 24 个字符（原来只读 1 个），用于判断
+  「删的是不是刚上屏的那个词」；不额外增加 IPC 往返。
+
+### 工具与文档
+
+- `chore(scripts)`: 新增 `scripts/build-rime-resource.py` —— 可复现地重建
+  `assets/resource.zip`（白名单取数、注入桥接字段与模糊音、保留 `predict.marisa`、
+  引用校验、输出 manifest），支持 `--dry-run` / `--fuzzy` 档位，**幂等**。
+- `chore(scripts)`: 新增 `scripts/rime-probe/` —— 在开发机上直接加载方案数据跑
+  librime 的探针。改 `speller/algebra` 之前先在那里几秒钟验完，别再靠刷机试。
+- `test`: 新增 `PreferenceScorerTest`（9 例）与 `CandidatePriorityTest`（10 例），
+  钉住「净分可负」「惩罚会过期」「引擎排序为主」这几条取向；脚本侧新增
+  `test_build_rime_resource.py`（22 例，覆盖注入正确性与幂等性）。
+- `chore(ime)`: debug 构建下 `rawInput ≥ 3` 个字符时打一行诊断日志
+  （`schema` / `input` / 候选总数 / 前 5 个候选），用于定位「简拼出不来」这类
+  只在真机复现的问题；release 构建 `Timber.treeCount == 0`，无开销。
+- `docs`: README / DEVELOPMENT 更新（版本、模糊音位置、重排设计、`resource.zip`
+  重建流程、脚本索引）；新增 `docs/plans/feat-pinyin-input-quality/`（设计说明 + 任务清单）。
+
+> ⚠️ **升级提示**
+> - `versionCode` 从 `20101` 升到 `20200`，可直接覆盖安装。
+> - 首次启动的**引擎部署会明显变慢**：模糊音改变了拼写运算，`table.bin` /
+>   `prism.bin` 必须重建（一次性成本）。请耐心等待，别在部署中途杀掉进程。
+> - 模糊音档位默认 **`safe`（6 组）**：平翘舌（zh/z、ch/c、sh/s）+ 前后鼻音
+>   （an/ang、en/eng、in/ing）+ n/l。选它的依据是实测 —— 这 6 组拿到了模糊音的
+>   全部收益（`zongguo`→中国、`cang`→常、`si`→是、`gen`/`geng` 都出「跟」、
+>   `xin`/`xing` 都出「新」），而且 `qryt` 的首选仍是「杞人忧天」、候选数
+>   2544 → 2546 几乎不涨。
+>   想要更多组可以重建：`--fuzzy all`（加上 r/l、r/y、h/f、k/g）会让 `qryt` 的
+>   候选数涨到 4011、首选变成「去了一趟」（多出的歧义来自 r/l、r/y）；
+>   `--fuzzy none` 则完全关闭模糊音。
+> - 学习数据表结构变了（v8 → v9），已带迁移，历史记录保留。
+
 ## [2.1.1] — 2026-09-12
 
 修复「换主题只换了一半」：设置页里切换主题后，面板 / 背景 / 工具栏已经变色，

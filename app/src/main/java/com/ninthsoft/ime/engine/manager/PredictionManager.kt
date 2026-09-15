@@ -16,7 +16,19 @@ import java.io.File
 
 class PredictionManager(private val context: Context) {
     private var prediction: Prediction? = null
-    private var gramDb: GramDb? = null
+
+    /**
+     * 语法模型（`.gram` / octagram）。
+     *
+     * 对 [CandidateRerankManager] 暴露只读访问：候选重排要用同一份模型，
+     * 避免两个组件各持一份 mmap。改造前重排的 `gramDb` 恒传 `null`，
+     * 语法模型白加载了。跨线程访问（加载在 rime-main，读取在默认调度器），
+     * 所以标 `@Volatile`。
+     */
+    @Volatile
+    var gramDb: GramDb? = null
+        private set
+
     private val calculator = PriorityCalculator()
 
     // 引入 Mutex 锁，防止并发重复加载导致冲突
@@ -76,10 +88,11 @@ class PredictionManager(private val context: Context) {
                     val textLen = it.word.codePointCount(0, it.word.length)
                     val score = calculator.calculate(
                         CandidateFeature(
-                            frequency = preferCount.toLong(),
+                            baseScore = gramScore,
+                            preference = preferCount.toDouble(),
                             wordLength = textLen,
-                            candidateCount = 1,
-                            baseScore = gramScore
+                            rank = index,
+                            rankSpan = words.size,
                         ), cfg
                     )
                     Candidate(

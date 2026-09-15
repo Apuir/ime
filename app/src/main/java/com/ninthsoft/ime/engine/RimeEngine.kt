@@ -72,6 +72,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         var latestPredictionRequestId: Long = 0L,
     )
 
+    /**
+     * 最近一次「从候选上屏」的记录，用来把「上屏后又删掉」判定为误选。
+     *
+     * 写在 rime-main 的 job 里、读在 actions 协程里，所以标 `@Volatile`。
+     */
+    private data class LastSelection(val text: String, val context: String, val at: Long)
+
     private sealed interface Action {
         data class ProcessKey(val service: InputMethodService, val key: KeyEvent) : Action
         data class Backspace(val rawInputEmpty: Boolean) : Action
@@ -131,6 +138,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val state = EngineState()
     private var predictionJob: Job? = null
     private var candidateRestoreJob: Job? = null
+
+    @Volatile
+    private var lastSelection: LastSelection? = null
+
     private val messages = MutableSharedFlow<EngineMessage>(
         replay = 0, extraBufferCapacity = 64
     )
@@ -255,6 +266,12 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             val ctx = context ?: return@sendJob
             val inputContext = (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "")
             AppDatabase.getInstance(ctx).candidatePreferDao().upsert(candidate.text, inputContext)
+            // 记下这次上屏：若接下来用户马上把它删掉，就是「误选」信号。
+            lastSelection = LastSelection(
+                text = candidate.text,
+                context = inputContext,
+                at = System.currentTimeMillis(),
+            )
         }
         flowBehavior(Selection(candidate.index))
     }
@@ -294,8 +311,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
     }
 
-    override fun deleteCandidate(index: Int) {
-        sendJob { deleteCandidate(index, global = true) }
+    override fun deleteCandidate(candidate: Candidate) {
+        sendJob { deleteCandidate(candidate.index, global = true) }
+        // 长按删除是用户显式的「我不想要这个词」，比回删更强的信号，一样记负反馈。
+        demoteCandidate(candidate.text, reason = "forget", inputContext = "")
     }
 
 
@@ -412,13 +431,51 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
         withContext(Dispatchers.Main.immediate) {
             val ic = inputConnection()
-            if (!ic?.getSelectedText(0).isNullOrEmpty()) {
+            val selected = ic?.getSelectedText(0)?.toString()
+            if (!selected.isNullOrEmpty()) {
+                onTextDeleted(selected)
                 messages.emit(EngineMessage.Commit(""))
                 return@withContext
             }
-            if (!ic?.getTextBeforeCursor(1, 0).isNullOrEmpty()) {
-                ic.deleteSurroundingText(1, 0)
+            // 一次读出光标前一段（而不是只读 1 个字符）：既判断「有没有内容可删」，
+            // 也用来判断「删掉的是不是刚刚上屏的那几个字」。不额外增加 IPC 往返。
+            val before = ic?.getTextBeforeCursor(UNDO_LOOKBACK_CHARS, 0)?.toString().orEmpty()
+            if (before.isNotEmpty()) {
+                ic?.deleteSurroundingText(1, 0)
+                onTextDeleted(before)
             }
+        }
+    }
+
+    /**
+     * 删除动作发生前，光标前的内容是 [textBeforeCursor]；判断这次删除算不算「误选」。
+     *
+     * 判定两个条件同时成立：
+     * 1. 距上次候选上屏不超过 [UNDO_WINDOW_MS]；
+     * 2. 被删文本的**结尾**正好是刚刚上屏的那个候选 —— 用结尾匹配而不是全等，
+     *    因为删除是逐字符发生的，删到该词第一个字时尾部就已经完整匹配。
+     *
+     * 判定成立后清掉记录，保证同一次上屏只降权一次。
+     */
+    private fun onTextDeleted(textBeforeCursor: String) {
+        val selection = lastSelection ?: return
+        if (System.currentTimeMillis() - selection.at > UNDO_WINDOW_MS) {
+            lastSelection = null
+            return
+        }
+        if (!textBeforeCursor.endsWith(selection.text)) return
+        lastSelection = null
+        demoteCandidate(selection.text, reason = "undo", inputContext = selection.context)
+    }
+
+    /** 记一条负反馈（误选降权）。只影响同码候选的排序，不会移除候选。 */
+    private fun demoteCandidate(text: String, reason: String, inputContext: String) {
+        if (text.isEmpty()) return
+        val ctx = context ?: return
+        Timber.d("demote candidate: '%s' reason=%s context='%s'", text, reason, inputContext)
+        sendJob {
+            AppDatabase.getInstance(ctx).candidatePreferDao()
+                .demote(text, System.currentTimeMillis())
         }
     }
 
@@ -449,6 +506,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                         return
                     }
                 }
+                logCandidateDiagnostics(msg.list)
                 restoreCandidates(msg)
                 return
             }
@@ -576,7 +634,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     // 开启重排：使用重排结果，不还原用户排序
                     val inputContext =
                         (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "")
-                    val sortedList = rerankManager?.rerank(msg.list, inputContext, null)
+                    // gramDb 必须传真实的那一份：改造前这里恒传 null，
+                    // 让权重最大的语法模型项永远为 0。
+                    val sortedList = rerankManager?.rerank(
+                        msg.list, inputContext, predictionManager?.gramDb
+                    )
                     actions.send(
                         Action.CandidatesReady(
                             requestId, EngineMessage.Candidates(sortedList ?: msg.list, 0, 0)
@@ -617,6 +679,31 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             if (c.index !in savedSet) restored.add(c)
         }
         return restored
+    }
+
+    /**
+     * 输入诊断日志（**只影响 debug 构建**）。
+     *
+     * 动机：简拼（如 `qryt` → 「杞人忧天」）这类问题在真机上排查时，光看候选面板
+     * 说不清「是方案选错了、还是引擎没给出这个候选」。这里把**当前方案 id、
+     * 原始输入码、候选总数与头几个候选**打进同一行，一次日志就能定位。
+     *
+     * 关掉的开销：release 构建里 `AppStartup.setupLogger` 不装 Timber tree，
+     * [Timber.treeCount] 为 0 时直接返回，连读取 rawInput 的 job 都不会投递。
+     */
+    private fun logCandidateDiagnostics(list: List<Candidate>) {
+        if (list.isEmpty() || Timber.treeCount == 0) return
+        sendJob {
+            val input = getRawInput()
+            if (input.length < DIAG_MIN_INPUT_LENGTH) return@sendJob
+            Timber.d(
+                "diag schema=%s input=%s candidates=%d top=%s",
+                schemaCached.schemaId,
+                input,
+                list.size,
+                list.take(5).joinToString(" ") { it.text },
+            )
+        }
     }
 
     override fun onFinishInputView() {
@@ -694,5 +781,16 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun onInputCleared() {
         actions.trySend(Action.InputCleared)
+    }
+
+    private companion object {
+        /** 「上屏后回删」判定为误选的时间窗。超出窗口的删除不再算误选。 */
+        const val UNDO_WINDOW_MS = 8_000L
+
+        /** 判断删除目标时读回的光标前字符数，够覆盖常见候选词长度。 */
+        const val UNDO_LOOKBACK_CHARS = 24
+
+        /** 诊断日志的最小原始输入码长度（低于这个长度不记，避免刷屏）。 */
+        const val DIAG_MIN_INPUT_LENGTH = 3
     }
 }

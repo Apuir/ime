@@ -383,6 +383,11 @@
     <string name="candidate_show_index">显示序列号</string>
     <string name="candidate_show_comment">显示注释</string>
     <string name="candidate_border">绘制候选词边框</string>
+    <string name="candidate_learning">学习数据</string>
+    <string name="candidate_reset_learning">重置学习数据</string>
+    <string name="candidate_reset_learning_confirm">确定要清空学习数据吗？</string>
+    <string name="candidate_reset_learning_hint">清空「常用词偏好」与「误选记录」，候选词排序回到初始状态。剪贴板与常用语不受影响。</string>
+    <string name="candidate_reset_learning_empty">暂无记录</string>
     <string name="menu_reload_engine">重启引擎</string>
     <string name="vibration_attribution_tag">keyboard_feedback</string>
     <string name="attribution_label">键盘震动反馈</string>

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 
-@Database(entities = [CandidateSorting::class, ClipboardRecord::class, CandidatePrefer::class, PhraseRecord::class], version = 8, exportSchema = false)
+@Database(entities = [CandidateSorting::class, ClipboardRecord::class, CandidatePrefer::class, PhraseRecord::class], version = 9, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
@@ -29,7 +29,17 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "ime_database"
-                )                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                )
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_8_9,
+                )
+                .fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
 
@@ -109,6 +119,26 @@ abstract class AppDatabase : RoomDatabase() {
                     `createdAt` INTEGER NOT NULL
                 )
                 """
+            )
+        }
+
+        /**
+         * v8 → v9：给 `candidate_prefers` 加负反馈字段（误选降权用）。
+         *
+         * ⚠️ 这里**必须**有迁移。本库启用了 `fallbackToDestructiveMigration()`，
+         * 一旦缺迁移就会被静默清库 —— 用户的剪贴板历史、常用语、候选排序记录全丢。
+         * （v7 → v8 就没有迁移，那次是上游 `danjian/ime` 加的 `candidate_sorting_v2`；
+         * 本次不动它，但升级到 v8 的那一批数据已经丢过了。）
+         */
+        private val MIGRATION_8_9: Migration = Migration(
+            startVersion = 8,
+            endVersion = 9,
+        ) { db ->
+            db.execSQL(
+                "ALTER TABLE `candidate_prefers` ADD COLUMN `bad_count` INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE `candidate_prefers` ADD COLUMN `last_bad_at` INTEGER NOT NULL DEFAULT 0"
             )
         }
     }

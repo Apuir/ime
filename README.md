@@ -9,11 +9,11 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.1.1`（20101） |
+| 当前版本 | `2.2.0`（20200） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
-| 内置方案 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.3`（CC BY 4.0） |
+| 内置方案 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.9`（CC BY 4.0） |
 
 ---
 
@@ -34,13 +34,19 @@
 **输入**
 
 - 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由方案的 `layout` 自动切换
+- **模糊音默认全开**：平翘舌（zh/z、ch/c、sh/s）、前后鼻音（an/ang、en/eng、in/ing）、
+  n/l、r/l、r/y、h/f、k/g 共 10 组，`zongguo` 直接出「中国」
+- **首字母简拼**：打 `qryt` 出「杞人忧天」、`zg` 出「中国」这类缩写输入
 - 符号键盘、Emoji 键盘、全角/半角标点、简↔繁转换、英文/ASCII 模式
 - 方案启用、排序、切换；多套万象拼音方案开箱可用
 
 **候选与编辑**
 
 - 横滑候选条 + 展开式 5×5 候选网格，候选可拖拽重排、删除 / “忘记”
-- marisa 预测 + `.gram` 语法模型重排，可开关
+- marisa 预测 + `.gram` 语法模型重排，可开关（**语法模型真正参与打分**）
+- **常用词学习**：候选选自用户实际选择，带时间衰减；**误选后自动降权** ——
+  选错了删掉重打，那个词会自己往下掉，且惩罚会随时间过期
+- 学习数据可在「设置 → 候选词 → 学习数据」里一键重置
 - 文本编辑面板（光标移动 / 选择 / 剪切复制粘贴）、预编辑悬浮拼音条
 - 输入框实时上屏预览（不上屏 / 原始输入 / 首候选）+ 剪贴板历史 + 常用语管理
 
@@ -83,7 +89,7 @@
 本项目**不发 Release APK**，APK 由本机自行构建（见下一节），然后用 `adb` 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.1.1.apk
+adb install -r app/build/outputs/apk/release/ime-2.2.0.apk
 ```
 
 首次打开会依次进入：
@@ -112,19 +118,37 @@ adb install -r app/build/outputs/apk/release/ime-2.1.1.apk
 
 | 缺失项 | 路径 | 获取方式 |
 |--------|------|----------|
-| `resource.zip` | `app/src/main/assets/resource.zip` | **必需**，约 65 MB。从上游 release APK 中抽取 |
+| `resource.zip` | `app/src/main/assets/resource.zip` | **必需**，约 65 MB。用 `scripts/build-rime-resource.py` 从万象拼音 17.9.9 重建（见下） |
 | native 依赖 | `app/src/main/cpp/deps/` | 运行 `./install-deps.sh` 自动拉取 |
 | SDK 路径 | `local.properties` | 写入 `sdk.dir=/path/to/Android/Sdk` |
 | 签名材料 | `keystore.properties` | 可选；缺省时 release 产出未签名 APK |
 
-抽取 `resource.zip`（上游 APK 内已打包，无需 clone 上游源码）：
+重建 `resource.zip`（**推荐**，能拿到与作者桌面一致的 17.9.9 数据）：
 
 ```bash
-curl -L -o /tmp/JIme-v1.0.5.apk \
-  https://github.com/danjian/ime/releases/download/v1.0.5/JIme-v8a-v1.0.5.apk
-unzip -o /tmp/JIme-v1.0.5.apk assets/resource.zip -d /tmp/jime_rz
-cp /tmp/jime_rz/assets/resource.zip app/src/main/assets/resource.zip
+# 来源可以是任意一份干净的万象拼音 17.9.9 数据目录：
+#   - 本机 fcitx5 的 rime 用户目录（默认值）
+#   - 万象官方发布包解出来的目录
+#   - 上一次的输出目录（脚本幂等，重复跑结果一致）
+python3 scripts/build-rime-resource.py --dry-run          # 先看会做什么
+python3 scripts/build-rime-resource.py                    # 正式重建
 ```
+
+脚本会自动做三件**不能省**的事：注入 app 桥接字段（`schema/layout`、
+`punctuation`、`kind`、`candidateKind` 与 `options` 块）、注入模糊音规则、
+保留 `model/predict.marisa`；并输出 `scripts/rime-resource-manifest.json`
+（文件清单 + sha256 + 万象版本）用于追溯。细节见
+[`docs/DEVELOPMENT.md` 7.2](docs/DEVELOPMENT.md#72-当前-checkout-缺失的构建物料)。
+
+> 备选：从上游 release APK 抽（`danjian/ime` v1.0.5 里打包的是**旧版** 17.2.4 数据，
+> 没有模糊音、也缺若干模块，仅在无法获取 17.9.9 时使用）：
+>
+> ```bash
+> curl -L -o /tmp/JIme-v1.0.5.apk \
+>   https://github.com/danjian/ime/releases/download/v1.0.5/JIme-v8a-v1.0.5.apk
+> unzip -o /tmp/JIme-v1.0.5.apk assets/resource.zip -d /tmp/jime_rz
+> cp /tmp/jime_rz/assets/resource.zip app/src/main/assets/resource.zip
+> ```
 
 ### 构建
 
@@ -139,8 +163,8 @@ chmod +x install-deps.sh && ./install-deps.sh
 ls -lh app/src/main/assets/resource.zip
 
 # 4) 编译
-./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.1.1-debug.apk
-./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.1.1.apk
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.2.0-debug.apk
+./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.2.0.apk
 ```
 
 首次 native 编译（librime + Boost + OpenCC）耗时较长。release 签名可用仓库根的 `keystore.properties`，或用环境变量
@@ -156,6 +180,8 @@ ls -lh app/src/main/assets/resource.zip
 |------|------|
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **开发与定制手册**：架构总览、代码目录地图、关键运行流程、构建细节、定制指南、已知坑、SharedPreferences / Room 附录 |
 | [`docs/THEME_FORMAT.md`](docs/THEME_FORMAT.md) | 键盘主题 `themes.json` 与二维码分享格式的字段说明 |
+| [`docs/plans/`](docs/plans/) | 各次迭代的设计说明与任务清单（含取舍理由与验收标准） |
+| [`scripts/README.md`](scripts/README.md) | 构建脚本：方案数据重建、本地引擎探针 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史、版本号规则与发布流程 |
 
 **常用直达**：[架构总览](docs/DEVELOPMENT.md#4-架构总览) ·

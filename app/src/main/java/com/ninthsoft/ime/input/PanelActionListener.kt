@@ -116,7 +116,7 @@ class PanelActionListener(
     }
 
     override fun onCandidateForget(candidate: EngineMessage.Candidate) {
-        service.engine?.deleteCandidate(candidate.index)
+        service.engine?.deleteCandidate(candidate)
     }
 
     override fun onEnterAddPhraseMode() {

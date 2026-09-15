@@ -11,13 +11,13 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `2.1.1` / `20101`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
+| versionName / versionCode | `2.2.0` / `20200`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
 | UI | 键盘 = 自定义 View（ConstraintLayout + Canvas）；设置 = Jetpack Compose |
 | 输入引擎 | librime（`danjian/librime` 分支）+ lua / octagram / predict 插件 |
-| 内置方案数据 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.3`（CC BY 4.0） |
+| 内置方案数据 | [万象拼音 rime-wanxiang](https://github.com/amzxyz/rime-wanxiang) LTS `17.9.9`（CC BY 4.0） |
 | 提交历史 | 92 commits，2026-06-12 ~ 2026-09-12（其中 61 个来自上游，fork 改动从 `v1.1.0` 开始） |
 
 ---
@@ -55,7 +55,11 @@
 
 **输入**
 
-- Rime 拼音方案（默认启用 `wanxiang_t9` / `wanxiang_lite` / `wanxiang_english`），支持方案启用、排序、切换
+- Rime 拼音方案（默认启用 `wanxiang_t9` / `wanxiang` / `wanxiang_english`），支持方案启用、排序、切换
+- **模糊音默认全开**（10 组：平翘舌 / 前后鼻音 / n-l / r-l / r-y / h-f / k-g），`zongguo` → 中国；
+  开关位置与取舍见 [9.4](#模糊音本项目默认全开)
+- **首字母简拼**：`qryt` → 杞人忧天；候选数量与耗时可用
+  [`scripts/rime-probe/`](../scripts/rime-probe/README.md) 在开发机上实测
 - 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由当前 scheme 的 `layout` 字段自动决定
 - 符号键盘、Emoji 键盘；全角/半角标点切换
 - 简↔繁转换（自带 FMM 转换器，不依赖 OpenCC 运行时）
@@ -64,7 +68,11 @@
 **候选与编辑**
 
 - 候选词面板：横滑候选条 + 展开 5×5 候选网格，可拖拽重排、删除/“忘记”候选
-- 候选词预测（marisa `predict.marisa`）与语法模型重排（`.gram`）；可开关
+- 候选词预测（marisa `predict.marisa`）与语法模型重排（`.gram`）；可开关。
+  **语法模型真正参与打分**，Rime 自身排序作为位次先验，详见 [9.6](#96-候选词排序--预测)
+- **常用词学习 + 误选降权**：正向点击与「上屏后又删掉」的负向信号都进排序，
+  可正可负、按 24 h 半衰期衰减（误选不会永久钉死一个词）
+- 学习数据可在「设置 → 候选词 → 学习数据」一键重置
 - 文本编辑面板（光标移动、选择、剪切/复制/粘贴）、预编辑悬浮拼音条
 - 输入框实时上屏（预览）：设置 → 上屏设置里可选「不上屏 / 原始输入上屏（如 `ni'hao`）/ 首候选上屏」，并可选择切换方案、收起键盘时是否把已上屏内容正式保留
 - 剪贴板历史（Room 持久化、云同步标记、自动清理策略）+ 常用语管理
@@ -183,7 +191,7 @@
 | `marisa/` | `MarisaTrie`（JNI）、`Prediction`（读 `predict.marisa` 做下一词预测） |
 | `net/` | `VersionChecker`（在线检查更新；地址留空即关闭，入口也会隐藏） |
 | `util/` | `TraditionalConverter`（简繁 FMM）、`PinYinUtil`、`ResourceExtractorUtil`/`ResourceUtil`/`TarBz2ExtractorUtil`、`FontManager`、`InputConnectionUtil`、`TextUtil`、`PunctuationUtil`、`ProcessUtil`、`ViewAnimationUtil`、`AssetExtractionProviderUtil` 等 |
-| `priority/` | `PriorityCalculator`（候选打分权重） |
+| `priority/` | `PriorityCalculator`（候选打分权重）、`PreferenceScorer`（用户偏好净分 + 时间衰减，纯函数，有单测） |
 | `feedback/` | `InputFeedbacks`（SoundPool + 震动） |
 | `log/` | `AppLogBuffer`（Timber tree + logcat 环形缓冲 + `crash.log`） |
 | `once/` | `Once`（线程安全只执行一次） |
@@ -319,43 +327,73 @@ KeyView 事件
 
 #### 获取 `resource.zip`
 
-上游 release APK 内就打包了它，直接抽取即可（无需 clone 上游源码）。
-`JIme-v1.0.5.apk` 是**上游 release 的文件名**，照抄即可，改名会让下载地址失效：
+**推荐：用脚本从万象拼音 17.9.9 重建。**
 
 ```bash
-# 1) 下载上游 release（约 110 MB）
-curl -L -o /tmp/JIme-v1.0.5.apk \
-  https://github.com/danjian/ime/releases/download/v1.0.5/JIme-v8a-v1.0.5.apk
-
-# 2) 从 APK 中抽出 assets/resource.zip
-unzip -o /tmp/JIme-v1.0.5.apk assets/resource.zip -d /tmp/jime_rz
-cp /tmp/jime_rz/assets/resource.zip app/src/main/assets/resource.zip
-
-# 3) 校验（v1.0.5 的值，仅供参考；其他版本可能不同）
-md5sum app/src/main/assets/resource.zip
-# 98dd07b126483d22b2cc6c99afe07e44
+python3 scripts/build-rime-resource.py --dry-run   # 先看会做什么，不写文件
+python3 scripts/build-rime-resource.py             # 重建（覆盖 assets/resource.zip）
 ```
 
-`resource.zip` 内容（v1.0.5，86 个条目）：
+`--source` 默认取本机 fcitx5 的 rime 用户目录；也可以指向万象官方发布包解出的目录，
+或上一次的输出目录（脚本幂等）。脚本负责：
+
+1. **白名单取数**：排除用户状态（`*.userdb` / `user.yaml` / `installation.yaml` /
+   `build` / `sync` / `*.gram`）。
+2. **注入 app 桥接字段**（万象官方包里**没有**，缺了功能会瘸）：
+   - `schema/{layout,punctuation,kind,candidateKind}` —— 键盘随方案切换、
+     方案列表标签、预编辑拼音条都靠它；
+   - 顶层 `options:` 块 —— `OptionsApplier` 据此把 app 的「繁体 / Emoji / 英文模式」
+     三个设置映射成 Rime 运行时选项。
+3. **注入模糊音规则**（见 [9.4](#94-输入方案rime-schema)），`--fuzzy` 可选档位。
+4. 保留上一版 zip 里的 `model/predict.marisa`（app 专用，万象官方包没有）。
+5. **引用校验**：扫 yaml 的 `import_tables` / `files` 与 lua 里的 `lua/data/...`
+   字面量，有「被引用但没打包」的文件就报错退出，避免打出启动即报错的包。
+6. 输出 `scripts/rime-resource-manifest.json`（文件清单 + sha256 + 万象版本 +
+   注入内容），**建议随代码一起提交**用于追溯。
+
+打包结构（librime 要求根目录直接是 `shared/` 和 `model/`）：
 
 ```
 shared/                      # librime shared_data_dir
-├── *.schema.yaml            # wanxiang_lite / wanxiang_t9 / wanxiang_english / reverse / mixedcode
+├── *.schema.yaml            # wanxiang / wanxiang_t9 / wanxiang_t9i / wanxiang_english
+│                            #   / wanxiang_mixedcode / wanxiang_reverse
 ├── default.yaml             # schema_list 等默认配置
-├── weasel.yaml / wanxiang_*.yaml
+├── weasel.yaml / wanxiang_algebra.yaml / wanxiang_symbols.yaml
 ├── dicts/*.dict.yaml        # 词库（jichu/lianxiang/shici/...）
 ├── lua/wanxiang/*.lua       # 万象 Lua 脚本
 ├── lua/data/*.txt           # 脚本数据
-├── plum/*.recipe.yaml
-├── custom/*.custom.yaml     # 方案补丁
-└── version.txt              # 万象版本：17.9.3
+├── custom/*.custom.yaml     # 方案补丁（注意：这个目录**不参与部署**，见 10.13）
+├── AGENTS.md / README.md    # 万象自带文档（随包携带，保留 CC BY 署名）
+└── version.txt              # 万象版本：17.9.9
 model/
 └── predict.marisa           # 37 MB marisa 预测模型
 ```
 
+<details>
+<summary>备选：从上游 release APK 抽（拿到的是旧版 17.2.4 数据，不推荐）</summary>
+
+上游 release APK 里打包了**旧版**资源（`danjian/ime` v1.0.5 对应万象 17.2.4，没有模糊音、
+缺 `context_reorder` / `unicode_conversion` / `random_tools` / `super_sequence` 等模块）。
+只在无法获取 17.9.9 时使用。`JIme-v1.0.5.apk` 是上游 release 的文件名，照抄即可：
+
+```bash
+curl -L -o /tmp/JIme-v1.0.5.apk \
+  https://github.com/danjian/ime/releases/download/v1.0.5/JIme-v8a-v1.0.5.apk
+unzip -o /tmp/JIme-v1.0.5.apk assets/resource.zip -d /tmp/jime_rz
+cp /tmp/jime_rz/assets/resource.zip app/src/main/assets/resource.zip
+md5sum app/src/main/assets/resource.zip   # 旧值：98dd07b126483d22b2cc6c99afe07e44
+```
+
+注意这条路径拿到的 package **没有** app 桥接字段注入，也是它能工作（上游 APK 里的
+schema 已经被上游改过了），但换掉之后就没法用脚本复现了。
+
+</details>
+
 > 修改/替换 `resource.zip` 后无需其他操作：`AppStartup` 靠 MD5 判断，下一次启动会自动重新解压。
 >
-> 解压是**原样落到外部目录**，所以压缩包根目录必须直接是 `shared/` 和 `model/`——
+> ⚠️ **改了 `speller/algebra`（例如开关模糊音）会强制重建 `table.bin` / `prism.bin`**，
+> 手机上首次启动的部署会明显变慢（一次性成本）。
+>
 > 打包时用 `cd resource && zip -r ../resource.zip .`，别用 `zip -r resource.zip resource/`（那会多出一层壳）。
 > 多套一层 `resource/` 也能用（`ResourceExtractorUtil` 会自动剥掉），但以文档这套结构为准。
 
@@ -398,7 +436,7 @@ ls -lh app/src/main/assets/resource.zip
 ### 7.4 安装与首次使用
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.1.1.apk
+adb install -r app/build/outputs/apk/release/ime-2.2.0.apk
 ```
 
 打开 App → `InitActivity` 等待资源解压/引擎部署 → `SetupActivity` 引导：
@@ -677,6 +715,40 @@ listOf(
 
 > 万象默认 `menu.page_size: 6`。要改候选个数、标签、开关记忆等，改 `shared/default.yaml` 或 `shared/custom/*.custom.yaml`。
 
+#### 模糊音（本项目默认全开）
+
+万象内置 10 组模糊音规则，定义在 `shared/wanxiang_algebra.yaml` 的顶层节点里
+（`模糊音_nl` / `_ry` / `_hf` / `_rl` / `_kg` / `_en_eng` / `_in_ing` / `_c_ch` /
+`_z_zh` / `_s_sh`），**默认是注释状态**，由 `scripts/build-rime-resource.py`
+注入到 `shared/wanxiang.schema.yaml` 的 `speller/algebra/__patch` 里：
+
+```yaml
+speller:
+  algebra:
+    __patch:
+      - wanxiang_algebra:/base/全拼
+# >>> ime:fuzzy (由 build-rime-resource.py 注入，勿手改)
+      - wanxiang_algebra:/模糊音_nl
+      ...（共 10 行）
+# <<< ime:fuzzy
+```
+
+几个必须知道的点：
+
+- **不能靠 `shared/custom/wanxiang.custom.yaml` 开**。万象的 `custom/` 补丁按它自己的
+  设计要放到**用户目录**才生效，而 app 从不把 `shared/custom/` 拷到 `user/`，
+  放那里等于不生效（见 10.13）。
+- **只注入 `wanxiang`**。九宫格（`wanxiang_t9` / `_t9i`）的拼写运算是把字母即时转成
+  数字键，全拼模糊音规则不适用；它的简拼走 `lua/data/t9_abbrev.txt` 那套简码。
+- **改档位**：`--fuzzy safe`（平翘舌 + 前后鼻音 + n/l 共 6 组，**默认**）/
+  `all`（10 组）/ `none`。默认不用 `all` 的依据是实测：`all` 多开 r/l、r/y、h/f、k/g
+  之后，`qryt` 的候选数从 2546 涨到 4011、首选从「杞人忧天」变成「去了一趟」
+  （多出的歧义来自 r/l、r/y），而 `safe` 该有的模糊音效果一个不少
+  （`zongguo`→中国、`cang`→常、`si`→是、`gen`/`geng`→跟、`xin`/`xing`→新）。
+- **改完必须重新部署**：algebra 变了 → `table.bin` / `prism.bin` 必须重建。
+- **验证手段**：别靠刷机试，用 [`scripts/rime-probe/`](../scripts/rime-probe/README.md)
+  在开发机上几秒钟出结果（`--expect 中国 zongguo` 这类）。
+
 ### 9.5 引擎行为 / 按键映射 / 选项
 
 | 需求 | 位置 |
@@ -691,13 +763,47 @@ listOf(
 
 ### 9.6 候选词排序 / 预测
 
+排序是**三层信号叠加**，改任何一层之前先读这张表：
+
+| 层 | 信号 | 位置 |
+|----|------|------|
+| L1 | **Rime 自己的排序**（词库权重 + `enable_user_dict` 用户词典） | 作为「位次先验」参与打分，见 `CandidateFeature.rank` |
+| L2 | **语法模型**（`.gram` / octagram） | `PredictionManager.gramDb` → 传给重排的 `baseScore` |
+| L3 | **app 侧用户反馈**（正向点击 / 负向误选，带时间衰减） | `candidate_prefers` 表 + `base/priority/PreferenceScorer.kt` |
+
 | 需求 | 位置 |
 |------|------|
-| 打分权重 | `base/priority/PriorityCalculator.kt`（`WeightConfig`，默认 base .5 / freq .3 / length .1 / count .1） |
-| 下一词预测 | `engine/manager/PredictionManager.kt` + `base/marisa/Prediction.kt`（`TOP_K=100`，`ln(1+count)` 加权） |
-| 候选重排 | `engine/manager/CandidateRerankManager.kt`（仅对第 1–24 个候选重排，第 0 个固定） |
+| 打分权重 | `base/priority/PriorityCalculator.kt` → `WeightConfig`：`baseScore .20` / `preference .30` / `rankPrior .40` / `wordLength .10`。取向是**引擎排序为主**（`rankPrior` 最大），用户偏好可以撼动它，语法与词长只做微调 |
+| 用户偏好净分（可正可负 + 时间衰减） | `base/priority/PreferenceScorer.kt`（纯函数，半衰期 24 h；正向用 `ln1p` 软压，负向线性见效） |
+| 下一词预测 | `engine/manager/PredictionManager.kt` + `base/marisa/Prediction.kt`（`TOP_K=100`，`ln(1+count)` 加权）；语法模型实例由它持有并对外只读暴露 |
+| 候选重排 | `engine/manager/CandidateRerankManager.kt`（只重排第 1–24 位，**第 0 个固定**；同分按引擎原始位次兜底） |
+| 误选降权（负反馈） | `engine/RimeEngine.kt`：`lastSelection` / `handleBackspace` → `onTextDeleted` → `demoteCandidate`；写库走 `CandidatePreferDao.demote` |
+| 引擎侧兜底（同码回删再输首次交换） | 万象 `context_reorder/enable_fallback_reorder: true`（由 `scripts/build-rime-resource.py` 注入） |
+| 重置学习数据 | `ui/screen/CandidateSettingsScreen.kt` →「学习数据」分组（清 `candidate_prefers`） |
 | 候选面板外观 | `input/panel/component/CandidateGridView.kt`、`input/panel/KawaiiPanelRenderer.kt` |
 | 候选条/工具栏按钮 | `input/panel/toolbar/ToolbarRenderer.kt` + `ToolbarRendererResources.kt`（中间工具由 `configuredToolbarButtons()` 读取偏好生成；`KawaiiPanel.kt` 与 `KawaiiPanelView.kt` 两处构造资源，改动要同步） |
+
+#### 这条链路上踩过的坑（别踩回去）
+
+1. **`gramDb` 曾经恒传 `null`**。`RimeEngine.restoreCandidates()` 里写死
+   `rerankManager.rerank(list, inputContext, null)`，导致权重最大的 `baseScore`
+   项**永远为 0** —— 语法模型白下载、白加载。改成传
+   `predictionManager?.gramDb` 之后语法分才真正参与。
+2. **`candidateCount` 是个假特征**。它取「这一批候选的个数」，对所有候选都是同一个值，
+   对排序没有任何影响（原来还恒传 0）。已从 `CandidateFeature` / `WeightConfig` 移除。
+   以后要加特征，先确认它在候选之间**有区分度**。
+3. **重排不能覆盖引擎的位次**。改造前只用「点击数的对数 + 词长」，于是长词被无条件抬前、
+   Rime 排好的顺序被整段打乱。现在 `rankPrior` 是最大的一项，且同分按原始位次兜底。
+4. **负反馈必须会过期**。只加不减会让用户误选一次就永久压死那个词；
+   `PreferenceScorer` 用 24 h 半衰期，7 天后残值 < 1%，并有正负双向封顶。
+5. **第 0 个候选刻意不动**。它是「按空格上屏」的目标，随统计漂移会毁掉肌肉记忆；
+   误选到第 0 个的情况交给引擎侧的 `enable_fallback_reorder`（Rime 自己会把
+   同码回删再输的首选换掉），两边分工不重叠。
+
+> 排查排序问题时：debug 构建里 `RimeEngine.logCandidateDiagnostics()` 会在
+> 输入码 ≥ 3 个字符时打一行 `diag schema=... input=... candidates=... top=...`，
+> 一眼就能看出「候选是引擎没给出来」还是「被排序挪走了」。release 构建里
+> `Timber.treeCount == 0`，这行日志不会产生任何开销。
 
 ### 9.7 在线能力（不再依赖任何中间服务器）
 
@@ -764,14 +870,14 @@ listOf(
 
 ## 10. 注意事项 / 已知坑
 
-1. **`resource.zip` 是私有构建物料**，`app/.gitignore`/根 `.gitignore` 排除了它；本 checkout 里没有 → 必现“无方案/无候选”。按 [7.2](#获取-resourcezip) 从上游 APK 提取。
+1. **`resource.zip` 是私有构建物料**，`app/.gitignore`/根 `.gitignore` 排除了它；本 checkout 里没有 → 必现“无方案/无候选”。用 `scripts/build-rime-resource.py` 重建（见 [7.2](#获取-resourcezip)）。
 2. **`assets/checksums.json` 缺失**：`DataManager.sync()` 会走异常分支打印 `Sync not prepared!`，实际数据全靠 `resource.zip` 解压。如果未来把方案改为“放 assets 增量同步”，需要补上 `checksums.json`（格式见 `DataSync`/`DataSum`）。
 3. **`install-deps.sh` 仍会 clone `llama.cpp`**，但代码已移除 llamacpp/gguf（提交 `0ebf565`）。可忽略或从脚本删掉以省时间。
 4. **ProGuard 规则过时**：`app/proguard-rules.pro` 还保留 opencc4j/houbb 的 keep 规则，实际已改用自带 `TraditionalConverter`；release 目前 `isMinifyEnabled=false`，暂不影响。
 5. **两个“反向”布尔设置**：
    - `keyboard_settings.keyboard.expand_borders`：getter 返回 `!pref`，默认实际为 true
    - `candidate_settings.show_border`：`isBorderEnabled = !pref`，默认实际为 true
-6. **Room 无 7→8 迁移**：`AppDatabase` 有 1→7 的 Migration，但没有 7→8，且启用了 `fallbackToDestructiveMigration()` → 升级到 v8 会**清空数据库**。加表/改表时请补迁移。
+6. **Room 少了 7→8 的迁移，8→9 已补上**：`AppDatabase` 现在 version = 9，有 `MIGRATION_8_9`（给 `candidate_prefers` 加 `bad_count` / `last_bad_at`）。**7→8 依然没有**，那是上游 `danjian/ime` 加 `candidate_sorting_v2` 时留下的，本次没动。但库启用了 `fallbackToDestructiveMigration()` —— **加表/改表时必须同时补迁移**，否则用户的剪贴板历史、常用语、候选排序记录会被静默清空。
 7. **只支持 arm64-v8a**：想支持 32 位或模拟器，需要改 `abiFilters` 并重新编译 native + 处理 sherpa/QNN 产物。
 8. **`compileSdk 37` / `targetSdk 36`**：需要较新的 Android SDK（37 可能是预览版平台），老环境需先 `sdkmanager "platforms;android-37"`。
 9. **Manifest 申请了 `MANAGE_EXTERNAL_STORAGE`**（`AndroidManifest.xml`），上架应用商店可能被拒；常规使用其实靠 SAF Provider 即可。
@@ -779,6 +885,11 @@ listOf(
     **`KeyMapping` 也同名**：`engine/rime/core/KeyMapping.kt` 是 Rime 键码常量，按键映射的偏好对象叫 `KeyboardKeyMapping`，别再取回 `KeyMapping`。
 11. **死代码/未使用类**：`KeyboardThemeSettingsScreen` 引用之外，`input/dialog/SchemaPickerEntryUi.kt`、`SchemaPickerListAdapter.kt`、`panel/toolbar/ToolbarButton.ToggleImageButton` 当前未使用。
 12. **release 签名依赖本机材料**：`keystore.properties`（已 gitignore）或 `IME_*` 环境变量，缺一个都产出未签名 APK。
+13. **`shared/custom/*.custom.yaml` 不参与部署**。万象的 `custom/` 补丁按它自己的设计是「藏起来的备份」，要**拷到用户目录**（`user/<方案>.custom.yaml`）才生效；而 app 从不做这一步（`DataManager.sync()` 只在缺 `user/default.custom.yaml` 时创建一个 luna 补丁）。所以：
+    - 想让某个补丁生效，**直接改方案文件本身**（`shared/<方案>.schema.yaml`），像模糊音那样由脚本注入；
+    - 放在 `shared/custom/` 里的文件只是随包携带，别指望它有作用。
+14. **`user/default.custom.yaml` 的初始内容是个地雷**：`DataManager.sync()` 在文件不存在时会写入一份 `schema_list: [luna_pinyin, luna_pinyin_simp]` 的补丁，而包内根本没有这两个方案。app 自己用 `SchemaManager` 管方案所以日常没事，但如果你在真机上看到「方案列表空 / 方案对不上」，先看这个文件。
+15. **本仓库的文件可能属于 `root`**（取决于构建环境以什么身份跑）。Gradle 会按 Java 的 `user.home` 找缓存目录，**以 root 跑时 `user.home` 是 `/root`**，会去 `/root/.gradle` 找 wrapper 并失败。解决办法是显式指定：`env GRADLE_USER_HOME=/home/<user>/.gradle ./gradlew ...`。
 
 ---
 
@@ -879,16 +990,27 @@ listOf(
 
 ### 12.2 Room 表结构
 
-数据库 `ime_database`，`AppDatabase` version 8。
+数据库 `ime_database`，`AppDatabase` version 9。
 
 | 表 | 字段 |
 |----|------|
 | `candidate_sorting_v2` | `sorting_key` TEXT PK（候选集合 FNV-1a 指纹）、`candidateIds` TEXT（逗号分隔 List<Int>） |
 | `clipboard_records` | `id` PK 自增、`text`、`timestamp`、`cloud`、`deleted`=0、`deletedAt`=0 |
-| `candidate_prefers` | `text` TEXT PK、`context`、`click_count`=1、`created_at`、`updated_at` |
+| `candidate_prefers` | `text` TEXT PK、`context`、`click_count`=1、`bad_count`=0、`created_at`、`updated_at`（最近一次**正向**信号）、`last_bad_at`=0（最近一次**误选**） |
 | `phrase_records` | `id` PK 自增、`text`、`label`、`createdAt` |
 
 DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao`。
+
+`candidate_prefers` 的两个方向都由 `CandidatePreferDao` 维护，注意它**只在库层存原始计数与时间戳**，
+不做衰减：
+
+- `upsert(text, context)` —— 候选被选中上屏：`click_count + 1`、`updated_at = now`；
+- `demote(text)` —— 上屏后又删掉、或长按删除候选：`bad_count + 1`、`last_bad_at = now`，
+  **不碰** `click_count` / `updated_at`（否则会把「这个词曾被正常用过」的历史抹掉）；
+- 净分由 `base/priority/PreferenceScorer` 在读取时算，`CandidateRerankManager` 使用。
+
+迁移：`MIGRATION_1_2` … `MIGRATION_6_7`、`MIGRATION_8_9`。
+**7→8 仍然缺失**（上游遗留），见[第 10 节第 6 条](#10-注意事项--已知坑)。
 
 ### 12.3 内置键盘主题
 
