@@ -76,6 +76,12 @@ mkdir -p user
 ## 坑与前提
 
 - **`--deploy` 之后的 `user/` 目录不要删**：词库编译产物在里面，删了要重编。
+- **`shared_dir` / `user_dir` 一定要传绝对路径**。传 `./shared` 会看到
+  `[super_symbols] cannot open data: lua/data/codex_sym.txt` 之类的报错 ——
+  那是**假警报**：万象 lua 的 `get_filename_with_fallback()` 要求
+  `rime_api.get_shared_data_dir()` 是绝对路径，否则直接退回相对路径去 `io.open`。
+  app 里 `sharedDataDir` 本来就是绝对路径，所以这个报错**不出现在真机上**。
+  跑之前先 `cd` 到数据目录再用 `$PWD/...`，或者一开始就用绝对路径。
 - **改了 `shared/` 下的方案文件，不重新部署是不生效的**：librime 部署时会把方案
   副本写进 `user/build/<schema_id>.schema.yaml`，**之后从那里读**。所以在探针里
   改 `shared/wanxiang.schema.yaml` 看不到任何变化 —— 要么改 `user/build/` 里的副本

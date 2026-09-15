@@ -848,6 +848,106 @@ speller:
 后首选变「今天天气怎么」，没挂是「具体天谴之门」。模型 420 MB，见 `GramModelDownloader`；
 随包会让 APK 到 ~530 MB，所以只能手动下载。
 
+#### 语法模型到底是什么（别指望「换更大的模型」）
+
+- **它已经是 32 GB 语料训出来的了**。万象官方（`amzxyz/RIME-LMDG`）用
+  问答 / 博文 / 公众号 / 百科 / 新闻 / 歌词 / 诗词 / 评论 / 法律 / 文学等多领域语料
+  共 **32 GB** 训练，产出 `wanxiang-lts-zh-hans.gram`（420 MB）与 `-hant` 两个版本，
+  **没有更大或更小的变体**。官方在 22.3 万句语料上评测：
+
+  | 配置 | 句子正确率 | 文字正确率 |
+  |------|-----------|-----------|
+  | `wanxiang` 无模型 | 62.34% | 93.50% |
+  | `wanxiang` + gram | **76.86%** | **96.32%** |
+
+  即 **+14.5 个百分点**。所以整句质量的现状不是「引擎没有大模型」，而是
+  **「大模型没被装上」**（APK 里不带，要用户在设置里下 420 MB）。
+
+- **模型格式与容量上限**（`plugins/librime-octagram`）：`GramDb` 是个
+  **darts 双数组**，存放在 `MappedFile`（**mmap，不整体读进内存**）；
+  键是 `context(≤5 字) + word(≤5 字)` 直接拼接的 UTF-8，值是
+  `max(0, int(log(次数) × 10000))`，**每个上下文最多只存 8 个后继**
+  （`GramDb::kMaxResults = 8`），`kMaxEncodedUnicode = 8`、
+  `collocation_max_length` 决定上下文取多少（本方案 6 → 取 5）。
+
+- **为什么「网量级」不等于「整句强」**：打分接口是
+  `Grammar::Query(context, word, is_rear) -> double`，**一次只给一条边的分值**，
+  没有回退插值、没有整句重打分；`is_rear` 只是个 `"$"` 句尾键。
+  而整句是 `beam_width = max_sentences × 3` 的束搜索，**逐位置只保留 150 条候选线**
+  （`max_sentences=50` 时）。**候选在进入语法模型打分之前就被剪掉了** ——
+  这才是 `zjhmydqpy` 的正确句子根本不在候选里、把 `max_sentences` 提到 50 也没用的原因。
+  结论：**再换更大的模型也救不了这类例子，瓶颈在解码器而不是模型**。
+
+- **官方推荐参数与我们的实际值实测等价（不必改）**：官网推荐
+  `collocation_min_length: 3` + `rear_penalty: -20`，我们包里是 `2` / `-18`
+  （插件默认值）。在 12 个测试输入（含 `zjhmydqpy` 这类极端简拼）上逐条对比，
+  输出**完全一致** —— 万象自己写 `2` 是有意的，别照抄文档改。
+
+- **想要「自己的句子更准」的正确方向是自训定向模型，不是加大模型**：格式极简
+  （`(context+word, count)` 列表 → 上面那个公式），万象公开了构建链路
+  （jieba 分词 + pypinyin 标注 + `语法模型构建.py`，见
+  `amzxyz/rime-build-grammar-word-frequency` 的 wiki）。用**自己的语料**
+  （笔记 / 文档 / 聊天记录）训几十 MB 的模型，让你高频表达排前面，
+  比把模型从 420 MB 加到 4 GB 有效得多。做的话记得**保留官方模型打底**。
+
+#### 「让自己的句子打出来」：先试 `custom_phrase`，别急着训模型
+
+用户实测（2026-09-15）：**装了 420 MB 官方模型仍然不满意**。实测结论是
+`custom_phrase` 才是「我常打的那几句话」的正解，且成本几乎为零。
+
+**先看方案的现成能力**：`wanxiang.schema.yaml` 的 `engine/translators` 里已经有
+`table_translator@custom_phrase`，配置为：
+
+```yaml
+custom_phrase:
+  dictionary: ""
+  user_dict: custom_phrase      # 读 <user_data_dir>/custom_phrase.txt
+  db_class: stabledb            # 文本直读，**不需要编译**
+  enable_completion: false
+  enable_sentence: false
+  initial_quality: 99           # 权重远高于拼音与 wanxiang_en，保证置顶
+```
+
+文件格式是 `文本<TAB>编码<TAB>权重` 三列。实测（`scripts/rime-probe`，**没有执行
+`--deploy`**）：
+
+```
+custom_phrase.txt 加一行：这句话没有打全拼音\tzjhmydqpy\t1
+
+zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
+            2. 中几乎没有的去朋友     ← 官方模型的答案退到第 2 位，没被破坏
+```
+
+**为什么它比自训模型更该先做**（三条常见顾虑的对照）：
+
+| 顾虑 | 结论 | 依据 |
+|------|------|------|
+| 要收集很多打字习惯 | **不需要** | `custom_phrase` 是精确编码查表，你只需要写你要的那几句；`enable_completion: false` 意味着打全码即出，n-gram 那套完全用不上 |
+| 每次增长都要重建 | **此路不用重建** | `db_class: stabledb` 直接读文本，**加一行即生效**（已实测，未跑 deploy）。自训模型这条顾虑成立：darts 是静态结构，加键必须整体重建（但贵的 KenLM 那段永远只需做一次） |
+| 模型小会过拟合 | **不适用** | 语法模型不是统计模型而是查找表，`update_result` 是**取最大值**（`octagram.cc:57`），所以往 `.gram` 里加键只会让这条边的分**升高或不变**，不可能破坏别的候选。真正的风险是「你加的键太强、把更好的选择顶掉」，而 `Query` 单边上限只有 `log(词频) - collocation_penalty ≈ +7.4`，顶不飞 |
+
+**「过拟合」这个担心用在自训模型上也是错的方向**：官方模型负责通用能力、
+你的条目只补充你自己的说法，两者**合并**而不是替换，所以不存在「学少了就退化」。
+
+**`custom_phrase` 的限制**：只认**完整编码**（`enable_completion: false`），
+所以它是「打全声母即出整句」，不是「打两个字母就猜出来」。要后者就得靠模型的
+束搜索，而那条路的上限见本节开头（`beam_width` 剪枝）。
+
+**接入 app 的落点**：现有「常用语」（`data/manager/PhraseManager` +
+`phrase_records` 表）**只进面板、没接拼音索引**，所以当不了简码用。要做的就是
+把它同步写进 `<userDataDir>/custom_phrase.txt`，并给每条常用语一个可编辑的
+「编码」（默认按首字母自动生成）。改完调 `IEngine.updateConfig()`（`startRime(false)`，
+轻量重载）即可生效，**不要用 `reload()`** —— 那是 `deploy()`，`fullCheck=true`
+会把词库表全部重建一遍，为改一句话不值得。
+
+**实验工具**：`mini_gram_builder`（纯 `darts.h` + 44 字节头，不依赖 librime）
+可以从 `键 词频` 两列直接造出 `.gram`，用来验证「定向模型能不能影响整句解码」。
+实测：45 条手写键能把 `zjhmydqpy` 从「中几乎没有的去朋友」扭成
+「这句话没有打桥牌也」（前 6 个字变对），但**补不平尾部** —— 因为整句分数是
+逐边的「词典权重 + 语法分」，没有匹配时每条边还要付 `non_collocation_penalty: -6`
+（无模型时是 `Grammar::Evaluate` 里的 `log(1e-6) = -13.8`），**词数多的切分天生吃亏**。
+这解释了为什么长句子靠模型打折、靠 `custom_phrase` 才可靠。
+
 **验证方法**：`scripts/rime-probe/`，改完先在那里跑（几秒钟），
 别靠刷机试。回归基线是「`qryt` 首选仍是杞人忧天、`nihao`/`zhongguo` 不变」。
 
