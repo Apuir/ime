@@ -71,10 +71,17 @@
     "fuzzy_schemas": [
       "wanxiang"
     ],
-    "enable_fallback_reorder": true
+    "enable_fallback_reorder": true,
+    "sentence_schemas": [
+      "wanxiang",
+      "wanxiang_t9",
+      "wanxiang_t9i"
+    ],
+    "max_sentences": 8,
+    "sentence_cutoff_threshold": 0.5
   },
   "file_count": 93,
-  "uncompressed_bytes": 131356948,
+  "uncompressed_bytes": 131357392,
   "files": {
     "model/predict.marisa": {
       "bytes": 37366176,
@@ -401,8 +408,8 @@
       "sha256": "997b6f2b33787752a4631a52417deccf8286ba561745e148cd290a582fb5e65a"
     },
     "shared/wanxiang.schema.yaml": {
-      "bytes": 43164,
-      "sha256": "bdc46be7ea810bca9722a5edec276702fc2b6736c9a8f4bd46b7531d5179eaec"
+      "bytes": 43312,
+      "sha256": "4300fb427fc31769c150fd4f3159e925a6e7761eff0b7dd2fb379e65a53f5e53"
     },
     "shared/wanxiang_algebra.yaml": {
       "bytes": 154898,
@@ -437,12 +444,12 @@
       "sha256": "8cd64dd226ccdddc0771085ad4d072c19713529ec02c9f4c00d97e6fd6e4c8df"
     },
     "shared/wanxiang_t9.schema.yaml": {
-      "bytes": 24495,
-      "sha256": "5b5d1250f2f68ef72cf889d721b03bc23200207327c0474d402ae2386e463d6a"
+      "bytes": 24643,
+      "sha256": "45a4452f72649c56938ffdd7dcdea5c39daa92b3c827e89ff43d8b8fea46991a"
     },
     "shared/wanxiang_t9i.schema.yaml": {
-      "bytes": 24593,
-      "sha256": "2212b8a89d8fd34e722ea20effcdf58601d4fe85d3fac50b7306f7a14e52410f"
+      "bytes": 24741,
+      "sha256": "840fba85a48476badcc7d61cf23201f838b306511a8407ff0009adbf67852c3c"
     },
     "shared/weasel.yaml": {
       "bytes": 26646,
@@ -451,12 +458,12 @@
   },
   "transformed": [
     "shared/default.yaml → schema_list 固定为 wanxiang_t9/wanxiang/wanxiang_english",
-    "shared/wanxiang.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 追加模糊音 6 组; 注入 options 块; enable_fallback_reorder=true",
+    "shared/wanxiang.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 追加模糊音 6 组; 注入 options 块; enable_fallback_reorder=true; 整句候选 max_sentences=8/cutoff=0.5",
     "shared/wanxiang_english.schema.yaml → 注入 layout,punctuation,kind; 注入 options 块",
     "shared/wanxiang_mixedcode.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块",
     "shared/wanxiang_reverse.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块",
-    "shared/wanxiang_t9.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块; enable_fallback_reorder=true",
-    "shared/wanxiang_t9i.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块; enable_fallback_reorder=true"
+    "shared/wanxiang_t9.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块; enable_fallback_reorder=true; 整句候选 max_sentences=8/cutoff=0.5",
+    "shared/wanxiang_t9i.schema.yaml → 注入 layout,punctuation,kind,candidateKind; 注入 options 块; enable_fallback_reorder=true; 整句候选 max_sentences=8/cutoff=0.5"
   ],
   "kept_from_previous_zip": [
     "model/predict.marisa"

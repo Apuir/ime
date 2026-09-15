@@ -9,7 +9,7 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.2.0`（20200） |
+| 当前版本 | `2.2.1`（20201） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
@@ -34,9 +34,12 @@
 **输入**
 
 - 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由方案的 `layout` 自动切换
-- **模糊音默认全开**：平翘舌（zh/z、ch/c、sh/s）、前后鼻音（an/ang、en/eng、in/ing）、
-  n/l、r/l、r/y、h/f、k/g 共 10 组，`zongguo` 直接出「中国」
-- **首字母简拼**：打 `qryt` 出「杞人忧天」、`zg` 出「中国」这类缩写输入
+- **模糊音默认开启**：平翘舌（zh/z、ch/c、sh/s）、前后鼻音（an/ang、en/eng、in/ing）、
+  n/l 共 6 组，`zongguo` 直接出「中国」
+- **首字母简拼**：打 `qryt` 出「杞人忧天」、`zjh` 出「这句话」
+- **首字母整句**：整句候选给 8 条、可以往下翻（`mtzj` 第 4 位出「明天再讲」、
+  `nzmy` 第 4 位出「你怎么样」）；质量上限与语法模型的关系见
+  [`docs/DEVELOPMENT.md` 9.6.1](docs/DEVELOPMENT.md#961-首字母整句translatormax_sentences)
 - 符号键盘、Emoji 键盘、全角/半角标点、简↔繁转换、英文/ASCII 模式
 - 方案启用、排序、切换；多套万象拼音方案开箱可用
 
@@ -89,7 +92,7 @@
 本项目**不发 Release APK**，APK 由本机自行构建（见下一节），然后用 `adb` 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.2.0.apk
+adb install -r app/build/outputs/apk/release/ime-2.2.1.apk
 ```
 
 首次打开会依次进入：
@@ -163,8 +166,8 @@ chmod +x install-deps.sh && ./install-deps.sh
 ls -lh app/src/main/assets/resource.zip
 
 # 4) 编译
-./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.2.0-debug.apk
-./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.2.0.apk
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.2.1-debug.apk
+./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.2.1.apk
 ```
 
 首次 native 编译（librime + Boost + OpenCC）耗时较长。release 签名可用仓库根的 `keystore.properties`，或用环境变量

@@ -4,7 +4,7 @@
 
 | 脚本 | 作用 | 什么时候用 |
 |------|------|-----------|
-| [`build-rime-resource.py`](build-rime-resource.py) | 重建 `app/src/main/assets/resource.zip`（万象拼音方案数据）：白名单取数、注入 app 桥接字段与模糊音规则、保留 `model/predict.marisa`、做引用校验、输出 manifest | **改动方案数据时**；换机器要重建时 |
+| [`build-rime-resource.py`](build-rime-resource.py) | 重建 `app/src/main/assets/resource.zip`（万象拼音方案数据）：白名单取数、注入 app 桥接字段 / 模糊音规则 / 整句候选配置、保留 `model/predict.marisa`、做引用校验、输出 manifest | **改动方案数据时**；换机器要重建时 |
 | [`test_build_rime_resource.py`](test_build_rime_resource.py) | 上面那个脚本的单元测试（注入正确性 + 幂等性 + 引用校验） | 改那个脚本之后 |
 | [`rime-probe/`](rime-probe/) | 在开发机上直接加载方案数据跑 librime，验证输入行为 | **改 `speller/algebra` 之前先验**，别靠刷机试 |
 | [`rime-resource-manifest.json`](rime-resource-manifest.json) | 上一次 `resource.zip` 的文件清单 + sha256 + 万象版本（由脚本生成，**建议入库**用于追溯） | 查「这一版包里到底是什么」 |
@@ -18,6 +18,10 @@ python3 scripts/build-rime-resource.py
 
 # 换个模糊音档位（safe = 平翘舌+前后鼻音+n/l 共 6 组，默认；all = 10 组；none = 关）
 python3 scripts/build-rime-resource.py --fuzzy all
+
+# 整句候选档位（默认 max_sentences=8 / cutoff=0.5；=1 表示沿用引擎默认的「只给一条整句」）
+python3 scripts/build-rime-resource.py --max-sentences 1
+python3 scripts/build-rime-resource.py --max-sentences 20 --sentence-cutoff 0.8
 
 # 脚本自己的测试
 python3 scripts/test_build_rime_resource.py

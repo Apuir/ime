@@ -53,6 +53,11 @@ switches:
   - name: ascii_mode
     states: [中文, 英文]
 
+translator:
+  dictionary: wanxiang
+  enable_completion: true
+  max_homophones: 8
+
 speller:
   alphabet: zyxwvutsrqponmlkjihgfedcba
   algebra:
@@ -149,6 +154,58 @@ class InjectOptionsBlockTest(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+class InjectSentenceOptionsTest(unittest.TestCase):
+    def test_injectsIntoSchema(self):
+        out, applied = b.inject_sentence_options(
+            MINIMAL_SCHEMA, "wanxiang", 8, 0.5
+        )
+        self.assertTrue(applied)
+        self.assertIn("  max_sentences: 8\n", out)
+        self.assertIn("  sentence_cutoff_threshold: 0.5\n", out)
+        # 必须落在 translator 块内部（缩进两格），且不能跑到别的顶层键下面
+        lines = out.splitlines()
+        start = lines.index("translator:")
+        end = next(
+            i for i in range(start + 1, len(lines))
+            if lines[i].strip() and not lines[i][0].isspace()
+        )
+        block = "\n".join(lines[start:end])
+        self.assertIn("max_sentences: 8", block)
+
+    def test_defaultsMatchShippedValues(self):
+        # 裸跑脚本必须复现出随包那一份，所以默认值要钉住
+        self.assertEqual(8, b.DEFAULT_MAX_SENTENCES)
+        self.assertEqual(0.5, b.DEFAULT_SENTENCE_CUTOFF)
+
+    def test_disabledWhenMaxSentencesIsOne(self):
+        out, applied = b.inject_sentence_options(MINIMAL_SCHEMA, "wanxiang", 1, 0.5)
+        self.assertFalse(applied)
+        self.assertNotIn("max_sentences:", out)
+        self.assertEqual(MINIMAL_SCHEMA, out)
+
+    def test_stripsPreviousInjectionWhenDisabled(self):
+        once, _ = b.inject_sentence_options(MINIMAL_SCHEMA, "wanxiang", 8, 0.5)
+        back, applied = b.inject_sentence_options(once, "wanxiang", 1, 0.5)
+        self.assertFalse(applied)
+        self.assertEqual(MINIMAL_SCHEMA, back)
+
+    def test_isIdempotent(self):
+        once, _ = b.inject_sentence_options(MINIMAL_SCHEMA, "wanxiang", 8, 0.5)
+        twice, _ = b.inject_sentence_options(once, "wanxiang", 8, 0.5)
+        self.assertEqual(once, twice)
+        self.assertEqual(1, twice.count("max_sentences:"))
+
+    def test_missingTranslatorBlockIsSkipped(self):
+        # 不抛异常：没有 translator 的方案由调用方记警告，不能整包构建失败
+        out, applied = b.inject_sentence_options("schema:\n  schema_id: x\n", "wanxiang", 8, 0.5)
+        self.assertFalse(applied)
+        self.assertEqual("schema:\n  schema_id: x\n", out)
+
+    def test_nonPinyinSchemaNotInSentenceSchemas(self):
+        self.assertNotIn("wanxiang_english", b.SENTENCE_SCHEMAS)
+        self.assertIn("wanxiang", b.SENTENCE_SCHEMAS)
+
+
 class MiscTransformTest(unittest.TestCase):
     def test_forceSchemaList(self):
         text = "schema_list:\n  - schema: wanxiang\nmenu:\n  page_size: 6\n"
@@ -172,20 +229,34 @@ class MiscTransformTest(unittest.TestCase):
         text, _ = b.inject_schema_fields(text, "wanxiang")
         text, _ = b.inject_fuzzy_rules(text, "wanxiang", b.FUZZY_ALL)
         text = b.inject_options_block(text, "wanxiang")
+        text, _ = b.inject_sentence_options(text, "wanxiang", 8, 0.5)
         stripped = b.strip_injections(text)
-        for marker in (b.MARK_SCHEMA_BEGIN, b.MARK_OPTIONS_BEGIN, b.MARK_FUZZY_BEGIN):
+        for marker in (
+            b.MARK_SCHEMA_BEGIN, b.MARK_OPTIONS_BEGIN,
+            b.MARK_FUZZY_BEGIN, b.MARK_SENTENCE_BEGIN,
+        ):
             self.assertNotIn(marker, stripped)
         self.assertNotIn("模糊音_nl", stripped)
         self.assertNotIn("options:", stripped)
         self.assertNotIn("layout:", stripped)
+        self.assertNotIn("max_sentences", stripped)
+        self.assertEqual(MINIMAL_SCHEMA, stripped)
 
     def test_fullTransformIsStableAcrossRuns(self):
         """最强的一条：把输出当输入再跑一次，结果必须逐字节一致。"""
         first, notes, warns = b.transform("wanxiang.schema.yaml", MINIMAL_SCHEMA.encode(), b.FUZZY_ALL)
         self.assertEqual([], warns)
         self.assertTrue(notes)
+        self.assertIn("max_sentences: 8", first.decode())
         second, _, _ = b.transform("wanxiang.schema.yaml", first, b.FUZZY_ALL)
         self.assertEqual(first, second)
+
+    def test_fullTransformCanTurnSentencesOff(self):
+        out, _, warns = b.transform(
+            "wanxiang.schema.yaml", MINIMAL_SCHEMA.encode(), b.FUZZY_ALL, 1, 0.5
+        )
+        self.assertEqual([], warns)
+        self.assertNotIn("max_sentences", out.decode())
 
     def test_transformLeavesLuaAndDictsUntouched(self):
         payload = b"whatever"

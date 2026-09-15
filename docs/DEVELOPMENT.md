@@ -11,7 +11,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `2.2.0` / `20200`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
+| versionName / versionCode | `2.2.1` / `20201`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -56,10 +56,12 @@
 **输入**
 
 - Rime 拼音方案（默认启用 `wanxiang_t9` / `wanxiang` / `wanxiang_english`），支持方案启用、排序、切换
-- **模糊音默认全开**（10 组：平翘舌 / 前后鼻音 / n-l / r-l / r-y / h-f / k-g），`zongguo` → 中国；
+- **模糊音默认开启**（6 组：平翘舌 / 前后鼻音 / n-l），`zongguo` → 中国；
   开关位置与取舍见 [9.4](#模糊音本项目默认全开)
-- **首字母简拼**：`qryt` → 杞人忧天；候选数量与耗时可用
+- **首字母简拼**：`qryt` → 杞人忧天、`zjh` → 这句话；候选数量与耗时可用
   [`scripts/rime-probe/`](../scripts/rime-probe/README.md) 在开发机上实测
+- **首字母整句**：整句候选 8 条（`translator/max_sentences`，引擎默认只有 1 条），
+  见 [9.6.1](#961-首字母整句translatormax_sentences)
 - 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由当前 scheme 的 `layout` 字段自动决定
 - 符号键盘、Emoji 键盘；全角/半角标点切换
 - 简↔繁转换（自带 FMM 转换器，不依赖 OpenCC 运行时）
@@ -345,11 +347,22 @@ python3 scripts/build-rime-resource.py             # 重建（覆盖 assets/reso
    - 顶层 `options:` 块 —— `OptionsApplier` 据此把 app 的「繁体 / Emoji / 英文模式」
      三个设置映射成 Rime 运行时选项。
 3. **注入模糊音规则**（见 [9.4](#94-输入方案rime-schema)），`--fuzzy` 可选档位。
-4. 保留上一版 zip 里的 `model/predict.marisa`（app 专用，万象官方包没有）。
-5. **引用校验**：扫 yaml 的 `import_tables` / `files` 与 lua 里的 `lua/data/...`
+4. **注入整句候选配置**（见 [9.6.1](#961-首字母整句translatormax_sentences)）：
+   `translator/max_sentences: 8` + `sentence_cutoff_threshold: 0.5`，
+   `--max-sentences 1` 可关掉。**librime 默认 `max_sentences: 1`，整句只给一条猜测**，
+   这是「首字母整句」手感差的直接原因。
+5. 保留上一版 zip 里的 `model/predict.marisa`（app 专用，万象官方包没有）。
+6. **引用校验**：扫 yaml 的 `import_tables` / `files` 与 lua 里的 `lua/data/...`
    字面量，有「被引用但没打包」的文件就报错退出，避免打出启动即报错的包。
-6. 输出 `scripts/rime-resource-manifest.json`（文件清单 + sha256 + 万象版本 +
+7. 输出 `scripts/rime-resource-manifest.json`（文件清单 + sha256 + 万象版本 +
    注入内容），**建议随代码一起提交**用于追溯。
+
+> **改了方案文件必须重新部署才生效**：librime 部署时会把方案副本写进
+> `user/build/<schema_id>.schema.yaml`，之后**从那里读**（`shared/` 下的原文件不再参与）。
+> 在探针里直接改 `shared/` 下的 yaml 是不生效的 —— 改 `user/build/` 里的副本，
+> 或者跑一次部署。app 侧不用管：`startRime(false)` → `start_maintenance(false)` →
+> `detect_modifications` 比对 user/shared 两个目录的文件变更，变了就会重新部署，
+> **不需要用户手动点「重载引擎」**。
 
 打包结构（librime 要求根目录直接是 `shared/` 和 `model/`）：
 
@@ -436,7 +449,7 @@ ls -lh app/src/main/assets/resource.zip
 ### 7.4 安装与首次使用
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.2.0.apk
+adb install -r app/build/outputs/apk/release/ime-2.2.1.apk
 ```
 
 打开 App → `InitActivity` 等待资源解压/引擎部署 → `SetupActivity` 引导：
@@ -804,6 +817,39 @@ speller:
 > 输入码 ≥ 3 个字符时打一行 `diag schema=... input=... candidates=... top=...`，
 > 一眼就能看出「候选是引擎没给出来」还是「被排序挪走了」。release 构建里
 > `Timber.treeCount == 0`，这行日志不会产生任何开销。
+
+### 9.6.1 首字母整句（`translator/max_sentences`）
+
+「每个字只打一个声母就出整句」（`zjhmydqpy` 这类）由 librime 的
+`script_translator` 负责，**不是 app 侧的功能**，改 app 代码不会影响它。
+两个开关都在方案文件的 `translator:` 下，由 `scripts/build-rime-resource.py` 注入：
+
+| 键 | 引擎默认 | 本项目 | 作用 |
+|----|---------|--------|------|
+| `max_sentences` | `1` | **`8`** | 整句候选条数。**默认 1 是关键**：`=1` 走 `Poet::MakeSentence`（单条最优路径），`>1` 走 `Poet::MakeSentences`（带语法模型的束搜索），这是完全不同的两条代码路径 |
+| `sentence_cutoff_threshold` | `0.1` | **`0.5`** | 与上一条整句的**相对**分差超过多少就停止产出。判据是 `|cur-last| / |last| > threshold`，所以**越大给得越多**（`poet.cc:325-341`） |
+
+源码位置（fork 在 `app/src/main/cpp/deps/librime`）：
+`src/rime/gear/translator_commons.cc`（读配置，`max_sentences` 被
+`std::min(std::max(1, x), 100)` 夹住）、`src/rime/gear/script_translator.cc:495`（何时合成整句）、
+`src/rime/gear/poet.cc:258`（束搜索）。
+
+**为什么停在 8**：实测 8 能出「明天再讲」「你怎么样」这类可用备选；
+20 会开始夹带「就头疼」「将他推」这种碎词（整句候选挤掉的是候选栏位置）。
+
+**整句质量的上限在哪**：`MakeSentences` 是**全局最优单路径的束搜索**，一个强搭配
+可以把整句锁死。`zjhmydqpy` 无论 `max_sentences` 调到 50 都只出「中/在/这 几乎没有的
+去朋友」的变体，正确句子**根本不在候选里**；连全拼
+`zhejuhuameiyoudaquanpinyin` 的首选都是「这句话没有打**拳**拼音」（`全`/`拳` 同音，
+`打拳` 是词、`打全` 不是）。这是引擎架构决定的，**不要把它当 bug 修**——
+主流输入法靠的是网量级 n-gram 语言模型。
+
+**唯一的例外杠杆是语法模型**：同一句 `jttqzm`，挂上 `wanxiang-lts-zh-hans.gram`
+后首选变「今天天气怎么」，没挂是「具体天谴之门」。模型 420 MB，见 `GramModelDownloader`；
+随包会让 APK 到 ~530 MB，所以只能手动下载。
+
+**验证方法**：`scripts/rime-probe/`，改完先在那里跑（几秒钟），
+别靠刷机试。回归基线是「`qryt` 首选仍是杞人忧天、`nihao`/`zhongguo` 不变」。
 
 ### 9.7 在线能力（不再依赖任何中间服务器）
 

@@ -8,7 +8,7 @@ app 把 librime 当纯内核，方案数据（万象拼音）打包在 ``assets/
 运行时解压到 ``files/shared``。这个 zip **不入库**（65 MB+），所以必须有一个
 可复现的脚本，否则换机器 / 换版本就没法重建。
 
-本脚本做四件事：
+本脚本做五件事：
 
 1. 从「干净来源」（默认本机 fcitx5 的 rime 用户目录）按**白名单**取方案数据；
 2. **注入 app 专属字段** —— ``schema/{layout,punctuation,kind,candidateKind}``
@@ -16,10 +16,14 @@ app 把 librime 当纯内核，方案数据（万象拼音）打包在 ``assets/
    万象官方发布包**没有**，缺了会导致：键盘不随方案切换、简繁 / Emoji / 英文模式
    三个设置不跟 app 走；
 3. **注入模糊音规则**（默认 6 组，`--fuzzy` 可换档）到 ``wanxiang.schema.yaml``；
-4. 保留上一版 zip 里的 ``model/predict.marisa``（app 专用，来自上游），
+4. **注入整句候选配置** —— ``translator/{max_sentences,sentence_cutoff_threshold}``
+   到拼音方案。librime 的 ``max_sentences`` 默认是 **1**，也就是「首字母整句」
+   只给一条猜测；调到 8 之后 ``mtzj`` 能翻到「明天再讲」、``nzmy`` 能翻到
+   「你怎么样」，这才是主流输入法的手感（`--max-sentences 1` 可关掉）；
+5. 保留上一版 zip 里的 ``model/predict.marisa``（app 专用，来自上游），
    按 librime 要求的结构打包（根目录直接是 ``shared/`` 和 ``model/``）。
 
-三类注入都用 ``# >>> ime:xxx`` / ``# <<< ime:xxx`` 注释成对包裹，
+四类注入都用 ``# >>> ime:xxx`` / ``# <<< ime:xxx`` 注释成对包裹，
 所以脚本**幂等**：重复执行、或把输出目录当来源再跑一次，结果都一致。
 
 另外会做一次**引用校验**：扫描 yaml 的 ``import_tables`` / ``__include`` /
@@ -139,6 +143,23 @@ FUZZY_PRESETS: dict[str, list[str]] = {
 #: 默认档位 —— 必须等同于随包发出那一份，否则裸跑脚本复现不出同一个 zip。
 DEFAULT_FUZZY = "safe"
 
+#: 要注入整句候选配置的方案（拼音类）。
+#: 英文 / 反查 / 混合码方案不合成中文句子，注入没有意义。
+SENTENCE_SCHEMAS = ["wanxiang", "wanxiang_t9", "wanxiang_t9i"]
+
+#: 整句候选数。librime 的 ``translator/max_sentences`` 默认是 1 —— 首字母整句
+#: 只给一条猜测，用户没有备选；``<=1`` 即沿用引擎默认（脚本不注入）。
+#:
+#: 为什么是 8 而不是更大：实测 8 已经开始出「明天再讲」「你怎么样」这类可用备选，
+#: 而 20 会夹带「就头疼」「将他推」这种碎词。整句候选互挤的是候选栏位置，
+#: 太多会把短语候选顶下去。
+DEFAULT_MAX_SENTENCES = 8
+
+#: 整句门限。librime 用它做「与上一条整句的相对分差超过多少就停止产出」的判据
+#: （``|cur-last| / |last| > threshold`` 即中断），所以**越大给得越多**。
+#: 默认 0.1 过严，8 条里往往只出得来 1~2 条。
+DEFAULT_SENTENCE_CUTOFF = 0.5
+
 #: 顶层要带的文件扩展名（``*.gram`` 之类大文件不在白名单里）。
 TOP_LEVEL_EXTS = {".yaml", ".yml", ".md", ".txt"}
 
@@ -169,11 +190,14 @@ MARK_OPTIONS_BEGIN = "# >>> ime:options (由 build-rime-resource.py 注入，勿
 MARK_OPTIONS_END = "# <<< ime:options"
 MARK_FUZZY_BEGIN = "# >>> ime:fuzzy (由 build-rime-resource.py 注入，勿手改)"
 MARK_FUZZY_END = "# <<< ime:fuzzy"
+MARK_SENTENCE_BEGIN = "  # >>> ime:sentence (由 build-rime-resource.py 注入，勿手改)"
+MARK_SENTENCE_END = "  # <<< ime:sentence"
 
 MARK_PAIRS = [
     (MARK_SCHEMA_BEGIN, MARK_SCHEMA_END),
     (MARK_OPTIONS_BEGIN, MARK_OPTIONS_END),
     (MARK_FUZZY_BEGIN, MARK_FUZZY_END),
+    (MARK_SENTENCE_BEGIN, MARK_SENTENCE_END),
 ]
 
 #: 允许解析不到的引用 —— 这些是「可选 / 用户自己提供」的文件，缺失时方案有默认行为。
@@ -400,6 +424,38 @@ options:
     return "".join(lines)
 
 
+def inject_sentence_options(
+    text: str, schema_id: str, max_sentences: int, cutoff: float
+) -> tuple[str, bool]:
+    """往 ``translator:`` 块注入整句候选配置。
+
+    返回 ``(新文本, 是否注入)``。``max_sentences <= 1`` 表示沿用引擎默认
+    （引擎本身默认就是 1），此时只做剥离、不注入。
+
+    找不到 ``translator:`` 块时**不抛异常**（方案可能本就不走拼音翻译器），
+    由调用方记一条警告 —— 这里静默跳过会让「整句没生效」变成难查的哑问题。
+    """
+    text = strip_injection(text, MARK_SENTENCE_BEGIN, MARK_SENTENCE_END)
+    if max_sentences <= 1:
+        return text, False
+
+    lines = text.splitlines(keepends=True)
+    bounds = _top_level_block_bounds(lines, "translator")
+    if bounds is None:
+        return text, False
+
+    block = [
+        MARK_SENTENCE_BEGIN + "\n",
+        f"  max_sentences: {max_sentences}\n",
+        f"  sentence_cutoff_threshold: {cutoff:g}\n",
+        MARK_SENTENCE_END + "\n",
+    ]
+    # 紧跟 `translator:` 之后插：YAML 映射的键序无语义，这样插入点最稳定
+    insert_at = bounds[0] + 1
+    lines[insert_at:insert_at] = block
+    return "".join(lines), True
+
+
 def enable_fallback_reorder(text: str, schema_id: str) -> tuple[str, bool]:
     """把「同码回删再输首次交换」打开。
 
@@ -436,7 +492,13 @@ def force_schema_list(text: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def transform(rel: str, data: bytes, fuzzy_rules: list[str]) -> tuple[bytes, list[str], list[str]]:
+def transform(
+    rel: str,
+    data: bytes,
+    fuzzy_rules: list[str],
+    max_sentences: int = DEFAULT_MAX_SENTENCES,
+    sentence_cutoff: float = DEFAULT_SENTENCE_CUTOFF,
+) -> tuple[bytes, list[str], list[str]]:
     """对单个文件做变换。返回 ``(新字节, 做了什么, 警告)``。"""
     notes: list[str] = []
     warnings: list[str] = []
@@ -474,6 +536,17 @@ def transform(rel: str, data: bytes, fuzzy_rules: list[str]) -> tuple[bytes, lis
     text, changed = enable_fallback_reorder(text, schema_id)
     if changed:
         notes.append("enable_fallback_reorder=true")
+    if schema_id in SENTENCE_SCHEMAS and max_sentences > 1:
+        text, applied = inject_sentence_options(
+            text, schema_id, max_sentences, sentence_cutoff
+        )
+        if applied:
+            notes.append(f"整句候选 max_sentences={max_sentences}"
+                         f"/cutoff={sentence_cutoff:g}")
+        else:
+            warnings.append(
+                f"没有 translator: 块，整句候选配置没注入（schema_id={schema_id}）"
+            )
 
     return text.encode("utf-8"), notes, warnings
 
@@ -530,7 +603,13 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def build_plan(source: Path, previous: Path | None, fuzzy_rules: list[str]) -> BuildPlan:
+def build_plan(
+    source: Path,
+    previous: Path | None,
+    fuzzy_rules: list[str],
+    max_sentences: int = DEFAULT_MAX_SENTENCES,
+    sentence_cutoff: float = DEFAULT_SENTENCE_CUTOFF,
+) -> BuildPlan:
     plan = BuildPlan()
 
     rels = collect_source_files(source)
@@ -539,7 +618,9 @@ def build_plan(source: Path, previous: Path | None, fuzzy_rules: list[str]) -> B
 
     for rel in rels:
         data = (source / rel).read_bytes()
-        new_data, notes, warns = transform(str(rel), data, fuzzy_rules)
+        new_data, notes, warns = transform(
+            str(rel), data, fuzzy_rules, max_sentences, sentence_cutoff
+        )
         plan.files[f"shared/{rel}"] = new_data
         plan.warnings.extend(f"{rel}: {w}" for w in warns)
         if notes:
@@ -582,7 +663,8 @@ def write_zip(plan: BuildPlan, out: Path) -> None:
 
 
 def write_manifest(plan: BuildPlan, source: Path, manifest: Path,
-                   fuzzy_preset: str, fuzzy_rules: list[str]) -> None:
+                   fuzzy_preset: str, fuzzy_rules: list[str],
+                   max_sentences: int, sentence_cutoff: float) -> None:
     version_file = source / "version.txt"
     src_version = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else ""
     payload = {
@@ -597,6 +679,9 @@ def write_manifest(plan: BuildPlan, source: Path, manifest: Path,
             "fuzzy_rules": fuzzy_rules,
             "fuzzy_schemas": FUZZY_SCHEMAS,
             "enable_fallback_reorder": True,
+            "sentence_schemas": SENTENCE_SCHEMAS,
+            "max_sentences": max_sentences,
+            "sentence_cutoff_threshold": sentence_cutoff,
         },
         "file_count": len(plan.files),
         "uncompressed_bytes": sum(len(v) for v in plan.files.values()),
@@ -632,6 +717,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fuzzy", choices=sorted(FUZZY_PRESETS), default=DEFAULT_FUZZY,
                         help="模糊音档位：safe=平翘舌+前后鼻音+n/l 共 6 组（默认）; "
                              "all=10 组全开; none=不注入")
+    parser.add_argument("--max-sentences", type=int, default=DEFAULT_MAX_SENTENCES,
+                        help=f"整句候选数（默认 {DEFAULT_MAX_SENTENCES}）。<=1 表示沿用"
+                             "引擎默认（只给一条整句猜测）")
+    parser.add_argument("--sentence-cutoff", type=float, default=DEFAULT_SENTENCE_CUTOFF,
+                        help=f"整句门限（默认 {DEFAULT_SENTENCE_CUTOFF:g}，越大给得越多）")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不写任何文件")
     args = parser.parse_args(argv)
 
@@ -642,7 +732,10 @@ def main(argv: list[str] | None = None) -> int:
 
     fuzzy_rules = FUZZY_PRESETS[args.fuzzy]
     previous = args.previous if args.previous is not None else args.out
-    plan = build_plan(source, previous if previous.exists() else None, fuzzy_rules)
+    plan = build_plan(
+        source, previous if previous.exists() else None, fuzzy_rules,
+        args.max_sentences, args.sentence_cutoff,
+    )
 
     version_file = source / "version.txt"
     src_version = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else "?"
@@ -653,6 +746,9 @@ def main(argv: list[str] | None = None) -> int:
     if src_version != EXPECTED_WANXIANG_VERSION:
         print(f"  ! 期望 {EXPECTED_WANXIANG_VERSION}，来源是 {src_version}，请确认来源无误")
     print(f"模糊音档位: {args.fuzzy}（{len(fuzzy_rules)} 组）")
+    print(f"整句候选  : max_sentences={args.max_sentences} "
+          f"cutoff={args.sentence_cutoff:g}"
+          f"{'（沿用引擎默认）' if args.max_sentences <= 1 else ''}")
     print(f"文件数    : {len(plan.files)}")
     print(f"未压缩大小: {total / 1024 / 1024:.1f} MiB")
 
@@ -689,7 +785,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     write_zip(plan, args.out)
-    write_manifest(plan, source, args.manifest, args.fuzzy, fuzzy_rules)
+    write_manifest(plan, source, args.manifest, args.fuzzy, fuzzy_rules,
+                   args.max_sentences, args.sentence_cutoff)
     print(f"\n已写出 {args.out}  {args.out.stat().st_size / 1024 / 1024:.1f} MiB")
     print(f"已写出 {args.manifest}")
     print(f"zip 的 md5: {hashlib.md5(args.out.read_bytes()).hexdigest()}")

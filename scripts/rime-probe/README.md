@@ -62,6 +62,8 @@ mkdir -p user
 |------|------|
 | 简拼还能出成语 | `--expect 杞人忧天 qryt` |
 | 全拼基线没坏 | `--expect 你好 --expect 中国 nihao zhongguo` |
+| 整句候选够翻 | `--expect 明天再讲 mtzj` → 应在第 4 位附近 |
+| 整句候选够翻（2） | `--expect 你怎么样 nzmy` → 应在第 4 位附近 |
 | 模糊音 zh/z | `--expect 中国 zongguo` |
 | 模糊音 c/ch | `--expect 长 cang` |
 | 模糊音 s/sh | `--expect 是 si` |
@@ -74,6 +76,11 @@ mkdir -p user
 ## 坑与前提
 
 - **`--deploy` 之后的 `user/` 目录不要删**：词库编译产物在里面，删了要重编。
+- **改了 `shared/` 下的方案文件，不重新部署是不生效的**：librime 部署时会把方案
+  副本写进 `user/build/<schema_id>.schema.yaml`，**之后从那里读**。所以在探针里
+  改 `shared/wanxiang.schema.yaml` 看不到任何变化 —— 要么改 `user/build/` 里的副本
+  （秒级，适合试参数），要么 `--deploy` 重建（分钟级）。试 `translator/*` 这类
+  翻译器配置用前者最省时间。
 - **别把真实的 rime 用户目录当 `user/`**：探针会在里面建 `*.userdb`、写 `user.yaml`。
 - **`/tmp` 在有些沙箱里每次命令都会重置**，中间产物放 `~/.cache/<名字>/` 之类的持久目录。
 - **librime 版本**：探针用系统 librime（本次是 1.17.0），而 app 用的是
