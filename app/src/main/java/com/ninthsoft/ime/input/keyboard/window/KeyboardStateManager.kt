@@ -44,6 +44,14 @@ object KeyboardStateManager {
 
     // 打字状态：由 Status 消息驱动（RimeEngine 不参与）
     private var isComposing = false
+
+    /**
+     * 当前是否处于拼音组合态（由 Rime 的 Status 消息驱动）。
+     *
+     * 回车键要靠它区分「组合中 → 交给方案处理」与「无组合 → 按输入框语义执行」，
+     * 见 `KeyActionListener.handleReturn`。
+     */
+    val isComposingNow: Boolean get() = isComposing
     private var lastEditorInfo: EditorInfo? = null
     private var lastInputEmpty = true
     // 上次实际应用到键盘的入参，用于避免无变化时的重复刷新

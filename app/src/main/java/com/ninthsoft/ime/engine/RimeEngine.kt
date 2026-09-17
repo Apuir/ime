@@ -231,8 +231,11 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                         }
 
                         KEYCODE_ENTER -> {
+                            // 没有组合时的回车不归引擎管：这里曾经 `Commit("\n")`，
+                            // 而单行输入框会把换行显示成空格（搜索框也不认它），
+                            // 用户看到的就是「按回车只多一个空格」。
+                            // 交回宿主按输入框语义处理，见 KeyActionListener.handleReturn。
                             if (getRawInput().isEmpty()) {
-                                actions.send(Action.EmitMessage(EngineMessage.Commit("\n")))
                                 return@sendJob
                             }
                         }

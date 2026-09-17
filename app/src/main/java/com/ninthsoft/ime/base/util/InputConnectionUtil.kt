@@ -16,6 +16,19 @@ import android.view.KeyEvent.META_SHIFT_ON
 class InputConnectionUtil {
 
     companion object {
+        /**
+         * 发送一个完整的按键（DOWN + UP）。
+         *
+         * 用于「把按键原样交给应用处理」的场景 —— 例如回车：由应用决定是换行还是提交。
+         * 注意不要用 `commitText("\n")` 代替回车，单行输入框会把换行显示成空格。
+         */
+        fun sendKeyEvent(ic: InputConnection?, keyCode: Int) {
+            ic ?: return
+            val now = SystemClock.uptimeMillis()
+            ic.sendKeyEvent(KeyEvent(now, now, ACTION_DOWN, keyCode, 0))
+            ic.sendKeyEvent(KeyEvent(now, now, ACTION_UP, keyCode, 0))
+        }
+
         fun sendCombinationKeyEvent(
             service: InputMethodService, keyCode: Int, ctrl: Boolean = false, shift: Boolean = false
         ) {

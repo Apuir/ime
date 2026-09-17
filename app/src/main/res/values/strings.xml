@@ -193,6 +193,8 @@
     <string name="gesture_swipe_up">上滑输入</string>
     <string name="gesture_long_press_desc">长按字母键，输入键上的符号或数字（开启「按键气泡」时为弹出气泡）</string>
     <string name="gesture_swipe_up_desc">在字母键上向上滑动，输入键上的符号或数字；开启「按键气泡」时改为弹出气泡，左右滑动选择（26 键 / 九键 / 15 键）</string>
+    <string name="gesture_swipe_up_distance">上滑触发距离</string>
+    <string name="gesture_swipe_up_distance_desc">要滑够「当前按键高度的这个比例」才算一次上滑。调小 = 更灵敏、容易误触；调大 = 更难误触、但要多滑一点。基准是按键的高度而不是固定距离，所以 26 键、九键和各档键盘高度都会自动适配。</string>
 
     <!-- Commit / preview settings -->
     <string name="commit_settings">上屏设置</string>

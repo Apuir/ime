@@ -331,9 +331,13 @@ class KeyboardWindowView(
 
             // 按键映射 / 气泡开关改的是 KeyDef 里的布局与行为，必须整块重建键盘才生效
             // （refreshColors 只重建视图、不会重新执行 buildLayout）。
+            // 上滑触发距离同理：它是在 BaseKeyboard 构造期读进内存、再下发到每个 KeyView 的，
+            // 不重建键盘就还是旧值 —— 表现成「滑块拖了没反应」。
             KeyboardKeyMapping.KEY_QWERTY,
             KeyboardKeyMapping.KEY_T9,
             KeyboardKeyMapping.KEY_BUBBLE_ENABLED,
+            KeyboardManager.Keyboard.SwipeUp.KEY,
+            KeyboardManager.Keyboard.SwipeUp.KEY_DIRECTION_TAN,
             -> post { keyboardStateManager.rebuild() }
 
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {

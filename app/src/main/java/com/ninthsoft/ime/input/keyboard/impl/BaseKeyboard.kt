@@ -73,6 +73,21 @@ abstract class BaseKeyboard(
     /** 次级符号 / 数字的触发手势，与「按键手势」设置共用。 */
     private val swipeAltInput: Boolean = KeyboardManager.Keyboard.GestureInput.isSwipeUp(context)
 
+    /**
+     * 「上滑输入」的触发距离系数（阈值 = 当前键高 × 它，默认 1.0 = 整整一个键高）。
+     *
+     * 气泡路径与「直接上滑」路径共用同一个值，保证开不开气泡手感一致。
+     */
+    private val swipeUpRatio: Float = KeyboardManager.Keyboard.SwipeUp.getRatio(context)
+
+    /**
+     * 上滑的「纵向占主导」系数：纵向位移须 ≥ 横向位移 × 它才算上滑。
+     *
+     * 两条路径共用 —— 加上它之后，横滑时带的纵向漂移不会再被误判成上滑。
+     */
+    private val swipeUpDirectionTan: Float =
+        KeyboardManager.Keyboard.SwipeUp.getDirectionTan(context)
+
     override fun updateSpaceKeyText(text: String) {
         spaceKeyView?.updateText(text)
     }
@@ -223,6 +238,10 @@ abstract class BaseKeyboard(
             is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
             is KeyDef.Appearance.SidePannel -> SidePanelKeyView(context, colors, def.appearance)
         }.apply {
+            // 上滑触发距离对每个键统一下发。放在最前面是因为两条上滑路径都要用，
+            // 而键高要到运行期（onTouchEvent）才拿得到，所以这里只给系数、不算距离。
+            swipeUpRatio = this@BaseKeyboard.swipeUpRatio
+            swipeUpDirectionTan = this@BaseKeyboard.swipeUpDirectionTan
             if (def.appearance.viewId == KeyView.button_return && this is ImageKeyView) {
                 returnKeyView = this
             }
@@ -431,12 +450,16 @@ abstract class BaseKeyboard(
 
     /**
      * 「上滑输入符号/数字」模式：把原本的长按动作改为上滑触发。
-     * 触发条件与 [KeyDef.Behavior.Swipe] 一致：手指在按键内向上滑动后抬起。
+     *
+     * 触发距离与气泡路径**共用同一套阈值**（当前键高 × `swipeUpRatio`，默认整整一个键高），
+     * 靠 [CustomGestureView.swipeThresholdYFollowsKeyHeight] 切到运行期取值 ——
+     * 否则「开不开按键气泡」会得到两种手感。
      */
     private fun setupSwipeAltInput(view: KeyView, action: KeyboardAction) {
         view.swipeEnabled = true
         view.swipeThresholdX = dp(800f)
-        view.swipeThresholdY = dp(20f)
+        // 不再写死 dp(20f)：Y 轴阈值改为锚定这个键自己的高度。
+        view.swipeThresholdYFollowsKeyHeight = true
         view.onGestureListener = CustomGestureView.OnGestureListener { _, event ->
             when (event.type) {
                 CustomGestureView.GestureType.Up -> {
@@ -493,24 +516,11 @@ abstract class BaseKeyboard(
     }
 
     protected open fun onAction(action: KeyboardAction) {
-        val transformed = if (action is KeyboardAction.ReturnAction) {
-            if (action.force) {
-                action
-            } else {
-                when (returnKeyIcon) {
-                    R.drawable.ic_keyboard_send -> KeyboardAction.MultiReturnAction("SEND")
-                    R.drawable.ic_keyboard_search -> KeyboardAction.MultiReturnAction("SEARCH")
-                    R.drawable.ic_keyboard_go -> KeyboardAction.MultiReturnAction("GO")
-                    R.drawable.ic_keyboard_arrow_right -> KeyboardAction.MultiReturnAction("NEXT")
-                    R.drawable.ic_keyboard_done -> KeyboardAction.MultiReturnAction("DONE")
-                    R.drawable.ic_keyboard_arrow_left -> KeyboardAction.MultiReturnAction("PREVIOUS")
-                    else -> action
-                }
-            }
-        } else {
-            action
-        }
-        keyActionListener?.onKeyAction(transformed)
+        // 回车不再在这里按「图标」反推该发哪个 editor action：那条推断依赖键盘实例缓存的
+        // [returnKeyIcon]，键盘重建后会滞后（从搜索框切到聊天框，图标还是放大镜），
+        // 于是发出错误的动作。现在原样透传，由 KeyActionListener.handleReturn
+        // 直接读当前输入框的 EditorInfo 决定 —— 图标只负责画，不再参与行为决策。
+        keyActionListener?.onKeyAction(action)
     }
 
     override fun onAttach() = Timber.d("Keyboard onAttach")

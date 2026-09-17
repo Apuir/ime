@@ -35,7 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
+import com.ninthsoft.ime.data.manager.KeyboardKeyMapping
 import com.ninthsoft.ime.data.manager.KeyboardManager
+import com.ninthsoft.ime.input.keyboard.key.SwipeUpMath
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ClickableRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SingleChoiceDialog
@@ -43,6 +45,7 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,6 +119,15 @@ fun KeyboardSettingsScreen(
         mutableIntStateOf(KeyboardManager.Keyboard.GestureInput.getMode(context))
     }
     var showGestureDialog by remember { mutableStateOf(false) }
+    var swipeUpRatio by remember {
+        mutableFloatStateOf(KeyboardManager.Keyboard.SwipeUp.getRatio(context))
+    }
+    // 气泡开关在本界面改不了，缓存一次即可；手势是 state —— 用户当场切了要跟着变。
+    val keyBubbleOn = remember { KeyboardKeyMapping.isBubbleEnabled(context) }
+    // 只有「确实会产生上滑行为」时才显示距离滑块：气泡开着（长按 / 上滑弹气泡），
+    // 或「按键手势」选了上滑。其余情况这个滑块调了没有任何效果，不如不显示。
+    val swipeGestureActive =
+        keyBubbleOn || altInputMode == KeyboardManager.Keyboard.GestureInput.MODE_SWIPE_UP
 
     Scaffold(
         topBar = {
@@ -300,6 +312,27 @@ fun KeyboardSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
+                if (swipeGestureActive) {
+                    SliderRow(
+                        title = stringResource(R.string.gesture_swipe_up_distance),
+                        value = swipeUpRatio,
+                        valueLabel = "${(swipeUpRatio * 100).roundToInt()}% 键高",
+                        range = SwipeUpMath.MIN_RATIO..SwipeUpMath.MAX_RATIO,
+                        onValueChange = {
+                            // 量化到 10% 一档：连续值会滑出 63% 这种既没法复现、
+                            // 也没法在文档里描述的档位。
+                            val quantized = (it * 10f).roundToInt() / 10f
+                            swipeUpRatio = quantized
+                            KeyboardManager.Keyboard.SwipeUp.setRatio(context, quantized)
+                        },
+                    )
+                    Text(
+                        text = stringResource(R.string.gesture_swipe_up_distance_desc),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
             }
 
             SettingsGroup(title = stringResource(R.string.toolbar_tools)) {

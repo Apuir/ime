@@ -574,7 +574,13 @@ listOf(
 - 偏好：`KeyboardManager.Keyboard.GestureInput`（`keyboard.gesture_input`，`0`=长按、`1`=上滑，互斥）
 - 标记：`KeyDef.Behavior.LongPress(action, altInput = true)` 表示“次级符号/数字输入”；26 键 `alphabetKey`、九键 `mixedAlphabetKey`、T15 自定义 `mixedAlphabetKey`、`segmentKey`、`zeroKey`、`infiniteKey` 均已标记
 - 接线：`input/keyboard/impl/BaseKeyboard.kt#createKeyView`——上滑模式下把这类长按改为 `setupSwipeAltInput()`（复用 `CustomGestureView` 的上滑手势），长按不再触发
-- 设置入口：`ui/screen/KeyboardSettingsScreen.kt` 的「按键手势」分组
+- **触发条件**（两个都要满足；判定统一收在 `input/keyboard/key/SwipeUpMath.kt`，
+  气泡路径与直接上滑路径**共用同一套**，所以开不开「按键气泡」手感一致）：
+  1. **距离** = 当前按键高度 × `keyboard.swipe_up.ratio`（默认 `1.0` = 整整一个键高）
+  2. **方向** = 纵向位移 ≥ 横向位移 × `keyboard.swipe_up.direction_tan`（默认 `1.5`，≈34° 以内）
+- 设置入口：`ui/screen/KeyboardSettingsScreen.kt` 的「按键手势」分组 —— 「上滑触发距离」滑块
+  （40%～150% 键高，仅在有上滑行为时显示）。
+  **方向系数暂时没有 UI**，调参直接改偏好或调 `SwipeUpMath.DEFAULT_DIRECTION_TAN`
 
 ### 9.3.3 横屏悬浮键盘
 
@@ -677,14 +683,36 @@ listOf(
 >
 > 气泡用 `PopupWindow` + `setClippingEnabled(false)` 实现，可以画到 IME 窗口之外（键盘高度调大时也不会被裁掉）。
 
-**触发时序（26 键 / 九键共用一套状态机，常量在 `CustomGestureView`）**
+**触发时序（26 键 / 九键共用一套状态机，距离常量在 `SwipeUpMath`）**
 
 | 操作 | 结果 |
 |------|------|
 | 轻点 | 普通输入（26 键打字母、九键进候选） |
 | 按住 250ms（`bubblePressDelay`） | 弹气泡，左右划选，抬手提交 |
-| 快速上滑抬手（位移 > `bubbleSwipeSlop`，约 2 倍 touchSlop） | **直接输入符号 / 数字**（气泡不出现） |
+| 快速上滑抬手（纵向位移 ≥ 当前键高 × `swipeUpRatio`，**且纵向占主导**） | **直接输入符号 / 数字**（气泡不出现） |
 | 上滑后停住（长按那一档到时） | 弹气泡 |
+
+> ⚠️ **上滑触发距离锚定「按键高度」，不要改回固定 dp。** 这里踩过坑：最早的阈值是
+> `touchSlop * 2`（约 16dp），而 `scaledTouchSlop` 由厂商 overlay 定义（真机 8～12dp 浮动），
+> 结果是「稍微上滑一点点就出符号」，而且换台手机手感还变。现在统一走
+> `input/keyboard/key/SwipeUpMath.kt`：阈值 = `当前键高 × ratio`（默认 1.0），
+> 26 键 / 九键 / 各档键盘高度自动适配，下限 `2 × touchSlop` 兜住极小的悬浮键盘。
+>
+> 量级依据：本节上面那条真机日志 `dy=222px / h=157px ≈ 1.4 个键高` —— 真实上滑本来就在
+> 「一个键高」量级，阈值定在这里不会把正常上滑挡在门外。回归见
+> `app/src/test/java/com/ninthsoft/ime/SwipeUpThresholdTest.kt`。
+>
+> ⚠️ **光有距离不够，还必须卡方向。** 只看纵向位移的话，「手指横向滑动时顺带产生的纵向漂移」
+> 也会被当成上滑 —— 典型场景是从 `q` 斜着划到 `e`，纵向一过阈值就蹦出符号。
+> 所以判定改成两条**同时**成立：
+> 距离 ≥ `键高 × ratio`，且 `纵向 ≥ |横向| × direction_tan`（默认 1.5，对应夹角 ≈34°）。
+> 斜着上滑只要纵向更多，仍然照常触发。
+>
+> 参照仓输入法的 `tangentThreshold`（横向/纵向正切上限），但它默认 tan15° ——
+> 换算下来纵向要达横向的 **3.73 倍**才认，比本项目的 1.5 严格得多。
+> 单键上滑的活动范围只有一个键帽，卡那么死会让斜着上滑几乎出不来，所以这里取宽松值。
+> 方向系数目前**没有 UI**，要调就改 `KeyboardManager.Keyboard.SwipeUp.KEY_DIRECTION_TAN`
+> 或 `SwipeUpMath.DEFAULT_DIRECTION_TAN`。
 
 **长按一律弹气泡**，不再跟着「按键手势」摇摆 —— 少一个互相打架的维度；那个设置只影响上滑行为的次要细节。
 

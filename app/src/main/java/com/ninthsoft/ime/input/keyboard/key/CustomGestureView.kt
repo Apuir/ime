@@ -140,8 +140,36 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
 
-    /** 气泡模式下「算一次上滑」的纵向阈值。 */
-    private val bubbleSwipeSlop: Float = touchSlop * 2f
+    /**
+     * 「上滑输入」的触发距离系数：阈值 = **当前按键高度 × 该系数**，默认 1.0（整整一个键高）。
+     *
+     * 由 `KeyboardManager.Keyboard.SwipeUp` 下发；判定与兜底见 [SwipeUpMath]。
+     * 用键高而不是固定 dp，是为了让 26 键 / 九键 / 各档键盘高度下的手感一致。
+     */
+    var swipeUpRatio: Float = SwipeUpMath.DEFAULT_RATIO
+
+    /**
+     * 「上滑输入」的方向系数：纵向位移须 ≥ 横向位移 × 该值才算「纵向占主导」。
+     *
+     * 只看纵向距离会把「横滑时带的纵向漂移」也当成上滑（从 q 斜划到 e 就会出符号）；
+     * 加上这一条后，只有方向对才算。同样由 `KeyboardManager.Keyboard.SwipeUp` 下发。
+     */
+    var swipeUpDirectionTan: Float = SwipeUpMath.DEFAULT_DIRECTION_TAN
+
+    /**
+     * Y 轴滑动阈值是否锚定键高。
+     *
+     * 上滑输入路径（[BaseKeyboard.setupSwipeAltInput]）开，这样它和气泡路径用同一套距离；
+     * `KeyDef.Behavior.Swipe` 那种固定挡位路径保持关，继续用写死的 [swipeThresholdY]。
+     */
+    var swipeThresholdYFollowsKeyHeight = false
+
+    /** 本次手势的按键高度，在 ACTION_DOWN 时缓存 —— 手势期间不会变，缓存可避免判定抖动。 */
+    private var touchKeyHeight = 0f
+
+    /** 上滑触发距离的兜底下限：键盘被拖到极小时不至于「一碰就触发」。 */
+    private val swipeUpMinDistance: Float
+        get() = touchSlop * SwipeUpMath.MIN_DISTANCE_SLOP
 
 
     init {
@@ -286,6 +314,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 isPressed = true
                 downX = x
                 downY = y
+                touchKeyHeight = height.toFloat()
                 bubbleSwipedUp = false
                 InputFeedbacks.hapticFeedback(this)
                 InputFeedbacks.soundEffect(context, soundEffect)
@@ -381,11 +410,21 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 //   快速上滑抬手 → ACTION_UP 里直接输入符号 / 数字；
                 //   上滑后停住   → 弹气泡（长按那一档已经弹出来的话就直接用它的结果）。
                 if (bubbleController != null) {
-                    if (y - downY < -bubbleSwipeSlop) {
+                    // 触发距离 = 当前键高 × swipeUpRatio（默认整整一个键高），判定收在 SwipeUpMath 里。
+                    // dy 传 downY - y（上滑为正），与 MotionEvent 的坐标方向相反，别写反。
+                    val swipedUpNow = SwipeUpMath.isSwipeUp(
+                        dx = x - downX,
+                        dy = downY - y,
+                        keyHeight = touchKeyHeight,
+                        ratio = swipeUpRatio,
+                        directionTan = swipeUpDirectionTan,
+                        minDistance = swipeUpMinDistance,
+                    )
+                    if (swipedUpNow && !bubbleSwipedUp) {
                         bubbleSwipedUp = true
                         startBubbleSwipeTimer()
-                    } else if (bubbleSwipedUp) {
-                        // 上滑之后又滑回键内：这次不算上滑输入，交回长按 / 点击那条路。
+                    } else if (!swipedUpNow && bubbleSwipedUp) {
+                        // 滑回阈值内：这次不算上滑输入，交回长按 / 点击那条路。
                         bubbleSwipedUp = false
                         cancelBubbleTimer()
                     }
@@ -496,7 +535,12 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
             SwipeAxis.Y -> {
                 unconsumed = current - swipeLastY + swipeYUnconsumed
-                threshold = swipeThresholdY
+                // 上滑输入路径锚定键高（与气泡路径同一套距离）；其余路径仍用写死的挡位。
+                threshold = if (swipeThresholdYFollowsKeyHeight) {
+                    SwipeUpMath.threshold(touchKeyHeight, swipeUpRatio, swipeUpMinDistance)
+                } else {
+                    swipeThresholdY
+                }
             }
         }
         val remains: Float = unconsumed % threshold

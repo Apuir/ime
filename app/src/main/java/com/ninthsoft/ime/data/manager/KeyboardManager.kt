@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.core.content.edit
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
+import com.ninthsoft.ime.input.keyboard.key.SwipeUpMath
 import kotlin.math.roundToInt
 
 object KeyboardManager {
@@ -454,6 +455,48 @@ object KeyboardManager {
             }
 
             fun isSwipeUp(context: Context): Boolean = getMode(context) == MODE_SWIPE_UP
+        }
+
+        /**
+         * 「上滑输入」的触发条件：
+         * - 距离：阈值 = **当前按键高度 × ratio**（默认 1.0 = 整整一个键高）
+         * - 方向：纵向位移须 ≥ 横向位移 × tangent（默认 1.5，即夹角 ≈34° 以内）
+         *
+         * 距离存比例而不是绝对 dp —— 26 键 / 九键的键高不同、键盘高度本身还是用户可拖的，
+         * 固定 dp 换台机器或换个高度手感就变。判定与常量见
+         * `input/keyboard/key/SwipeUpMath.kt`。
+         */
+        object SwipeUp {
+            const val KEY = "keyboard.swipe_up.ratio"
+
+            /** 方向系数。目前**没有 UI**，只在真机调参时手动改或用代码写。 */
+            const val KEY_DIRECTION_TAN = "keyboard.swipe_up.direction_tan"
+
+            fun getRatio(context: Context): Float {
+                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getFloat(KEY, SwipeUpMath.DEFAULT_RATIO)
+                // 没存过 → 拿默认值；存过但被写坏（0 / 越界 / NaN）→ 夹回合法区间。
+                // 这一步不能省：ratio 为 0 会让上滑彻底触发不了，用户只会看到「上滑坏了」。
+                return SwipeUpMath.clampRatio(raw)
+            }
+
+            fun setRatio(context: Context, ratio: Float) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putFloat(KEY, SwipeUpMath.clampRatio(ratio))
+                }
+            }
+
+            fun getDirectionTan(context: Context): Float {
+                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getFloat(KEY_DIRECTION_TAN, SwipeUpMath.DEFAULT_DIRECTION_TAN)
+                return SwipeUpMath.clampDirectionTan(raw)
+            }
+
+            fun setDirectionTan(context: Context, value: Float) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putFloat(KEY_DIRECTION_TAN, SwipeUpMath.clampDirectionTan(value))
+                }
+            }
         }
 
         /** 键盘上方工具栏中间那排可自定义的工具（有序）。 */

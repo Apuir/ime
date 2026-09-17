@@ -26,8 +26,8 @@ val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 20201
-        versionName = "2.2.1"
+        versionCode = 20300
+        versionName = "2.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {

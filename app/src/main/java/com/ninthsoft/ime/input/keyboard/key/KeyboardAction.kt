@@ -66,5 +66,12 @@ sealed class KeyboardAction {
 
     data object VoiceDragUp : KeyboardAction()
 
+    /**
+     * 显式指定要执行的 editor action（"SEARCH" / "SEND" / "GO" …）。
+     *
+     * 回车键本身走 [ReturnAction]，由 `KeyActionListener.handleReturn` 读当前输入框的
+     * EditorInfo 决定；这个动作留给「明确要发某个 editor action」的入口使用（例如侧栏、
+     * 面板按钮），不再参与回车的推断。
+     */
     data class MultiReturnAction(val text: String) : KeyboardAction()
 }

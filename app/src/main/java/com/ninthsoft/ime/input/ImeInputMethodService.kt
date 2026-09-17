@@ -313,6 +313,46 @@ class ImeInputMethodService : InputMethodService() {
         InputConnectionUtil.sendCombinationKeyEvent(ic, keyCode, shift = shift)
     }
 
+    /**
+     * 回车键在「没有拼音组合」时的处理：按输入框声明的语义执行。
+     *
+     * 声明了 editor action（搜索 / 发送 / 前往 / 完成…）就执行它；没声明就发一个真正的
+     * 回车按键事件交给应用自己决定换行还是提交。
+     *
+     * **不要用 `commitText("\n")` 代替换行** —— 单行输入框会把换行显示成空格，
+     * 用户看到的就是「按回车只会多一个空格」，而搜索框根本收不到搜索动作。
+     */
+    internal fun submitEditorActionOrEnter() {
+        val action = declaredEditorAction()
+        if (action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED) {
+            val ic = prepareForCommit() ?: return
+            InputConnectionUtil.sendKeyEvent(ic, KeyEvent.KEYCODE_ENTER)
+        } else {
+            submitEditorAction(action)
+        }
+    }
+
+    /** 执行指定的 editor action（输入框声明的，或工具栏按钮显式指定的）。 */
+    internal fun submitEditorAction(action: Int) {
+        val ic = prepareForCommit() ?: return
+        ic.performEditorAction(action)
+    }
+
+    /** 当前输入框声明的 editor action；未声明时返回 [EditorInfo.IME_ACTION_NONE]。 */
+    private fun declaredEditorAction(): Int =
+        (keyboardWindow?.currentEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
+
+    /**
+     * 提交类动作（回车 / editor action）前的收尾：结束输入框里的预览 composing，
+     * 并清空引擎组合 —— 否则动作执行完可能又冒出一段未完成的输入。
+     */
+    private fun prepareForCommit(): android.view.inputmethod.InputConnection? {
+        val ic = activeInputConnection() ?: return null
+        livePreview.finalizeForKeyboardSwitch()
+        engine?.resetComposition()
+        return ic
+    }
+
     override fun onUpdateSelection(
         oldSelStart: Int, oldSelEnd: Int,
         newSelStart: Int, newSelEnd: Int,
