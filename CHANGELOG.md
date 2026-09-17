@@ -35,6 +35,79 @@ git push origin main --tags
 
 ---
 
+## [2.3.1] — 2026-09-18
+
+三个日常使用中攒下来的交互问题：**回车在部分应用里变成空格**、**联想候选没法取消**、
+**光标被点到别处后输入法还挂在旧组合上**。
+
+### 回车键：按输入框语义走，不再自己提交 `\n`
+
+起因：哈基箱反馈「部分应用下回车不执行搜索或换行，而是增加一个空格」。
+根因很直接 —— `RimeEngine` 在没有拼音组合时直接 `EmitMessage(Commit("\n"))`，
+而**单行输入框（搜索框、聊天输入框）会把换行显示成空格**，于是「回车 = 多一个空格」。
+这条路径还**绕开了 `performEditorAction`**：原来的 `performEditorAction` 只在
+「输入框已有文字」时才走到，且靠 `BaseKeyboard` 拿 `returnKeyIcon` 反推该发哪个 action，
+键盘重建后图标还是上一个输入框的，会发错动作。
+
+- `fix(ime)`: 回车统一由 `KeyActionListener.handleReturn` 处理 ——
+  **有拼音组合**交给 Rime（保持方案语义）；**没有组合**则按输入框声明执行：
+  声明了 editor action（搜索 / 发送 / 前往 / 完成…）就 `performEditorAction`，
+  没声明就发一个真正的 `KEYCODE_ENTER` 按键事件，让应用自己决定换行还是提交
+- `fix(ime)`: 删掉 `BaseKeyboard.onAction` 里「按图标反推 action」的分支。
+  `returnKeyIcon` 现在只负责画，不再参与行为决策；改由
+  `ImeInputMethodService.declaredEditorAction()` 直接读当前 `EditorInfo`
+- `fix(engine)`: `RimeEngine` 收到「无组合的回车」不再提交 `"\n"`，直接返回，交回宿主
+- `refactor(util)`: `InputConnectionUtil` 新增 `sendKeyEvent`（DOWN + UP 成对发送）
+
+### 联想候选可以取消了
+
+起因：联想（预测）候选出来之后没法取消。候选条右侧那个位置在组字态是「展开候选网格」，
+联想态下点它仍然只会展开网格，用户想要的「叉」并不存在。
+
+- `feat(panel)`: 预测态下候选条右侧按钮换成**叉**（`ic_keyboard_close`），
+  点一下即撤掉这次联想，候选条连带面板一起回到空闲态（原来长按才能取消）
+- `feat(engine)`: 新增 `IEngine.dismissPrediction()` / `Action.DismissPrediction`。
+  除了收起候选，还会**让正在跑的预测任务作废**（`latestPredictionRequestId` 前移并取消协程），
+  否则晚到的预测结果会带着原来的 requestId 回来，候选面板又自己弹出来
+- 与 `clear()` 的区别：取消联想**不动输入框内容、也不动 Rime 组合**
+
+### 光标被点到别处时结束这次输入
+
+起因：开着「输入框实时上屏」时，把光标点到别处再打字，输入法会接在旧组合后面继续输入。
+
+- `fix(ime)`: `ImeInputMethodService.onUpdateSelection` 新增判定 —— 组合态下如果回调的
+  光标位置跑到了**组合区之外**，就说明是用户手动移动了光标：把输入框里显示的
+  候选词 / 拼音 `finishComposingText()` **定为正式文本**（即「直接输入完毕」），
+  再清空引擎组合、收起候选面板
+- `feat(ime)`: `LivePreviewController` 新增 `previewRange`（组合区在输入框里占的范围）、
+  `commitPreview()`
+- `refactor(input)`: 判定与范围计算抽成不依赖 Android 的 `input/SelectionMath.kt`，配 JVM 单测
+
+> 📌 **组合区位置的两条约束（改动此处前先读）**
+>
+> 1. `setComposingText` 替换的是**现有组合区**，插入点是组合区**起点**，而写入前光标停在
+>    组合区**末尾**。因此 **组合区起点 = 写入前光标位置 − 上一轮预览长度**。
+>    少算这一步，范围会整体偏移，光标永远落在区间之外，组合会被逐字结束。
+> 2. 判据必须用**区间**（光标是否仍落在组合区内），不能用精确位置比对 ——
+>    `onUpdateSelection` 是异步回调，连续输入时上一拍的回调可能迟到，精确比对必然误判。
+>
+> 两条都配了回归用例，其中 `连打时范围计算与判定能串起来` 为端到端串测。
+
+### 已知边界
+
+- **「光标移走 → 结束组合」只在「输入框实时上屏」开启时生效。** 关闭上屏预览时输入法
+  完全不往输入框写字，没有组合区这个参照，无法把自己造成的变化和用户移动区分开；
+  此时宁可不动，也不误结束用户正在打的字。
+
+### 验证
+
+- `testDebugUnitTest`：**73 项通过**（`SelectionMathTest` 11 项，含连打与滞后回调的回归用例）
+- `compileDebugKotlin`：通过
+
+> ⚠️ **升级提示**
+> - `versionCode` `20300` → `20301`。覆盖安装即可。
+> - 没有动方案数据，升级不需要重新部署。
+
 ## [2.3.0] — 2026-09-18
 
 「上滑输入」不再是一滑就出 —— 触发距离改成**整整一个按键的高度**，并补上**纵向占主导**的方向约束。

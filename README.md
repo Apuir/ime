@@ -9,7 +9,7 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.2.1`（20201） |
+| 当前版本 | `2.3.1`（20301） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
@@ -92,7 +92,7 @@
 本项目**不发 Release APK**，APK 由本机自行构建（见下一节），然后用 `adb` 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.2.1.apk
+adb install -r app/build/outputs/apk/release/ime-2.3.1.apk
 ```
 
 首次打开会依次进入：
@@ -166,8 +166,8 @@ chmod +x install-deps.sh && ./install-deps.sh
 ls -lh app/src/main/assets/resource.zip
 
 # 4) 编译
-./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.2.1-debug.apk
-./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.2.1.apk
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.3.1-debug.apk
+./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.3.1.apk
 ```
 
 首次 native 编译（librime + Boost + OpenCC）耗时较长。release 签名可用仓库根的 `keystore.properties`，或用环境变量

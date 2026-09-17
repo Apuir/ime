@@ -11,7 +11,7 @@
 |------|----|
 | 应用名 | 简意输入法 |
 | applicationId / namespace | `com.ninthsoft.ime` |
-| versionName / versionCode | `2.2.1` / `20201`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
+| versionName / versionCode | `2.3.1` / `20301`（版本规则与发布流程见 [`CHANGELOG.md`](../CHANGELOG.md)） |
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | 支持 ABI | 仅 `arm64-v8a` |
 | 语言/构建 | Kotlin 2.4.10、AGP 9.1.1、Gradle 9.3.1、CMake 3.22.1 |
@@ -449,7 +449,7 @@ ls -lh app/src/main/assets/resource.zip
 ### 7.4 安装与首次使用
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.2.1.apk
+adb install -r app/build/outputs/apk/release/ime-2.3.1.apk
 ```
 
 打开 App → `InitActivity` 等待资源解压/引擎部署 → `SetupActivity` 引导：
