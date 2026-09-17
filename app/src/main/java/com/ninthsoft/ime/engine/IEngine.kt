@@ -37,5 +37,13 @@ interface IEngine {
     fun onStartInputView(ic: InputConnection)
     fun onFinishInputView()
     fun onInputCleared()
+
+    /**
+     * 取消当前展示的联想（预测）候选。
+     *
+     * 与 [clear] 的区别：只清掉预测结果，不碰输入框内容、也不动 Rime 组合 ——
+     * 候选面板右侧那个「叉」走的就是这条路径。
+     */
+    fun dismissPrediction()
     fun observeMessages(scope: CoroutineScope, onMessage: suspend (EngineMessage) -> Unit): Job
 }

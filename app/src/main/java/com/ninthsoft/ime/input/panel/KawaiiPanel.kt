@@ -48,6 +48,8 @@ class KawaiiPanel(
         data class SelectCandidate(val candidate: EngineMessage.Candidate) : TouchResult()
         data object ExpandCandidates : TouchResult()
         data object CollapseCandidates : TouchResult()
+        /** 联想（预测）态下点右侧按钮：撤掉这次联想，回到没打字的状态。 */
+        data object CancelPrediction : TouchResult()
         data object LongPressExpand : TouchResult()
         data object LongPressClearPhrases : TouchResult()
     }
@@ -194,6 +196,7 @@ class KawaiiPanel(
             centerButtons = configuredToolbarButtons(context),
         ),
         expandDrawable = context.getDrawable(R.drawable.ic_keyboard_expand_more),
+        cancelDrawable = context.getDrawable(R.drawable.ic_keyboard_close),
         candidateGrid = candidateGrid,
         textEditingView = textEditingView,
         clipboardView = clipboardView,
@@ -443,6 +446,14 @@ class KawaiiPanel(
 
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
                 is TouchResult.CollapseCandidates -> v.setExpanded(false)
+
+                is TouchResult.CancelPrediction -> {
+                    InputFeedbacks.hapticFeedback(view)
+                    v.setExpanded(false)
+                    // 先本地收起（立刻回空闲态），再让引擎把预测结果和「正在跑的预测任务」一起作废。
+                    setCandidates(emptyList())
+                    listener?.onCancelPrediction()
+                }
                 is TouchResult.LongPressExpand -> {
                     if (state is State.Prediction) {
                         val candidates = (state as State.Prediction).candidates

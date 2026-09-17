@@ -79,7 +79,7 @@ class ComposingStateRender(
     }
 }
 
-/** 预测态：与组字态共用候选渲染器，但进入时强制收起展开栏。 */
+/** 预测态：与组字态共用候选渲染器，但右侧按钮是「取消联想」，进入时强制收起展开栏。 */
 class PredictionStateRender(
     private val ctx: StateRenderContext,
     private val candidates: List<EngineMessage.Candidate>,
@@ -93,6 +93,9 @@ class PredictionStateRender(
             showComment = CandidateManager.isShowComment(ctx.context),
             candidateBorder = CandidateManager.isBorderEnabled(ctx.context),
             expandBorder = KeyboardManager.Keyboard.ExpandBorder.isEnabled(ctx.context),
+            // 联想词不是正在组合的内容：点右侧按钮应该是「不要了」，而不是展开候选网格。
+            isPrediction = true,
+            cancelDrawable = ctx.cancelDrawable,
         ).also { it.recording = ctx.recording }
     }
 

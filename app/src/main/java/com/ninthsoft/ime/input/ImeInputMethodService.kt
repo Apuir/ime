@@ -364,7 +364,34 @@ class ImeInputMethodService : InputMethodService() {
         lastSelectionStart = newSelStart
         lastSelectionEnd = newSelEnd
         keyboardWindow?.onSelectionUpdate(newSelStart, newSelEnd)
+        endCompositionIfSelectionMovedAway(newSelStart, newSelEnd)
         notifyInputChanged()
+    }
+
+    /**
+     * 用户把光标点到组合区之外时，结束这次输入。
+     *
+     * 我们往输入框写预览本身也会触发 `onUpdateSelection`，所以只能比「光标还在不在
+     * [LivePreviewController.previewRange] 里」：在里面就是我们自己造成的（连打时系统回调
+     * 晚一拍也仍在区间内），跑到区间外才是用户把光标移走了。
+     *
+     * 收尾策略是「直接输入完毕」——输入框里显示的候选词 / 拼音结束 composing 后原样留下，
+     * 再清空引擎组合、收起候选面板。否则用户点回原处继续打字时，又会接在旧组合后面输入。
+     */
+    private fun endCompositionIfSelectionMovedAway(newSelStart: Int, newSelEnd: Int) {
+        if (phraseAddBridgeActive) return
+        if (!KeyboardStateManager.isComposingNow) return
+        val range = livePreview.previewRange ?: return
+        if (!SelectionMath.isCursorAwayFromComposition(
+                newSelStart, newSelEnd, range.first, range.last,
+            )
+        ) {
+            return
+        }
+
+        livePreview.commitPreview()
+        engine?.resetComposition()
+        keyboardWindow?.setCandidates(emptyList())
     }
 
     internal fun syncActiveInputState() {

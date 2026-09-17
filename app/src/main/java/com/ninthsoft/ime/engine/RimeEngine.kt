@@ -106,6 +106,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         data class SelectSchema(val schemaId: String) : Action
         data class Commit(val text: String, val cursorOffset: Int = 0) : Action
         data object InputCleared : Action
+        data object DismissPrediction : Action
         data object Reload : Action
     }
 
@@ -401,6 +402,18 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
             is Action.Commit -> requestCommit(action.text, action.cursorOffset)
             Action.InputCleared -> {
+                if (state.predictionVisible) {
+                    state.predictionVisible = false
+                    messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
+                }
+            }
+
+            Action.DismissPrediction -> {
+                // 用户主动取消这次联想。除了收起候选，还要让「正在跑」的预测结果失效：
+                // 否则它会晚一步带着同一个 requestId 回来（PredictionReady 按 requestId 校验），
+                // 候选面板会自己又弹出来。
+                state.latestPredictionRequestId = ++state.predictionRequestId
+                predictionJob?.cancel()
                 if (state.predictionVisible) {
                     state.predictionVisible = false
                     messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
@@ -784,6 +797,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     override fun onInputCleared() {
         actions.trySend(Action.InputCleared)
+    }
+
+    override fun dismissPrediction() {
+        actions.trySend(Action.DismissPrediction)
     }
 
     private companion object {

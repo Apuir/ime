@@ -15,6 +15,8 @@ class StateRenderContext(
     val context: Context,
     var idleResources: ToolbarRendererResources,
     val expandDrawable: Drawable?,
+    /** 预测（联想）态下顶替 [expandDrawable] 的「取消联想」图标。 */
+    val cancelDrawable: Drawable? = null,
     val candidateGrid: CandidateGridView,
     val textEditingView: TextEditView,
     val clipboardView: ClipboardView,

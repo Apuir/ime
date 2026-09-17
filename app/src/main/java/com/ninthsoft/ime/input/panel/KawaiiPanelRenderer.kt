@@ -21,6 +21,14 @@ class ComposingRenderer(
     var showComment: Boolean = true,
     var candidateBorder: Boolean = true,
     var expandBorder: Boolean = true,
+    /**
+     * 预测（联想）态：候选条右侧的按钮换成「取消联想」的叉。
+     *
+     * 联想词是上一段已上屏文本的延伸，不是正在组合的内容，用户常常想直接撤掉它；
+     * 而组字态那个位置必须是「展开候选网格」，所以两种态共用一个按钮位置、换图标与语义。
+     */
+    var isPrediction: Boolean = false,
+    private val cancelDrawable: Drawable? = null,
     override var recording: Boolean = false,
 ) : IRenderer {
 
@@ -189,7 +197,7 @@ class ComposingRenderer(
         }
         val cx = expandBtnLeft + expandBtnW / 2f
         val cy = pillY + pillH / 2f
-        val d = expandDrawable
+        val d = if (isPrediction) cancelDrawable else expandDrawable
         if (d != null) {
             d.setTint(paints.toolbarIconColor)
             val iw = d.intrinsicWidth.toFloat() * iconScale
@@ -198,7 +206,7 @@ class ComposingRenderer(
                 (cx - iw / 2f).toInt(), (cy - ih / 2f).toInt(),
                 (cx + iw / 2f).toInt(), (cy + ih / 2f).toInt(),
             )
-            if (isExpanded) {
+            if (isExpanded && !isPrediction) {
                 canvas.withRotation(180f, cx, cy) {
                     d.draw(this)
                 }
@@ -228,8 +236,11 @@ class ComposingRenderer(
         val expandBtnLeft = width - expandRightMargin - expandBtnW
         val expandBtnRight = width - expandRightMargin
         if (x in expandBtnLeft..expandBtnRight) {
-            return if (isExpanded) KawaiiPanel.TouchResult.CollapseCandidates
-            else KawaiiPanel.TouchResult.ExpandCandidates
+            return when {
+                isPrediction -> KawaiiPanel.TouchResult.CancelPrediction
+                isExpanded -> KawaiiPanel.TouchResult.CollapseCandidates
+                else -> KawaiiPanel.TouchResult.ExpandCandidates
+            }
         }
 
         if (lastPills.isEmpty()) return null

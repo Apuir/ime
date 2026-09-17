@@ -119,6 +119,10 @@ class PanelActionListener(
         service.engine?.deleteCandidate(candidate)
     }
 
+    override fun onCancelPrediction() {
+        service.engine?.dismissPrediction()
+    }
+
     override fun onEnterAddPhraseMode() {
         service.virtualInputConnection.clear()
         service.phraseAddBridgeActive = true

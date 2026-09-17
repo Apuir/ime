@@ -29,6 +29,9 @@ interface PanelListener {
 
     fun onCandidateForget(candidate: EngineMessage.Candidate) {}
 
+    /** 用户点了联想候选右侧的「叉」，要求取消这次联想。 */
+    fun onCancelPrediction() {}
+
     fun onEnterAddPhraseMode() {}
 
     fun onAddPhraseSave(text: String) {}

@@ -28,6 +28,16 @@ class LivePreviewController(private val service: ImeInputMethodService) {
     /** 本控制器写入输入框、且尚未被替换的预览文本；空串表示当前没有预览。 */
     private var shownPreview: String = ""
 
+    /**
+     * 本控制器写入的预览（组合）在输入框里占据的位置区间，闭区间。
+     *
+     * 宿主靠它把「我们自己写预览造成的光标变化」和「用户手动移动光标」区分开：
+     * 回调里的光标只要还在这个区间内，就认为是我们自己造成的（见 [SelectionMath]）。
+     * 为 null 表示当前没有预览，或者写入前连光标位置都读不到。
+     */
+    var previewRange: IntRange? = null
+        private set
+
     private fun inputConnection(): InputConnection? = service.activeInputConnection()
 
     /** 组合内容变化（原始输入）。 */
@@ -85,12 +95,27 @@ class LivePreviewController(private val service: ImeInputMethodService) {
         preedit = ""
         firstCandidate = ""
         shownPreview = ""
+        previewRange = null
     }
 
     private fun desiredPreview(): String = when (CandidateManager.getPreviewMode(service)) {
         CandidateManager.PREVIEW_MODE_RAW -> preedit
         CandidateManager.PREVIEW_MODE_FIRST_CANDIDATE -> firstCandidate
         else -> ""
+    }
+
+    /**
+     * 把当前预览「定为正式文本」：结束 composing 但**不删除**内容，输入框里显示的
+     * 候选词 / 拼音就此成为普通文本（即用户说的「直接输入完毕」）。
+     *
+     * 与 [finalizeForKeyboardSwitch] 的区别：后者按设置决定留还是丢，用于切换键盘 / 方案的场景；
+     * 这里用于「用户把光标点到别处了」——他并没有表达要丢弃，所以一律保留。
+     */
+    fun commitPreview() {
+        val preview = shownPreview
+        clearState()
+        if (preview.isEmpty()) return
+        inputConnection()?.finishComposingText()
     }
 
     private fun refresh() {
@@ -100,8 +125,20 @@ class LivePreviewController(private val service: ImeInputMethodService) {
         if (target.isEmpty()) {
             ic.setComposingText("", 1)
             ic.finishComposingText()
+            previewRange = null
         } else {
+            // `setComposingText` 替换的是**现有组合区**，插入点是组合区**起点**，
+            // 而写入前光标停在组合区**末尾**（上一轮的落点）。组合区起点与范围的计算
+            // 收在 SelectionMath.compositionRange 里，那里有单测钉着 —— 这段曾经算错，
+            // 导致每打一个字母就结束一次组合。
+            val cursorBefore = ic.getTextBeforeCursor(Int.MAX_VALUE, 0)?.length ?: -1
             ic.setComposingText(target, 1)
+            // 位置不可信时留 null：宿主会跳过判定，而不是拿错位置去误伤用户输入。
+            previewRange = SelectionMath.compositionRange(
+                cursorBefore = cursorBefore,
+                previousPreviewLength = shownPreview.length,
+                newPreviewLength = target.length,
+            )
         }
         shownPreview = target
     }

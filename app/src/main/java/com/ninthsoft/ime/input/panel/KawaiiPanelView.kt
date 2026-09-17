@@ -133,7 +133,10 @@ class KawaiiPanelView(context: Context) : View(context) {
         val result = currentRenderer.hitTest(
             lastTouchX, lastTouchY, width, height, scrollX, isExpanded, screenDensity,
         )
-        if (result is KawaiiPanel.TouchResult.ExpandCandidates || result is KawaiiPanel.TouchResult.CollapseCandidates) {
+        if (result is KawaiiPanel.TouchResult.ExpandCandidates ||
+            result is KawaiiPanel.TouchResult.CollapseCandidates ||
+            result is KawaiiPanel.TouchResult.CancelPrediction
+        ) {
             expandLongPressed = true
             onTap?.invoke(KawaiiPanel.TouchResult.LongPressExpand)
         } else if (result is KawaiiPanel.TouchResult.ToolbarAction && result.action is PanelAction.AddPhrase) {
