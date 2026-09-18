@@ -503,13 +503,30 @@ object KeyboardManager {
         object ToolbarTools {
             const val KEY = "keyboard.toolbar_tools"
 
-            val DEFAULT_KEYS = listOf("undo", "redo", "cursor", "clipboard", "palette")
+            val DEFAULT_KEYS =
+                listOf("undo", "redo", "cursor", "clipboard", "palette", "handwriting")
+
+            /** 只补一次「手写」入口的迁移标记，见 [getKeys]。 */
+            private const val KEY_HANDWRITING_ADDED = "keyboard.toolbar_tools.handwriting_added"
 
             fun getKeys(context: Context): List<String> {
-                val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getString(KEY, null) ?: return DEFAULT_KEYS
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val raw = prefs.getString(KEY, null) ?: return DEFAULT_KEYS
                 if (raw.isEmpty()) return emptyList()
-                return raw.split(',').filter { it.isNotBlank() }
+                val keys = raw.split(',').filter { it.isNotBlank() }
+
+                // 「手写」是随本版本新增的工具。用户若自定义过工具栏，其存下来的列表里
+                // 永远不会出现新工具 —— 那正好是「装了却找不到入口」的那种问题。
+                // 所以这里补一次（之后可在工具栏设置里自行去掉），用标记保证只补一次。
+                if (!prefs.getBoolean(KEY_HANDWRITING_ADDED, false) && "handwriting" !in keys) {
+                    val migrated = keys + "handwriting"
+                    prefs.edit {
+                        putString(KEY, migrated.joinToString(","))
+                        putBoolean(KEY_HANDWRITING_ADDED, true)
+                    }
+                    return migrated
+                }
+                return keys
             }
 
             fun setKeys(context: Context, keys: List<String>) {

@@ -40,6 +40,10 @@ import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
+import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
+import com.ninthsoft.ime.input.handwriting.HandwritingManager
+import com.ninthsoft.ime.input.handwriting.HwCandidate
+import com.ninthsoft.ime.input.handwriting.panel.HandwritingPanelView
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.pinner.PreeditPinner
 import com.ninthsoft.ime.input.speech.SpeechOverlayView
@@ -194,6 +198,89 @@ class KeyboardWindowView(
 
     private val addPhraseLayer = InputBoxLayerView(context).apply {
         visibility = View.GONE
+    }
+
+    // ==================== 手写面板 ====================
+
+    /**
+     * 手写面板。默认 `GONE`；显示时不需要改任何 measure/layout 代码 ——
+     * 它是本 View 的普通子 View，会跟键盘视图一样被铺满键盘内容区（含悬浮卡片）。
+     *
+     * 面板只负责「采点、画墨迹、停手识别、把候选交给顶栏」；
+     * 上屏/退格/空格/回车一律回调出去走 [KeyboardAction]，面板自己不碰 InputConnection。
+     */
+    private val handwritingPanel = HandwritingPanelView(context).also { view ->
+        view.visibility = View.GONE
+        // 面板实体区域之间的 3dp 缝隙如果不吃触摸，会漏到下层的键盘按键上
+        view.isClickable = true
+        view.listener = object : HandwritingPanelView.Listener {
+            override fun onCandidates(candidates: List<HwCandidate>) {
+                panel.setHandwritingCandidates(candidates)
+            }
+
+            override fun onCommit(text: String) {
+                keyActionListener.onKeyAction(KeyboardAction.CommitAction(text))
+            }
+
+            override fun onCommitPair(open: String, close: String) {
+                keyActionListener.onKeyAction(KeyboardAction.CommitPairAction(open, close))
+            }
+
+            override fun onBackspace() {
+                keyActionListener.onKeyAction(KeyboardAction.BackspaceAction)
+            }
+
+            override fun onSpace() {
+                keyActionListener.onKeyAction(KeyboardAction.SpaceAction)
+            }
+
+            override fun onReturn() {
+                keyActionListener.onKeyAction(KeyboardAction.ReturnAction())
+            }
+
+            override fun onSwitchKeyboard(name: String) {
+                hideHandwritingPanel()
+                switchKeyboard(name)
+            }
+
+            override fun onRecognizeFailed(message: String) {
+                showImeToast(context.getString(R.string.handwriting_engine_unavailable, message))
+            }
+        }
+    }
+
+    val isHandwritingPanelVisible: Boolean
+        get() = handwritingPanel.visibility == View.VISIBLE
+
+    fun toggleHandwritingPanel() {
+        if (isHandwritingPanelVisible) hideHandwritingPanel() else showHandwritingPanel()
+    }
+
+    fun showHandwritingPanel() {
+        if (isHandwritingPanelVisible) return
+        handwritingPanel.visibility = View.VISIBLE
+        handwritingPanel.onShown()
+        requestLayout()
+    }
+
+    /**
+     * 手写候选已上屏：顶栏立刻收掉候选、回到工具条。
+     *
+     * 候选是「用掉了就该消失」的东西 —— 留着它还停在候选态，用户会以为要再点一次，
+     * 或者以为刚才没上屏。顺带把面板的「本次手写还在手上」计数归零，
+     * 这样紧接着按 ⌫ 就是正常退格（删刚上屏的那个字），而不是先被吞一次。
+     */
+    fun clearHandwritingCandidates() {
+        handwritingPanel.clearCandidates()
+    }
+
+    fun hideHandwritingPanel() {
+        if (!isHandwritingPanelVisible) return
+        handwritingPanel.onHidden()
+        handwritingPanel.visibility = View.GONE
+        // 顶栏恢复成工具条（手写候选与方案候选共用那条栏，退出时要把状态还回去）
+        panel.setHandwritingMode(false)
+        requestLayout()
     }
 
     private val imeToastView = ImeToastView(context)
@@ -352,6 +439,16 @@ class KeyboardWindowView(
             CandidateManager.KEY_SHOW_INDEX,
             CandidateManager.KEY_SHOW_COMMENT,
                 -> post { refreshColors() }
+
+            // 手写引擎模式（自动 / Google / 本地）改了必须重新解析一次：
+            // 「Google 不可用时降不降级」这个分叉只在解析阶段发生，光写偏好不会重算。
+            // 先 reset 丢掉「当前生效引擎」的内存状态（与 HandwritingEngineHolder.switchToLocal
+            // 同款做法）：否则重新解析期间 engineName 还挂着旧引擎，面板会短暂显示错的引擎名。
+            // 回调里的结果不需要在这里呈现：面板每次显示都会自己 ensureReady 并提示失败原因。
+            HandwritingManager.KEY_ENGINE_MODE -> {
+                HandwritingEngineHolder.reset()
+                HandwritingEngineHolder.ensureReady(context) { _, _ -> }
+            }
         }
     }
 
@@ -452,13 +549,22 @@ class KeyboardWindowView(
         addView(
             addPhraseLayer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
-        addView(imeToastView, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        // 手写面板放在 toast 之前：它要盖住键盘与各面板，但不能盖住提示条
+        addView(
+            handwritingPanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
+        addView(imeToastView, LayoutParams.WRAP_CONTENT)
+
+        // 面板一建出来就要带上当前配色：它自己是不透明底（盖住下面的键盘），
+        // 只等主题变更时的 refreshColors 的话，首次打开会是透明的 —— 原来那层键盘就会透出来。
+        handwritingPanel.refreshColors(cachedColors)
 
         addPhraseLayer.onConfirm = { panelListener?.onAddPhraseSave(it) }
         addPhraseLayer.onClose = { panelListener?.onAddPhraseCancel() }
     }
 
     fun toggleMenu() {
+        hideHandwritingPanel()
         panel.toggleMenu()
     }
 
@@ -487,6 +593,8 @@ class KeyboardWindowView(
     }
 
     override fun onDetachedFromWindow() {
+        // 手写面板不跨输入会话存活：会话结束就收回，免得下次弹出时带着上次的笔迹
+        hideHandwritingPanel()
         // 键盘被收起/重建时结束编辑模式，把当前尺寸落盘。
         if (isResizing) {
             isResizing = false
@@ -871,6 +979,7 @@ class KeyboardWindowView(
 
     fun enterResizeMode() {
         if (isResizing) return
+        hideHandwritingPanel()
         isResizing = true
         resizeInitPending = true
         dragActive = false
@@ -1219,6 +1328,7 @@ class KeyboardWindowView(
         applyBackgroundTint()
         panel.refreshTheme()
         addPhraseLayer.refreshTheme(cachedColors)
+        handwritingPanel.refreshColors(cachedColors)
         imeToastView.refreshTheme(cachedColors)
         preeditPinner.refreshTheme(context)
         keyboardStateManager.rebuild()
@@ -1244,7 +1354,11 @@ class KeyboardWindowView(
 
     private var currentKeyboard: IKeyboard? = null
 
-    fun setCandidates(list: List<EngineMessage.Candidate>) = panel.setCandidates(list)
+    fun setCandidates(list: List<EngineMessage.Candidate>) {
+        // 手写面板打开时顶栏归手写候选；方案候选（Rime 的）这时候推上来只会互相顶掉
+        if (isHandwritingPanelVisible) return
+        panel.setCandidates(list)
+    }
 
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {
         panel.onPossibleCandidatePinYin(pinyins)
@@ -1506,6 +1620,9 @@ class KeyboardWindowView(
     }
 
     // 面板入口（emoji / 符号）也属于用户主动切换，走 pushTo 以便「返回」原路回退
-    fun switchKeyboard(name: String) = keyboardStateManager.pushTo(name)
+    fun switchKeyboard(name: String) {
+        hideHandwritingPanel()
+        keyboardStateManager.pushTo(name)
+    }
     fun onDepolyFinished() = keyboardStateManager.refreshSchemas()
 }

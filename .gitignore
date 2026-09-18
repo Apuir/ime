@@ -1,4 +1,7 @@
 *.iml
+
+# 迭代计划与设计草稿：本地文件，不入库
+docs/plans/
 .gradle
 /local.properties
 /.idea/
@@ -11,6 +14,10 @@ local.properties
 /app/src/main/cpp/deps/*
 .kotlin/
 app/src/main/assets/resource.zip
+
+# ---- 手写兜底模型（7 MB 二进制，不入库；用 scripts/fetch-handwriting-model.sh 取） ----
+# char_index.json（51 KB）与 NOTICE.txt 照常入库：前者是 7356 类的标签表、很小且需要可读
+app/src/main/assets/handwriting/*.onnx
 
 # ---- 签名材料：绝不入库 ----
 release.keystore

@@ -22,9 +22,12 @@ timber = "5.0.1"
     okhttp = "4.12.0"
     commonsCompress = "1.27.1"
     zxing = "4.3.0"
+    # 手写主引擎（Google ML Kit，数字墨水识别）；兜底引擎是本地 ONNX，见 input/handwriting
+    digitalInkRecognition = "19.0.0"
 
 
 [libraries]
+digital-ink-recognition = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "digitalInkRecognition" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

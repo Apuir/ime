@@ -12,6 +12,7 @@ import com.ninthsoft.ime.data.manager.CandidateManager
 import com.ninthsoft.ime.engine.data.CandidatePinYin
 import com.ninthsoft.ime.engine.data.EngineMessage
 import com.ninthsoft.ime.engine.data.EngineMessage.Candidate
+import com.ninthsoft.ime.input.handwriting.HwCandidate
 import com.ninthsoft.ime.input.panel.component.CandidateGridView
 import com.ninthsoft.ime.input.panel.component.ClipboardView
 import com.ninthsoft.ime.input.panel.component.ClipboardTab
@@ -134,6 +135,16 @@ class KawaiiPanel(
 
     var onRecordingStop: (() -> Unit)? = null
 
+    /**
+     * 是否处于「手写候选」态。
+     *
+     * 手写候选与方案候选**共用顶栏那一条渲染路径**（所以点选、展开网格的手感跟九键一模一样），
+     * 但来源不同：手写候选不是 Rime 产生的，点它必须直接上屏，绝不能走 `engine.selectCandidate`。
+     * 这个标志就是两条路的岔口；同时也用来挡住「手写面板打开期间方案候选推上来」把顶栏顶掉。
+     */
+    var handwritingMode: Boolean = false
+        private set
+
     val candidateGrid = CandidateGridView(
         context = context,
         colors = resolvedColors,
@@ -155,8 +166,9 @@ class KawaiiPanel(
                 )
             }
         }
-        onDragComplete = { candidates ->
+        onDragComplete = drag@{ candidates ->
             (view.currentRenderer as? ComposingRenderer)?.candidates = candidates
+            if (handwritingMode) return@drag
             this@KawaiiPanel.listener?.onCandidateGridDragComplete(candidates)
         }
     }
@@ -441,7 +453,12 @@ class KawaiiPanel(
                 is TouchResult.SelectCandidate -> {
                     InputFeedbacks.hapticFeedback(view)
                     InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
-                    listener?.onCandidateSelected(result.candidate)
+                    if (handwritingMode) {
+                        // 手写候选不属于任何方案：直接上屏，不进 Rime 的选词
+                        listener?.onHandwritingCandidateSelected(result.candidate.text)
+                    } else {
+                        listener?.onCandidateSelected(result.candidate)
+                    }
                 }
 
                 is TouchResult.ExpandCandidates -> v.setExpanded(true)
@@ -571,9 +588,37 @@ class KawaiiPanel(
     }
 
     @SuppressLint("UseCompatLoadingForDrawables")
+    /**
+     * 顶栏显示手写候选；传空列表即收起。
+     *
+     * 刻意复用 [applyCandidates]（也就是方案候选那条路径）：顶栏的候选条、索引、展开网格、
+     * 点击命中全都由同一套渲染器负责，手写不需要另写一套；差别只在「点下去之后干什么」。
+     */
+    fun setHandwritingCandidates(list: List<HwCandidate>) {
+        handwritingMode = true
+        applyCandidates(
+            list.mapIndexed { index, candidate ->
+                EngineMessage.Candidate(index = index, text = candidate.text)
+            }
+        )
+    }
+
+    /** 退出「手写候选」态（收起手写面板时调用），顺带把顶栏恢复成工具条。 */
+    fun setHandwritingMode(enabled: Boolean) {
+        if (handwritingMode == enabled) return
+        handwritingMode = enabled
+        if (!enabled) applyCandidates(emptyList())
+    }
+
     override fun setCandidates(list: List<EngineMessage.Candidate>) {
+        // 手写面板打开期间，方案候选一律不顶栏（两者同一条栏，抢起来会闪）
+        if (handwritingMode) return
+        applyCandidates(list)
+    }
+
+    private fun applyCandidates(list: List<EngineMessage.Candidate>) {
         if (!view.isLaidOut) {
-            view.post { setCandidates(list) }
+            view.post { applyCandidates(list) }
             return
         }
         if (list.isEmpty()) {

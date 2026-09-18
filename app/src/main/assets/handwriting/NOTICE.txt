@@ -1,0 +1,47 @@
+手写模型来源与许可备案
+========================
+
+本目录下的两个文件是一对，必须成对使用（模型输出的是下标，靠字符表映射成汉字）：
+
+  ochwpro.onnx       7,001,270 字节
+    sha256 eb04d62a314c7d7bac4e34d6ce0c24137474d30ff94b929115a621385420ce13
+
+  char_index.json       51,317 字节（7356 个字符）
+    sha256 171cf2ac23731428ac9dd28f64be82dece5f66a0ca3d674ffb3b567b51532176
+
+来源
+----
+
+上游模型：ochwpro —— Xime 输入法的中文手写识别模型
+  https://github.com/jimmy54/ochwpro
+  https://github.com/ximeiorg/Xime
+
+本目录下的具体文件地址取自 Xime 官方模型索引（ximeiorg/xime-index）中公布的条目，
+托管于 ModelScope（bikeand/ochwpro），上面两个 sha256 与索引中公布的值完全一致。
+
+模型形态
+--------
+
+StrokeTransformer，约 1.72M 参数，7356 个字符类。输入为在线手写笔画序列
+（定长 200 步、每步 5 维特征），输出 7356 维 logits。
+训练数据为 CASIA-OLHWDB（约 300 万样本 / 1020 位书写者），上游公布的
+Top-1 准确率约 90.46%。
+
+许可
+----
+
+ochwpro 项目为 MIT 许可。ONNX Runtime 的 C API 头文件（见
+app/src/main/cpp/handwriting_jni/onnxruntime/）同样为 MIT（Microsoft）。
+
+备案：本项目早期曾使用 zinnia（BSD-3-Clause）+ tegaki-zinnia-simplified-chinese
+模型（Debian 的机器可读 copyright 标注为 LGPL-2.1+，与部分发行版 RPM 标注的
+GPLv2+ 不一致）。因识别准确率不可用，两者连同对应代码已全部移除，不再存在于
+本仓库与产物中。此处记录仅备日后追溯。
+
+替换方式
+--------
+
+把这两个同名的文件放到外部目录
+`<外部 files>/model/handwriting/`（与语音模型同级），即会优先于包内版本生效；
+**必须两个一起放**，只换一个会让下标与字符表错位。
+细节见 cpp/handwriting_jni/README.md 与 HandwritingModelStore 的注释。

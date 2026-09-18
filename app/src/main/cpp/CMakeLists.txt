@@ -110,3 +110,9 @@ target_compile_options(
 add_subdirectory(librime_jni)
 
 add_subdirectory(libmarisa_jni)
+
+# 手写识别（ONNX Runtime C API）的 JNI 桥。它**不引入 native 依赖**：
+# 运行时 dlopen 复用 sherpa-onnx 的 AAR 已经打进 APK 的 libonnxruntime.so。
+# 模型走 assets/handwriting/（ochwpro）。
+# 早先曾在此 vendor zinnia 并自行编译，已因准确率过低整块移除。
+add_subdirectory(handwriting_jni)

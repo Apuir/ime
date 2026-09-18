@@ -35,7 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
@@ -57,6 +59,7 @@ fun MainScreen(
     onOpenClipboard: () -> Unit,
     onOpenModelSettings: () -> Unit,
     onOpenVoiceSettings: () -> Unit,
+    onOpenHandwritingSettings: () -> Unit,
     onOpenFiles: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -171,6 +174,16 @@ fun MainScreen(
                 subtitle = stringResource(R.string.voice_settings_desc),
                 onClick = onOpenVoiceSettings,
                 icon = Icons.Filled.Mic,
+                showSpacer = true,
+            )
+
+            ClickableSettingItem(
+                title = stringResource(R.string.handwriting_settings),
+                subtitle = stringResource(R.string.handwriting_settings_desc),
+                onClick = onOpenHandwritingSettings,
+                // 手写用的是自绘的矢量图（跟其它候选入口的 Material 图标不同），
+                // 它是 vector drawable，用 vectorResource 直接当 ImageVector 用。
+                icon = ImageVector.vectorResource(R.drawable.ic_keyboard_handwriting),
                 showSpacer = true,
             )
 

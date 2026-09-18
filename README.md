@@ -183,7 +183,6 @@ ls -lh app/src/main/assets/resource.zip
 |------|------|
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **开发与定制手册**：架构总览、代码目录地图、关键运行流程、构建细节、定制指南、已知坑、SharedPreferences / Room 附录 |
 | [`docs/THEME_FORMAT.md`](docs/THEME_FORMAT.md) | 键盘主题 `themes.json` 与二维码分享格式的字段说明 |
-| [`docs/plans/`](docs/plans/) | 各次迭代的设计说明与任务清单（含取舍理由与验收标准） |
 | [`scripts/README.md`](scripts/README.md) | 构建脚本：方案数据重建、本地引擎探针 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史、版本号规则与发布流程 |
 

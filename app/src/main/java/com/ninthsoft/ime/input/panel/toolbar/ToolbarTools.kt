@@ -35,12 +35,13 @@ enum class ToolbarTool(
     Schema("schema", R.string.menu_schema, R.drawable.ic_keyboard_tune, PanelAction.SchemaSettings),
     Settings("settings", R.string.menu_settings, R.drawable.ic_keyboard_setting, PanelAction.Settings),
     Reload("reload", R.string.menu_reload_engine, R.drawable.ic_keyboard_reload, PanelAction.ReloadEngine),
-    About("about", R.string.menu_about, R.drawable.ic_keyboard_information_outline, PanelAction.About);
+    About("about", R.string.menu_about, R.drawable.ic_keyboard_information_outline, PanelAction.About),
+    Handwriting("handwriting", R.string.menu_handwriting, R.drawable.ic_keyboard_handwriting, PanelAction.ToggleHandwriting);
 
     companion object {
         private val byKey = entries.associateBy { it.key }
 
-        val DEFAULT: List<ToolbarTool> = listOf(Undo, Redo, Cursor, Clipboard, Palette)
+        val DEFAULT: List<ToolbarTool> = listOf(Undo, Redo, Cursor, Clipboard, Palette, Handwriting)
 
         fun byKey(key: String): ToolbarTool? = byKey[key]
     }

@@ -97,6 +97,11 @@ class MainActivity : ComponentActivity() {
                             Intent(this@MainActivity, VoiceSettingsActivity::class.java)
                         )
                     },
+                    onOpenHandwritingSettings = {
+                        startActivity(
+                            Intent(this@MainActivity, HandwritingSettingsActivity::class.java)
+                        )
+                    },
                     onOpenFiles = {
                         startActivity(
                             Intent(

@@ -51,6 +51,11 @@ val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
         }
     }
 
+    // 手写模型是 7 MB 的 onnx：不压缩（deflate 只省 3%，却要多一次安装期解压）
+    androidResources {
+        noCompress += "onnx"
+    }
+
     signingConfigs {
         val storePath = releaseStoreFile
         if (storePath != null) {
@@ -103,6 +108,8 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     // implementation(libs.tokenizer)
     implementation(libs.kotlinx.serialization.json)
+    // 手写主引擎（次引擎是本地 ONNX，复用语音模块已打包的 libonnxruntime.so，不引 onnxruntime-android）
+    implementation(libs.digital.ink.recognition)
     implementation(libs.timber)
     implementation(libs.okhttp)
     implementation(libs.commons.compress)

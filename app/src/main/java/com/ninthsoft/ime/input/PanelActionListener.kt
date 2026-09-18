@@ -51,6 +51,7 @@ class PanelActionListener(
                 })
 
             PanelAction.ToggleVoice -> service.keyboardWindow?.toggleVoiceLocked()
+            PanelAction.ToggleHandwriting -> service.keyboardWindow?.view?.toggleHandwritingPanel()
 
             PanelAction.Settings -> service.startActivity(
                 Intent(service, MainActivity::class.java).apply {
@@ -81,6 +82,18 @@ class PanelActionListener(
 
             else -> {}
         }
+    }
+
+    /**
+     * 手写候选上屏。
+     *
+     * 走 [[KeyboardAction.CommitAction]] 而不是自己去动 `InputConnection`：手写不认识 Rime，
+     * 但「怎么把一段文本交给输入框」这件事只应该有一条路（与常用语、剪贴板选词同一条）。
+     */
+    override fun onHandwritingCandidateSelected(text: String) {
+        service.keyActionListener.onKeyAction(KeyboardAction.CommitAction(text))
+        // 上屏即收栏：候选已经用掉了，顶栏该回到工具条（用户不必再手动点一次删除）
+        service.keyboardWindow?.view?.clearHandwritingCandidates()
     }
 
     override fun onSidePanelAction(action: KeyboardAction) {

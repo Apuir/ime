@@ -175,6 +175,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.HandwritingSettingsActivity"
+            android:exported="false"
+            android:label="@string/handwriting_settings"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name=".base.speech.SpeechPermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />

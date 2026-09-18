@@ -14,6 +14,9 @@ sealed class PanelAction {
     data object AddPhrase : PanelAction()
     data class ClipTab(val isClipboard: Boolean) : PanelAction()
     data object ToggleVoice : PanelAction()
+
+    /** 打开/收起手写面板（工具栏与菜单里的「手写」入口）。 */
+    data object ToggleHandwriting : PanelAction()
     data object Settings : PanelAction()
     data object SchemaSettings : PanelAction()
     data object About : PanelAction()

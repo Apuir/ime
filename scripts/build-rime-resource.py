@@ -71,7 +71,7 @@ EXPECTED_WANXIANG_VERSION = "17.9.9"
 APP_SCHEMA_LIST = ["wanxiang_t9", "wanxiang", "wanxiang_english"]
 
 #: 每个方案的 app 专属字段。值取自升级前 app 内实际打包的
-#: ``schema:`` 块与 ``options:`` 块（见 docs/plans/feat-pinyin-input-quality/DESIGN.md 4.1.1）。
+#: ``schema:`` 块与 ``options:`` 块，值取自升级前 app 内实际打包的内容，逐项对应。
 APP_SCHEMA_FIELDS: dict[str, dict] = {
     "wanxiang": dict(
         layout="Qwerty", punctuation="FullWidth", kind="PinYin",
