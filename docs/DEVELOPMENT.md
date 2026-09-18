@@ -108,9 +108,10 @@
   （增删、上下移排序、恢复默认，还能添加任意自定义符号）
 - **按键映射自定义**：设置 → 键盘布局 →「按键映射」里可改 26 键每个字母键下的符号 / 数字（`q→1`、`g→$` …）、
   九键每个数字键包含的字母（`2→abc`、`7→pqrs`）；改完键帽显示、气泡内容、上屏结果三处同时生效
-- **按键气泡**：在字母键 / 九宫格数字键上长按（或上滑后停住约 0.3s）弹出带尾巴的气泡——边框 / 圆角与键帽一致，
+- **按键气泡**：在字母键 / 九宫格数字键上长按（或上滑后停住约 0.3s）弹出气泡——主体悬在按键上方、
+  一条**与按键同宽同高的指针压住键帽**，同一条轮廓、同一套圆角与描边，看起来和键帽是一体的；
   手指按住不放左右滑动切换高亮项、松开输入；26 键气泡为「小写字母 / 符号 / 大写字母」，九键为「数字 / 该键的每个字母」。
-  顶行按键自动翻到下方弹出，屏幕边缘自动夹取；**快速上滑仍然直接输入符号 / 数字**，气泡只在你想选别的候选项时出现。
+  气泡永远在按键上方（顶行也不例外），屏幕边缘自动夹取；**快速上滑仍然直接输入符号 / 数字**，气泡只在你想选别的候选项时出现。
   可在「按键映射」页开关（关闭即回到原来的直接输入）
 - 符号 / 数字输入手势：26 键、九键、15 键支持「长按输入」与「上滑输入」二选一（设置 → 键盘布局 → 按键手势）；
   开启「按键气泡」后该设置只决定气泡的触发方式（长按还是上滑）
@@ -682,25 +683,31 @@ listOf(
 
 ### 9.3.6 按键气泡（长按 / 上滑弹候选）
 
-在字母键或九宫格数字键上长按（「按键手势」设为上滑时为上滑）弹出气泡：一块圆角矩形 + 指向按键的三角尾巴，
+在字母键或九宫格数字键上长按（「按键手势」设为上滑时为上滑）弹出气泡：一块圆角主体 + **与按键同宽同高、压住键帽的指针**，
 手指**不离开屏幕**左右滑动切换高亮项，松开输入高亮项。26 键气泡是「小写字母 / 该键符号 / 大写字母」，
 九键是「数字 / 该键的每个字母」，15 键是「数字 / 该键现有字母」。
 
 | 需求 | 位置 |
 |------|------|
-| 气泡外观与几何 | `input/keyboard/key/KeyBubblePopup.kt`（`PathMeasure` 正反两段轮廓合成「圆角矩形 + 圆角尾巴」；顶行按键自动翻到下方、屏幕边缘夹取、尾巴始终对准按键中心） |
-| 手势状态机 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms 起气泡；滑动按**气泡的屏幕坐标**取最近一项，与手指位置一一对应；抬手提交） |
-| 内容与配色 | `HasKeyBubble` 接口；`BaseKeyboard.attachKeyBubble()` 把 `KeyDef.bubble` 与主题色交进去（背景色与键盘背景合成成不透明，高亮色用 `accentKeyBackground` + 按亮度自动选黑/白字） |
+| 气泡外观与几何 | `input/keyboard/key/KeyBubbleLayer.kt`（**在键盘窗口内部**用同一条 `Path` 画出「圆角主体 + 键宽指针」，交界处两个内凹圆角；主体永远在按键**上方**、指针压住键帽，屏幕边缘自动夹取）；几何的纯计算在 `KeyBubbleGeometry.kt`（`KeyBubbleGeometryMath.compute()`，可离线测试，回归见 `KeyBubbleGeometryTest`） |
+| 谁把气泡画出来 | `input/keyboard/window/KeyboardWindowView.kt` 实现 `KeyBubbleHost`，在 `dispatchDraw()` 的最后画气泡（压在所有子 View 之上、可盖住顶栏） |
+| 手势状态机 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms 起气泡；沿 View 树向上找 `KeyBubbleHost`；滑动按**气泡的屏幕坐标**取最近一项，与手指位置一一对应；抬手提交） |
+| 内容与配色 | `HasKeyBubble` 接口；`BaseKeyboard.attachKeyBubble()` 把 `KeyDef.bubble` 与主题色交进去（**背景取该键自己的键帽色**再与键盘背景合成成不透明，指针压住键帽后才像键帽长出来的；高亮色用 `accentKeyBackground` + 按亮度自动选黑/白字） |
 | 气泡内容生成 | `KeyboardKeyMapping.qwertyBubbleItems()`（小写 → 符号 → 大写，符号走 `CommitAction` 以跟随全角/半角标点模式，字母走 `KeySequenceAction` 交给 Rime）、`KeyboardKeyMapping.t9BubbleItems()`（数字走 `CommitAction`，字母走 `KeySequenceAction`） |
 | 开关 | `KeyboardKeyMapping.isBubbleEnabled()`（`keyboard.key_bubble`，默认开）；关闭后回到旧行为：长按 / 上滑直接上屏符号或数字 |
 | 与「按键手势」的关系 | 只决定**触发方式和时长**，见下表 |
-| 描边 / 圆角 | 与键帽同一套：`keyBorderStroke` 颜色 + `keyBorderWidth` 厚度 + `keyRadius` 圆角；描边走的是「圆角矩形 + 尾巴」的同一条轮廓（`ShapeDrawable.paint` 设成 `FILL_AND_STROKE`），关掉「绘制键边框」时气泡也不描边 |
+| 描边 / 圆角 | 与键帽同一套：`keyBorderStroke` 颜色 + `keyBorderWidth` 厚度 + `keyRadius` 圆角，沿着「主体 + 指针」的同一条轮廓描边；**描边色自带 alpha 必须保留**，关掉「绘制键边框」时气泡也不描边 |
 | 入口 | 设置 → 键盘布局 →「按键映射」页顶部的开关；也可从下文提到的 `keyboard.key_bubble` 直接改 |
 
 > 气泡第一项固定是「点一下这个键本来会输入的内容」（26 键小写字母、九键数字），
 > 所以弹出后不滑动直接抬手 = 普通点击，不会因为长按误上屏符号。
 >
-> 气泡用 `PopupWindow` + `setClippingEnabled(false)` 实现，可以画到 IME 窗口之外（键盘高度调大时也不会被裁掉）。
+> ⚠️ **气泡不能做成 `PopupWindow`**（2026-09-19 改，借鉴 Xime `ui/keyboard/SwipeBubble.kt`）。
+> 两个原因：① IME 窗口是 `MATCH_PARENT × WRAP_CONTENT`，窗口上边界就是顶栏上沿，
+> 作为子窗口的 `PopupWindow` 画不出窗口之外，主体没地方悬；② 旧实现按「窗口内剩余空间」
+> 决定气泡朝上还是朝下，而顶行按键上方只剩顶栏那 48dp（比主体还矮 1dp），
+> 于是**九宫格第一行的气泡一律翻到按键下面**。现在由窗口自己在 `dispatchDraw` 里画，
+> 永远在按键上方。改这条之前先看 `KeyBubbleGeometryTest`。
 
 **触发时序（26 键 / 九键共用一套状态机，距离常量在 `SwipeUpMath`）**
 
@@ -865,6 +872,27 @@ speller:
 > 一眼就能看出「候选是引擎没给出来」还是「被排序挪走了」。release 构建里
 > `Timber.treeCount == 0`，这行日志不会产生任何开销。
 
+### 9.6.0 先看这里：简拼/整句在**实机**上不通，先怀疑内置 librime 的私人补丁
+
+> **2026-09-19 实测确认过一次，代价很大**：手机上 `zj` → 「传记」、`zjhjszydcld` →
+> 「传记和健身转悠电池了的」，而**同一份方案数据、同一份手机自己编译出的 prism/table**，
+> 用上游 librime 跑出来是 `zj` → 「自己」、`zjhjszydcld` → 「这句话就是这样多出来的」。
+>
+> 原因在 `app/src/main/cpp/deps/librime`（`danjian/librime` fork）的
+> `src/rime/dict/table.cc`：补丁 `feat: kAbbreviation rate limit when table search` 里，
+> `kMaxAbbreviationExpand = 2` 被写成了**整个 BFS 共用一个计数器**。BFS 是广度优先，
+> 于是只有最先展开的两三条简拼路径能活下来 —— 每个音节都是简拼的全简拼输入因此被砍废。
+> 已修：改成**逐路径**计数（`TableQueryState.abbreviation_count`），上限 32；
+> 总迭代护栏 5120 → 65536。
+>
+> **自查方法（发现整句/简拼「不像桌面」时按这个顺序走）**：
+> 1. `adb pull <files>/user/build/wanxiang.{prism,table}.bin` + 部署副本 schema，
+>    放进一个空 `user` 目录，用 `scripts/rime-probe` 加载 —— **如果探针结果正常、
+>    手机不正常，那问题就在引擎二进制（fork 补丁），不在方案数据、不在用户词典、不在语法模型**。
+> 2. 再看 fork 的 `git log`：`cd app/src/main/cpp/deps/librime && git log --oneline`，
+>    凡涉及 `dict/`、`gear/`、`algo/` 的提交都要读一遍 —— 探针用系统 librime，
+>    **看不到这些补丁**（`scripts/rime-probe/README.md` 已写明）。
+
 ### 9.6.1 首字母整句（`translator/max_sentences`）
 
 「每个字只打一个声母就出整句」（`zjhmydqpy` 这类）由 librime 的
@@ -894,6 +922,36 @@ speller:
 **唯一的例外杠杆是语法模型**：同一句 `jttqzm`，挂上 `wanxiang-lts-zh-hans.gram`
 后首选变「今天天气怎么」，没挂是「具体天谴之门」。模型 420 MB，见 `GramModelDownloader`；
 随包会让 APK 到 ~530 MB，所以只能手动下载。
+
+> ⚠️ **2026-09-19 复测：上面这条「例外杠杆」的说法不成立，模型对「首字母整句」是负作用。**
+> 表格里每一行都用 `scripts/rime-probe` 在同一份 `resource.zip` 数据 + 干净用户目录上跑出来
+> （模型两份都试了：仓库文档记的 420339756 字节版与下载器地址给的 419911724 字节版，结论一致）：
+>
+> | 配置 | `zjhjszydcld` 首选 | 目标句「这句话就是这样打出来的」 |
+> |------|------------------|------------------------------|
+> | **现状（模糊音 + `max_sentences: 8`，不装模型）** | 这句话就是这样多出来的 | **第 2 位**（唯一能进候选的一档）|
+> | 模糊音 + `max_sentences: 1` | 同上 | 第 2 位 |
+> | 无模糊音，不装模型 | 同上 | 第 2 位 |
+> | 模糊音 + 模型 | 「这句话就是这样打出来的计划就是这句话就是这样打出来的有点出来的」（31 字怪句）| 第 1354 位 |
+> | 模糊音 + `max_sentences: 1` + 模型 | 同上（怪句与束宽无关）| 第 1354 位 |
+> | 无模糊音 + 模型 | 自己好就是这样的处理的 | **不在候选里** |
+> | 桌面 fcitx5 自己的 schema + 桌面那份模型 | 这句话就是这样的处理的 | 不在候选里 |
+> | Xime 的 `pinyin_simp` | 这句话就是这样的出来的 | 不在候选里 |
+>
+> 而且 `jttqzm`（短简拼）装模型后从「今天天气怎么在第 4 位」变成
+> 「今天天气**这句话就是这样打出来的**吗」这种怪句、正确句消失 —— 与上一段原来的记录相反。
+> 全拼不受影响：`zhejuhuajiushizheyangdachulaide` 装不装模型都是首选正确。
+>
+> 机制上说得通：装模型后每条边的语法分从常数惩罚（-6）变成 **0 ~ +7 的非负加分**
+> （`octagram.cc` 的 `update_result` 取最大值、`gram_max` 上限 `log(词频)`），
+> 而整句总分是**逐边求和、不按词数归一**，于是「多拼几段」本身就能加分 ——
+> 模糊音把词图放大之后，束搜索就会拼出越来越长的怪句。
+> **结论：给「首字母整句」装这个模型是有害的**，设置页因此给了「删除」按钮（`SchemaSettingsScreen`）。
+> 想在 2026-09-19 之后改这条结论，先把上表用同一套命令重跑一遍。
+>
+> 另外两件被这次实测排掉的事：① `enable_completion` 关掉、② 抽掉全部 Lua
+> 处理器/翻译器/过滤器，怪句都**照旧出现** —— 它来自核心引擎（script_translator + octagram），
+> 不是某个 Lua 模块或补全条目。
 
 #### 语法模型到底是什么（别指望「换更大的模型」）
 

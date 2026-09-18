@@ -214,4 +214,100 @@ else
     echo ">>> librime 已包含 C API kind 字段，跳过补丁"
 fi
 
+# --- 修正 librime 的「简拼限流」补丁（这是「手机上候选不通」的根因）---
+# 固定的那份 librime（danjian/librime fork）带了一个私人补丁
+#   feat: kAbbreviation rate limit when table search
+# 它把 kMaxAbbreviationExpand 写成**整个 BFS 共用一个计数器、上限 2**。
+# BFS 是广度优先，于是只有最先展开的两三条简拼路径能活下来 —— 全简拼输入
+# （每个音节只打一个字母）的候选因此变成「随便剩下几个词」：
+#   真机 zj → 传记 / zjh → 传记和 / zjhjszydcld → 传记和健身转悠电池了的
+#   上游 librime 同一份数据：zj → 自己 / zjh → 这句话 / zjhjszydcld → 这句话就是这样多出来的
+# 这里改成**逐路径**计数（上限 32），并把总迭代护栏 5120 提到 65536。
+# 上游哪天自己修好了（不再有 kMaxAbbreviationExpand），这里会自动跳过。
+if [ -f "$LIBRIME_SRC/rime/dict/table.cc" ] && grep -q "kMaxAbbreviationExpand" "$LIBRIME_SRC/rime/dict/table.cc"; then
+    echo ">>> 给 librime 打补丁：把简拼展开限制从「全局」改成「逐路径」"
+    git -C "$DEPS_DIR/librime" apply --whitespace=nowarn - <<'LIBRIME_ABBREV_PATCH'
+diff --git a/src/rime/dict/table.cc b/src/rime/dict/table.cc
+index 866f458a..ad61ebcf 100644
+--- a/src/rime/dict/table.cc
++++ b/src/rime/dict/table.cc
+@@ -567,10 +567,27 @@ TableAccessor Table::QueryPhrases(const Code& code) {
+ 
+ // log(0.05) ≈ -3.0
+ const double kPenaltyForAmbiguousSyllable = -2.995732274;
+-// 限制 kAbbreviation 类型边在单次 Query 中的总迭代次数
+-const size_t kAbbreviationIterationLimit = 5120;
+-// 限制 kAbbreviation 类型边在单次 Query 中的扩展搜索数
+-const size_t kMaxAbbreviationExpand = 2;
++// 限制 kAbbreviation 类型边在单次 Query 中的总迭代次数（纯粹的性能护栏）
++const size_t kAbbreviationIterationLimit = 65536;
++// 限制**单条路径**上 kAbbreviation 类型边的个数。
++//
++// ⚠️ 这里原来是「单次 Query 的全局计数、上限 2」（见上游 danjian/librime 的
++// `feat: kAbbreviation rate limit when table search`），那是个 bug：BFS 是广度优先、
++// 计数跨所有路径共享，于是**只有最先被展开的两三条简拼路径能活下来**，其余全被丢掉。
++// 表现就是「全简拼输入（如 zjhjszydcld）在本机给出的是随便几个词，而同一个词库在
++// 上游 librime 上给出的是正确整句」，而且候选看起来完全不通（实测：手机上 zj →
++// 传记，上游 librime zj → 自己 / zjh → 这句话）。
++//
++// 限制本身要保留（11 个字母的简拼会展开出极多音节组合），但必须按路径计：
++// 上限取 32，足以覆盖任何正常长度的整句简拼，同时仍然挡住病态的深展开。
++const size_t kMaxAbbreviationPerPath = 32;
++
++// BFS 状态：除 TableQuery 外还要记「这条路径上已经用了几次简拼边」。
++struct TableQueryState {
++  size_t pos;
++  TableQuery query;
++  size_t abbreviation_count;
++};
+ 
+ bool Table::Query(const SyllableGraph& syll_graph,
+                   size_t start_pos,
+@@ -578,16 +595,16 @@ bool Table::Query(const SyllableGraph& syll_graph,
+   if (!result || !index_ || start_pos >= syll_graph.interpreted_length)
+     return false;
+   result->clear();
+-  std::queue<pair<size_t, TableQuery>> q;
++  std::queue<TableQueryState> q;
+   TableQuery initial_state(index_);
+-  q.push({start_pos, initial_state});
++  q.push({start_pos, initial_state, 0});
+ 
+   size_t abbreviation_iteration_count = 0;
+-  size_t abbreviation_expand_count = 0;
+ 
+   while (!q.empty()) {
+-    size_t current_pos = q.front().first;
+-    TableQuery query(q.front().second);
++    size_t current_pos = q.front().pos;
++    TableQuery query(q.front().query);
++    size_t abbreviation_count = q.front().abbreviation_count;
+     q.pop();
+     auto index = syll_graph.indices.find(current_pos);
+     if (index == syll_graph.indices.end()) {
+@@ -633,13 +650,15 @@ bool Table::Query(const SyllableGraph& syll_graph,
+         if (end_pos < syll_graph.interpreted_length &&
+             query.Advance(syll_id, next_credibility, delta_quality_len,
+                           current_pos)) {
+-          // 限制kAbbreviation的展开
+-          if (props->type == kAbbreviation &&
+-              abbreviation_expand_count++ > kMaxAbbreviationExpand) {
++          // 简拼边的**逐路径**上限：走上一条简拼边就给这条路径记一笔，
++          // 只有这条路自己走太远才剪掉，不影响别的路径（原来错在全局计数）。
++          size_t next_abbreviation_count =
++              abbreviation_count + (props->type == kAbbreviation ? 1 : 0);
++          if (next_abbreviation_count > kMaxAbbreviationPerPath) {
+             query.Backdate();
+             continue;
+           }
+-          q.push({end_pos, query});
++          q.push({end_pos, query, next_abbreviation_count});
+           query.Backdate();
+         }
+       }
+LIBRIME_ABBREV_PATCH
+else
+    echo ">>> librime 简拼限制已是逐路径（或上游已修），跳过补丁"
+fi
+
 echo ">>> 所有依赖已同步完成。"

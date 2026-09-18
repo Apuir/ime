@@ -667,6 +667,15 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                     val sortedList = rerankManager?.rerank(
                         msg.list, inputContext, predictionManager?.gramDb
                     )
+                    // 诊断：一眼看出「引擎给的顺序」与「应用侧重排后的顺序」差在哪。
+                    // release 构建不装 Timber tree（treeCount == 0）时直接跳过，零开销。
+                    if (Timber.treeCount > 0) {
+                        Timber.d(
+                            "diag-rerank engine=%s reranked=%s",
+                            msg.list.take(5).joinToString(" ") { it.text },
+                            sortedList?.take(5)?.joinToString(" ") { it.text } ?: "null",
+                        )
+                    }
                     actions.send(
                         Action.CandidatesReady(
                             requestId, EngineMessage.Candidates(sortedList ?: msg.list, 0, 0)

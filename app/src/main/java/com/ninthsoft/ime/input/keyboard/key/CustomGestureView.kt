@@ -118,7 +118,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     /** 气泡高亮项被提交时回调（抬手时触发一次）。 */
     var onBubbleAction: ((KeyboardAction) -> Unit)? = null
 
-    private var bubbleView: KeyBubblePopup? = null
+    private var bubbleView: KeyBubble? = null
     private var bubbleTriggered = false
     private var bubbleJob: Job? = null
     private var bubbleSwipeJob: Job? = null
@@ -262,27 +262,37 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         // 这里刻意不再判断「手指离按键多远」：长按和上滑本来就会让手指离开键帽，
         // 26 键的键宽只有 35px 上下，按漂移量做闸门会把气泡几乎全部挡掉。
         // 真正决定「要不要选气泡里的项」的是接下来手指往哪儿滑 —— 滑动即切换高亮。
-        val popup = KeyBubblePopup(context)
-        popup.show(
-            anchor = this,
-            items = controller.bubbleItems,
-            normalTextColor = controller.bubbleTextColor,
-            selectedTextColor = controller.bubbleSelectedTextColor,
-            bgColor = controller.bubbleBackgroundColor,
-            selectedBgColor = controller.bubbleSelectedBackgroundColor,
-            cornerRadius = controller.bubbleCornerRadius,
-            strokeColor = controller.bubbleStrokeColor,
-            strokeWidth = controller.bubbleStrokeWidth,
-        )
-        bubbleView = popup
+        //
+        // 气泡由外层键盘窗口在**窗口内部**画（见 `KeyBubbleHost`）：这样它能盖到顶栏上、
+        // 不会被 IME 窗口上边界裁掉，也就没有「顶行气泡跑到按键下面」的问题。
+        val host = findKeyBubbleHost() ?: run {
+            Log.w(BUBBLE_TAG, "showBubble: no KeyBubbleHost above $this")
+            return
+        }
+        val bubble = host.showKeyBubble(this, controller) ?: run {
+            Log.w(BUBBLE_TAG, "showBubble: host refused to show bubble for $this")
+            return
+        }
+        bubbleView = bubble
         bubbleTriggered = true
         Log.i(
             BUBBLE_TAG,
             "showBubble: labels=${controller.bubbleItems.map { it.label }} " +
-                "showing=${popup.isShowing} left=${popup.contentLeft} width=${popup.contentWidth}",
+                "showing=${bubble.isShowing} left=${bubble.contentLeft} width=${bubble.contentWidth}",
         )
         // 气泡出现时补一次长按触感，让「弹出来了」有明确反馈。
         InputFeedbacks.hapticFeedback(this, true)
+    }
+
+    /** 沿 View 树往上找承载气泡的窗口（IME 的根内容 View 实现了 [KeyBubbleHost]）。 */
+    private fun findKeyBubbleHost(): KeyBubbleHost? {
+        var node: View? = this
+        while (node != null) {
+            val parent = node.parent
+            if (parent is KeyBubbleHost) return parent
+            node = parent as? View
+        }
+        return null
     }
 
     private fun hideBubble() {
@@ -464,37 +474,30 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
      * 滑出气泡左右边界时夹到首尾两项，避免「划出去就没反应」。
      */
     private fun moveBubbleSelection(x: Float) {
-        val popup = bubbleView ?: return
-        if (popup.itemCount == 0) return
-        val step = popup.itemStep
+        val bubble = bubbleView ?: return
+        if (bubble.itemCount == 0) return
+        val step = bubble.itemStep
         if (step <= 0f) return
         val location = IntArray(2)
         getLocationOnScreen(location)
         val screenX = location[0] + x
-        val rawIndex = ((screenX - popup.contentLeft) / step).toInt()
+        val rawIndex = ((screenX - bubble.contentLeft) / step).toInt()
         val target = when {
-            screenX < popup.contentLeft -> 0
-            screenX >= popup.contentLeft + popup.contentWidth -> popup.itemCount - 1
-            else -> rawIndex.coerceIn(0, popup.itemCount - 1)
+            screenX < bubble.contentLeft -> 0
+            screenX >= bubble.contentLeft + bubble.contentWidth -> bubble.itemCount - 1
+            else -> rawIndex.coerceIn(0, bubble.itemCount - 1)
         }
-        if (target == popup.selectedIndex) return
-        val controller = bubbleController ?: return
-        if (popup.selectIndex(
-                index = target,
-                normalTextColor = controller.bubbleTextColor,
-                selectedTextColor = controller.bubbleSelectedTextColor,
-                selectedBgColor = controller.bubbleSelectedBackgroundColor,
-            )
-        ) {
+        if (target == bubble.selectedIndex) return
+        if (bubble.selectIndex(target)) {
             InputFeedbacks.hapticFeedback(this)
         }
     }
 
     /** 抬手：提交气泡里高亮的那一项；顺带清掉可能还挂着的长按 / 上滑定时器。 */
     private fun commitBubbleSelection() {
-        val popup = bubbleView
+        val bubble = bubbleView
         val controller = bubbleController
-        val action = controller?.bubbleItems?.getOrNull(popup?.selectedIndex ?: 0)?.action
+        val action = controller?.bubbleItems?.getOrNull(bubble?.selectedIndex ?: 0)?.action
         hideBubble()
         resetState()
         if (action != null) {

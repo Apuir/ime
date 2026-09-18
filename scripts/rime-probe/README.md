@@ -94,3 +94,21 @@ mkdir -p user
   JNI 与 Kotlin 逻辑**，所以探针通过 ≠ 实机通过，最终仍要真机验证。
 - 输出里的 `E2026...` 开头的行是 librime 的 glog 错误（例如找不到可选的
   `wanxiang-lts-zh-hans.gram` 语法模型），与方案数据无关，可以忽略或 `rg -v "^E2026"` 过滤。
+
+---
+
+## ⚠️ 探针看不到 app 的 librime 私人补丁
+
+探针用的是**系统 librime**，而 app 用的是 `app/src/main/cpp/deps/librime`
+（`danjian/librime` fork，带私人补丁）。所以：
+
+- **探针通过 ≠ 实机通过**。2026-09-19 就踩过一次：fork 在 `src/rime/dict/table.cc`
+  加的 `kAbbreviation rate limit`（全局计数、上限 2）把**全简拼输入**的候选砍得只剩
+  最先展开的几条，手机上是「传记和健身转悠电池了的」这种狗屁不通的候选，
+  而探针（上游 librime）给出的是「这句话就是这样多出来的」。
+- **怀疑引擎行为时，正确的做法是**：把手机编译出来的
+  `user/build/wanxiang.prism.bin` / `wanxiang.table.bin` + 部署副本 schema 拉下来，
+  放进一个空 `user` 目录，让探针**加载手机的编译产物**：
+  - 探针结果 = 手机结果 → 问题在方案数据 / 用户数据；
+  - 探针结果 ≠ 手机结果 → 问题在**引擎二进制（fork 补丁）**，去读
+    `deps/librime` 的 `git log`，重点看 `dict/`、`gear/`、`algo/`。

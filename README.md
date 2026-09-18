@@ -9,7 +9,7 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.4.0`（20400） |
+| 当前版本 | `2.5.0`（20500） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
@@ -48,7 +48,9 @@
 **候选与编辑**
 
 - 横滑候选条 + 展开式 5×5 候选网格，候选可拖拽重排、删除 / “忘记”
-- marisa 预测 + `.gram` 语法模型重排，可开关（**语法模型真正参与打分**）
+- marisa 预测 + `.gram` 语法模型重排，可开关（**语法模型真正参与打分**）；
+  ⚠️ 但官方 420 MB 语法模型实测对**首字母整句是负作用**（候选会被拼成很长的怪句），
+  见 [`docs/DEVELOPMENT.md` 9.6.1](docs/DEVELOPMENT.md#961-首字母整句translatormax_sentences)
 - **常用词学习**：候选选自用户实际选择，带时间衰减；**误选后自动降权** ——
   选错了删掉重打，那个词会自己往下掉，且惩罚会随时间过期
 - 学习数据可在「设置 → 候选词 → 学习数据」里一键重置
@@ -59,7 +61,7 @@
 
 - 主题：内置 3 套（暗夜 / 素白 / 落日）+ 不限数量自定义，应用内 GUI 调色并支持二维码分享
 - 工具栏图标自定义、侧栏快捷符号自定义、26 键符号与九键字母映射自定义
-- 按键气泡（长按/上滑弹出的带尾巴气泡）、长按 vs 上滑手势二选一
+- 按键气泡（长按 / 上滑弹出：主体悬在按键上方、**与按键同宽同高的指针压住键帽**，连成一体）、长按 vs 上滑手势二选一
 - 横屏悬浮键盘、键盘内直接拖拽调大小、按键振动（系统触感 / 10 级自定义强度）
 
 **手写**
@@ -103,7 +105,7 @@
 本项目**不发 Release APK**，APK 由本机自行构建（见下一节），然后用 `adb` 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.4.0.apk
+adb install -r app/build/outputs/apk/release/ime-2.5.0.apk
 ```
 
 首次打开会依次进入：
@@ -177,8 +179,8 @@ chmod +x install-deps.sh && ./install-deps.sh
 ls -lh app/src/main/assets/resource.zip
 
 # 4) 编译
-./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.4.0-debug.apk
-./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.4.0.apk
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.5.0-debug.apk
+./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.5.0.apk
 ```
 
 首次 native 编译（librime + Boost + OpenCC）耗时较长。release 签名可用仓库根的 `keystore.properties`，或用环境变量

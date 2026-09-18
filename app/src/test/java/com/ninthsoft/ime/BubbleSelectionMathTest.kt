@@ -11,7 +11,7 @@ import org.junit.Test
  */
 class BubbleSelectionMathTest {
 
-    /** 与 KeyBubblePopup.moveBubbleSelection 相同的取项规则。 */
+    /** 与 CustomGestureView.moveBubbleSelection 相同的取项规则（气泡由 KeyBubbleLayer 提供几何）。 */
     private fun indexAt(screenX: Float, contentLeft: Int, contentWidth: Int, count: Int): Int {
         if (count <= 0) return 0
         val step = contentWidth.toFloat() / count

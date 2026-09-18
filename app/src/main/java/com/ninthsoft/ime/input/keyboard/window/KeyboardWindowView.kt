@@ -38,7 +38,11 @@ import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
+import com.ninthsoft.ime.input.keyboard.key.HasKeyBubble
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.key.KeyBubble
+import com.ninthsoft.ime.input.keyboard.key.KeyBubbleHost
+import com.ninthsoft.ime.input.keyboard.key.KeyBubbleLayer
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
 import com.ninthsoft.ime.input.handwriting.HandwritingManager
@@ -65,7 +69,7 @@ class KeyboardWindowView(
     context: Context,
     private val keyboardStateManager: KeyboardStateManager,
     private val panelListener: PanelListener? = null,
-) : FrameLayout(context), IManagedView {
+) : FrameLayout(context), IManagedView, KeyBubbleHost {
 
     companion object {
         /**
@@ -800,6 +804,8 @@ class KeyboardWindowView(
     }
 
     override fun onDetachedFromWindow() {
+        // 气泡不跨窗口存活：窗口都没了，手指不可能还在键上
+        keyBubbleLayer.dismiss()
         // 手写面板不跨输入会话存活：会话结束就收回，免得下次弹出时带着上次的笔迹
         hideHandwritingPanel()
         // 键盘被收起/重建时结束编辑模式，把当前尺寸落盘。
@@ -1196,6 +1202,21 @@ class KeyboardWindowView(
         )
     }
 
+    // ==================== 按键气泡 ====================
+
+    /**
+     * 按键气泡（长按 / 上滑按键时从键帽上方长出来的候选条）。
+     *
+     * 画在本 View 的 [dispatchDraw] 里、所有子 View 之上：气泡要盖住顶栏、又要压住按键，
+     * 用 `PopupWindow` 做不到 —— IME 窗口是 `WRAP_CONTENT`，窗口上边界就是顶栏上沿，
+     * 作为子窗口的 PopupWindow 画不出去；而按窗口坐标去夹取可用空间，正是
+     * 「九宫格第一行按键的气泡跑到按键下面」的根因（顶行上方只剩顶栏那 48dp）。
+     */
+    private val keyBubbleLayer = KeyBubbleLayer(context) { invalidate() }
+
+    override fun showKeyBubble(anchor: View, controller: HasKeyBubble): KeyBubble? =
+        if (keyBubbleLayer.show(anchor, controller, this)) keyBubbleLayer else null
+
     override fun dispatchDraw(canvas: Canvas) {
         // 整屏手写不画悬浮卡片：书写层本身就是整窗，卡片边框/阴影会横在手写区中间
         if (usesOverlayLayout && !handwritingOverlayActive) {
@@ -1228,6 +1249,8 @@ class KeyboardWindowView(
         if (isResizing) {
             drawResizeDecorations(canvas)
         }
+        // 气泡永远压在最上层：它要同时盖住按键和顶栏
+        keyBubbleLayer.draw(canvas)
     }
 
     /**

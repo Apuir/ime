@@ -419,10 +419,17 @@ abstract class BaseKeyboard(
      * 所以长按后不滑动直接抬手不会出现意外结果。
      */
     private fun attachKeyBubble(view: KeyView, items: List<KeyBubbleItem>, pressAction: KeyboardAction) {
-        // 气泡是浮在键盘上的一层，必须是不透明色：主题里的 specialKeyBackground /
-        // accentKeyBackground 都带 alpha（半透明键帽），直接拿去画会透出下层内容。
+        // 气泡底色取**这个键自己的键帽色**（与 KeyView.setupBackgroundWithPress 同一套映射）：
+        // 气泡的指针会压住键帽、主体悬在它正上方，两者同色才像是「键帽往上长出来」的，
+        // 而不是盖在键盘上的一块。
+        val capColor = when (view.def.variant) {
+            KeyDef.Appearance.Variant.Alternative -> colors.specialKeyBackground
+            KeyDef.Appearance.Variant.Accent -> colors.accentKeyBackground
+            else -> colors.keyBackground
+        }
+        // 主题里的键帽背景带 alpha（半透明键帽），直接拿去画会透出下层内容。
         // 这里统一先与键盘背景合成，得到不透明的等效颜色。
-        val bubbleBg = ColorUtils.compositeColors(colors.specialKeyBackground, colors.background)
+        val bubbleBg = ColorUtils.compositeColors(capColor, colors.background)
         val bubbleSelectedBg = ColorUtils.compositeColors(colors.accentKeyBackground, colors.background)
         // 描边与键帽同一套：同样的圆角、同样的描边色 / 厚度，气泡才像是键盘的一部分。
         // 边框由「按键设置 → 绘制键边框」统一控制，关掉就一起不画。
@@ -443,7 +450,7 @@ abstract class BaseKeyboard(
             override val bubbleStrokeWidth: Int = dp(colors.keyBorderWidth).toInt()
         }
         view.onBubbleAction = { action -> onAction(action) }
-        // 兜底：气泡路径会接管长按 / 上滑，万一气泡没能显示出来（例如 PopupWindow 被系统拒绝），
+        // 兜底：气泡路径会接管长按 / 上滑，万一气泡没能显示出来（窗口还没布局等），
         // 抬手时还可以走一次普通点击，至少不会「按了没反应」。
         view.setOnClickListener { onAction(pressAction) }
     }
