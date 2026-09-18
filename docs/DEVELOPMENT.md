@@ -43,11 +43,11 @@
 
 一个**基于 Rime（librime）引擎的 Android 中文输入法**，整体是一个“壳 + 引擎 + 数据”的结构：
 
-- **壳**：`InputMethodService` 及其键盘 UI（Qwerty / 九宫格 T9 / 15 键 T15 / 符号 / Emoji），以及一整套 Compose 设置界面。
+- **壳**：`InputMethodService` 及其键盘 UI（Qwerty / 九宫格 T9 / 15 键 T15 / 手写 / 符号 / Emoji），以及一整套 Compose 设置界面。
 - **引擎**：`librime` 的 C++ 代码通过 JNI（`rime_jni`、`marisa_jni`）暴露给 Kotlin；Kotlin 侧用 `IEngine` 接口抽象，当前唯一实现是 `RimeEngine`。插件启用 `librime-lua`、`librime-octagram`（语法模型）、`librime-predict`（预测）。
 - **数据**：随包携带一个 65 MB 的 `assets/resource.zip`，解压后是万象拼音的方案、词库、Lua 脚本和 `predict.marisa` 预测模型；运行时解压到外部私有目录给 librime 使用。
 
-特点：**不是**在 Rime 之上套一层通用配置 UI（如 Trime），而是把 Rime 当作纯输入内核，键盘布局、候选面板、主题、剪贴板、语音全部自己实现。
+特点：**不是**在 Rime 之上套一层通用配置 UI（如 Trime），而是把 Rime 当作纯输入内核，键盘布局、候选面板、主题、剪贴板、语音、手写全部自己实现。
 
 ---
 
@@ -55,14 +55,18 @@
 
 **输入**
 
-- Rime 拼音方案（默认启用 `wanxiang_t9` / `wanxiang` / `wanxiang_english`），支持方案启用、排序、切换
+- **键盘槽只有两个**：英文槽（固定用 `wanxiang_english`，不可更改）与中文槽（在输入方式之间切换）。
+  底层仍是 Rime 方案（`wanxiang_t9` / `wanxiang` / `wanxiang_english`），但用户不再直接管理「启用哪些方案」
 - **模糊音默认开启**（6 组：平翘舌 / 前后鼻音 / n-l），`zongguo` → 中国；
   开关位置与取舍见 [9.4](#模糊音本项目默认全开)
 - **首字母简拼**：`qryt` → 杞人忧天、`zjh` → 这句话；候选数量与耗时可用
   [`scripts/rime-probe/`](../scripts/rime-probe/README.md) 在开发机上实测
 - **首字母整句**：整句候选 8 条（`translator/max_sentences`，引擎默认只有 1 条），
   见 [9.6.1](#961-首字母整句translatormax_sentences)
-- 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由当前 scheme 的 `layout` 字段自动决定
+- 四种输入方式：全键盘（Qwerty）、九宫格（T9）、15 键（T15）、手写。
+  同一输入方式有多个方案时在切换列表里平铺（`九键1 / 九键2`）。
+  **可用性 = 应用支持该键盘 ∩ 存在候选类型（`candidateKind`）匹配的方案**（手写不走引擎、不需要方案）；
+  键盘由「当前槽的输入方式偏好」决定，方案的 `layout` 字段只作兜底默认值
 - 符号键盘、Emoji 键盘；全角/半角标点切换
 - 简↔繁转换（自带 FMM 转换器，不依赖 OpenCC 运行时）
 - 英文/ASCII 模式、Emoji 参与候选
@@ -78,6 +82,17 @@
 - 文本编辑面板（光标移动、选择、剪切/复制/粘贴）、预编辑悬浮拼音条
 - 输入框实时上屏（预览）：设置 → 上屏设置里可选「不上屏 / 原始输入上屏（如 `ni'hao`）/ 首候选上屏」，并可选择切换方案、收起键盘时是否把已上屏内容正式保留
 - 剪贴板历史（Room 持久化、云同步标记、自动清理策略）+ 常用语管理
+
+**手写**
+
+- 双引擎：本地 ochwpro ONNX（随包、离线、飞行模式可用；经 JNI `dlopen` 复用 APK 内已有的
+  `libonnxruntime.so`，不额外打包 ONNX Runtime）+ Google ML Kit 数字墨水识别（主引擎，需 GMS，首次下载约 20 MB）
+- `AUTO`：优先 Google，不可用静默落本地；显式选 Google 时不自动降级
+- 面板：书写区 + 右侧标点栏（⌫ 固定）+ 功能行；候选显示在顶栏候选位（与九键共用渲染与命中）
+- 候选为**组合态**：写完即进输入框但未定型，点其它候选直接替换；写下一个字 / 切键盘 / 收键盘 /
+  关输入法 / 空格回车标点 时正式保留
+- 抬笔停手自动识别并清空笔迹，停手时长可调（0.2–2.0 秒）
+- 「半/全」切换键盘区域内手写 / 整屏手写（整屏时写在应用内容之上、应用不被顶起）
 
 **语音**
 
@@ -125,6 +140,8 @@
 | 二维码 | zxing-android-embedded `4.3.0` |
 | 日志 | Timber `5.0.1` |
 | 语音 | 本地 AAR `app/libs/sherpa-onnx-1.13.5-qnn.aar`（已入库） |
+| 手写（主引擎） | `com.google.mlkit:digital-ink-recognition`（Maven，模型运行时按需下载） |
+| 手写（兜底） | ochwpro ONNX + 仓库内自写 JNI；模型随包，二进制不入库（`scripts/fetch-handwriting-model.sh`） |
 
 > 死依赖提示：`kotlinpoet` / `kotlinpoet-ksp` 已声明但代码中无引用；`libs.tokenizer` 被注释。KSP 目前只服务于 Room。
 
@@ -239,6 +256,8 @@
 | `panel/` | `KawaiiPanel` + 渲染器 + `component/`（候选网格、剪贴板、菜单、文本编辑、确认浮层）+ `toolbar/` + `state/` |
 | `pinner/` | 预编辑悬浮条 |
 | `speech/` | 语音可视化 View（粒子波/频谱波） |
+| `handwriting/` | 手写引擎与面板：`HandwritingEngineHolder`（引擎持有/串行/取消）、`OnnxEngine`+`ochwpro/`（本地）、`MlKitEngine`（Google）、`HandwritingModelStore`、`panel/`（面板与书写视图） |
+| `keyboard/slot/` | 键盘槽：`KeyboardSlotPlan`（纯逻辑：平铺列表与可用性判定）+ `SlotLabels`（文案映射） |
 | `dialog/` | 方案选择对话框 |
 
 ### `ui/` —— Compose 设置界面（33 文件）
@@ -342,7 +361,7 @@ python3 scripts/build-rime-resource.py             # 重建（覆盖 assets/reso
 1. **白名单取数**：排除用户状态（`*.userdb` / `user.yaml` / `installation.yaml` /
    `build` / `sync` / `*.gram`）。
 2. **注入 app 桥接字段**（万象官方包里**没有**，缺了功能会瘸）：
-   - `schema/{layout,punctuation,kind,candidateKind}` —— 键盘随方案切换、
+   - `schema/{layout,punctuation,kind,candidateKind}` —— `candidateKind` 决定该方案能驱动哪种输入方式（`PinYin` → 26 键/15 键、`T9PinYin` → 九键），`layout` 只作兜底、
      方案列表标签、预编辑拼音条都靠它；
    - 顶层 `options:` 块 —— `OptionsApplier` 据此把 app 的「繁体 / Emoji / 英文模式」
      三个设置映射成 Rime 运行时选项。
@@ -1212,3 +1231,35 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
 ---
 
 *本文档由对当前代码的静态阅读整理而成；如与实现不一致，以代码为准。*
+
+### 9.3.7 手写面板与整屏手写
+
+手写面板是 `KeyboardWindowView` 的普通子 View（默认 `GONE`）：不在 measure/layout 排除名单里、且非 `GONE`，
+就会被自动铺满键盘内容区（含悬浮卡片），所以**布局代码不需要为它改动**。配套要动的只有四处：
+`floatingTouchableRegion()` 的条件、`refreshColors()` 补配色、
+`switchKeyboard` / `toggleMenu` / `enterResizeMode` / `onDetachedFromWindow` 四个时机收起面板。
+
+- **上屏通道**：面板自己不碰 `InputConnection`。提交/退格/空格/回车一律经 `Listener` 回到宿主，
+  由宿主发 `KeyboardAction`（`CommitAction` / `CommitPairAction` / `BackspaceAction` / `SpaceAction` / `ReturnAction`）。
+- **候选为组合态**：`ImeInputMethodService` 提供手写专用入口
+  （`setHandwritingComposing` / `finalizeHandwritingComposing` / `discardHandwritingComposing`），
+  走的就是 `setComposingText` / `finishComposingText` 这条与拼音相同的组合通道；
+  只是不受「上屏模式」偏好影响。**不要**在面板或 `PanelListener` 里持有 `InputConnection`。
+- **进手写时先安顿 Rime 组合区**：`settleCompositionForHandwriting()`（`finalizeForKeyboardSwitch()` +
+  `engine.resetComposition()` + 清方案候选），否则手写组合态与 Rime 组合区会互相顶掉。
+- **整屏手写（`半/全`）**：`HandwritingManager.FULL_SCREEN_IMPL` 有两种实现：
+  - `OVERLAY`（默认）：进入整屏时把输入法窗口整屏化 —— 覆写
+    `InputMethodService.onConfigureWindow()` 并在整屏时把窗口高度设为 `MATCH_PARENT`
+    （`ImeInputMethodService.syncImeWindow()` 是窗口背景+尺寸的唯一入口），
+    窗口背景透明、`floatingTouchableRegion()` 给整窗、应用底衬报 0（应用不被顶起），
+    书写层铺满窗口并叠一层很淡的遮罩；键盘只剩底部三条（顶栏 + 标点行 + 功能行）。
+  - `GROW`：退化方案 —— 键盘临时加高到 62% 屏高，形态不变、窗口/触摸/背景全不动。
+    **真机上若整屏异常，把这一行改掉即可回退。**
+
+> ⚠️ 两个踩过的坑：
+> 1. 书写视图在「半屏 ⇄ 整屏」之间换父容器时，**必须先 `(ink.parent as? ViewGroup)?.removeView(ink)`**。
+>    `removeAllViews()` 只清直接子视图，而它是孙子；漏了这一步会命中
+>    `IllegalStateException: The specified child already has a parent`，
+>    而异常发生在点击回调里没人接 —— **整个输入法进程会当场崩溃**，表现为「键盘整块消失、乱点才回来」。
+> 2. 只靠 `WRAP_CONTENT` 撑高窗口要经过「测量 → relayout → 改窗口 → 再测」一圈才收敛，
+>    中间掉一步底部三条就排到窗口外；所以整屏时显式设 `MATCH_PARENT` 更稳。

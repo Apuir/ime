@@ -1,7 +1,7 @@
 # 简意输入法 · ime
 
 > 一个基于 [Rime / librime](https://github.com/rime/librime) 引擎的 Android 中文输入法。
-> 不是给 Rime 套一层通用配置 UI，而是把 Rime 当作纯输入内核，键盘、候选面板、主题、剪贴板、语音全部自己实现。
+> 不是给 Rime 套一层通用配置 UI，而是把 Rime 当作纯输入内核，键盘、候选面板、主题、剪贴板、语音、手写全部自己实现。
 
 基于上游 [`danjian/ime`](https://github.com/danjian/ime) fork 而来的个人项目。
 
@@ -9,7 +9,7 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.3.1`（20301） |
+| 当前版本 | `2.4.0`（20400） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
@@ -33,7 +33,9 @@
 
 **输入**
 
-- 三种键盘布局：全键盘（Qwerty）、九宫格（T9）、15 键（T15），由方案的 `layout` 自动切换
+- 四个输入方式：全键盘（Qwerty）、九宫格（T9）、15 键（T15）、手写
+- 键盘槽收敛为两个：**英文槽固定**（不可更改），**中文槽**里选输入方式；同一输入方式有多个方案时平铺展示（如 `九键1 / 九键2`）
+- 输入方式的可用性：应用支持该键盘 **且** 有候选类型匹配的方案才可用（手写不走引擎、无需方案）
 - **模糊音默认开启**：平翘舌（zh/z、ch/c、sh/s）、前后鼻音（an/ang、en/eng、in/ing）、
   n/l 共 6 组，`zongguo` 直接出「中国」
 - **首字母简拼**：打 `qryt` 出「杞人忧天」、`zjh` 出「这句话」
@@ -59,6 +61,15 @@
 - 工具栏图标自定义、侧栏快捷符号自定义、26 键符号与九键字母映射自定义
 - 按键气泡（长按/上滑弹出的带尾巴气泡）、长按 vs 上滑手势二选一
 - 横屏悬浮键盘、键盘内直接拖拽调大小、按键振动（系统触感 / 10 级自定义强度）
+
+**手写**
+
+- 双引擎：本地 ochwpro ONNX 模型（随包、离线、飞行模式可用）+ Google ML Kit（主引擎，需 GMS，首次下载约 20 MB）
+- `AUTO` 下优先 Google、不可用静默落到本地；显式选 Google 时不自动降级，设置页给提示与「改用本地」
+- 面板：书写区 + 右侧标点栏（⌫ 固定不随标点滚动）+ 底部功能行；**候选显示在顶栏候选位**，与九键共用同一套交互
+- 候选为组合态：写完即进输入框但未定型，点别的候选直接替换；写下一个字 / 切键盘 / 收键盘 / 关输入法 / 空格回车标点 时正式保留
+- 抬笔停手自动识别并清空笔迹，停手时长可在设置里调（0.2–2.0 秒，步长 0.1 秒）
+- 「半/全」切换键盘区域内手写 / 整屏手写（整屏时写在应用内容之上，应用不被顶起）
 
 **语音**
 
@@ -92,7 +103,7 @@
 本项目**不发 Release APK**，APK 由本机自行构建（见下一节），然后用 `adb` 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/release/ime-2.3.1.apk
+adb install -r app/build/outputs/apk/release/ime-2.4.0.apk
 ```
 
 首次打开会依次进入：
@@ -166,8 +177,8 @@ chmod +x install-deps.sh && ./install-deps.sh
 ls -lh app/src/main/assets/resource.zip
 
 # 4) 编译
-./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.3.1-debug.apk
-./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.3.1.apk
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/ime-2.4.0-debug.apk
+./gradlew :app:assembleRelease   # → app/build/outputs/apk/release/ime-2.4.0.apk
 ```
 
 首次 native 编译（librime + Boost + OpenCC）耗时较长。release 签名可用仓库根的 `keystore.properties`，或用环境变量
@@ -195,6 +206,10 @@ ls -lh app/src/main/assets/resource.zip
 ---
 
 ## 已知限制
+
+- 整屏手写依赖各家 ROM 对输入法窗口的处理；异常时可把 `HandwritingManager.FULL_SCREEN_IMPL` 从 `OVERLAY`
+  改为 `GROW`（键盘临时加高、形态不变）。
+- 手写识别准确率与耗时尚未量化；悬浮（横屏）下的手写触摸仍需真机确认。
 
 - **仅支持 `arm64-v8a`**：不支持 32 位设备与模拟器
 - **`resource.zip` 不入库**：空 checkout 构建出来会没有方案和候选词
