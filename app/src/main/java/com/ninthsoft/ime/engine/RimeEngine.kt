@@ -585,11 +585,23 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         awaitJob(emptyList()) {
             enabledSchemata().map {
                 EngineMessage.Schema(
-                    it.id, it.name, it.layout, it.punctuation, it.kind
+                    it.id, it.name, it.layout, it.punctuation, it.kind,
+                    candidateKind = readCandidateKind(it.id),
                 )
             }
         }
     }
+
+    /**
+     * 读方案声明的 candidateKind。
+     *
+     * native 的 `SchemaItem` 不带这个字段（改 native 不在本次范围内），而键盘槽要靠它
+     * 判断「这个键盘配这套方案能不能用」，所以这里自己开一次方案配置取。
+     * 只取一个字符串，比构造整个 [RimeSchema]（还会解析 switches / options / alphabet）轻得多。
+     */
+    private fun readCandidateKind(schemaId: String): String = runCatching {
+        RimeConfig.openSchema(schemaId).use { it.getString("schema/candidateKind") ?: "" }
+    }.getOrDefault("")
 
 
     override fun clear(service: InputMethodService) {

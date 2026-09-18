@@ -1,14 +1,8 @@
 package com.ninthsoft.ime.ui.screen
 
-import android.content.Context
-import android.content.SharedPreferences
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,20 +10,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,84 +35,109 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.ngram.GramModelDownloader
-import com.ninthsoft.ime.engine.rime.core.RimeConfig
-import com.ninthsoft.ime.engine.rime.core.IRimeJob
-import com.ninthsoft.ime.engine.rime.data.DataManager
-import com.ninthsoft.ime.data.manager.SchemaManager
-import com.ninthsoft.ime.engine.EngineFactory
-import com.ninthsoft.ime.engine.rime.core.SchemaItem
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.schemaLayoutTag
-import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
+import com.ninthsoft.ime.engine.EngineFactory
+import com.ninthsoft.ime.engine.rime.core.IRimeJob
+import com.ninthsoft.ime.engine.rime.core.RimeConfig
+import com.ninthsoft.ime.engine.rime.data.DataManager
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
+import com.ninthsoft.ime.input.keyboard.slot.SlotSwitchItem
+import com.ninthsoft.ime.input.keyboard.slot.buildChineseSlotItems
+import com.ninthsoft.ime.input.keyboard.slot.labelRes
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ActionRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ProgressButton
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
 import com.ninthsoft.ime.ui.theme.ExpressiveShapes
-import kotlin.math.roundToInt
-import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** 不可用项的统一透明度：能看清，但一眼知道点不了。 */
+private const val DISABLED_ALPHA = 0.45f
+
+/**
+ * 输入方案设置页：键盘只有两个槽。
+ *
+ * - 中文槽：平铺列出全部输入方式（九键 / 26键 / 15键 / 手写）。同一个输入方式有多个方案时
+ *   全部列出来（九键1 / 九键2）。用不了的项灰掉，并写明缺的是键盘还是方案。
+ * - 英文槽：固定 `wanxiang_english` + Qwerty，只展示不可改 —— ascii 输入留在英文方案内部。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchemaSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val prefs =
-        remember { context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE) }
-    val enabledSchemas = remember { mutableStateListOf<SchemaItem>() }
-    val availableSchemas = remember { mutableStateListOf<SchemaItem>() }
-    var loaded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+
+    // 方案列表是阻塞读（会逐个开方案配置取 candidateKind），读到之后就不再重复读。
+    var allSchemas by remember { mutableStateOf(EngineFactory.current()?.schemasList() ?: emptyList()) }
+    val chineseItems = remember(allSchemas) { buildChineseSlotItems(context, allSchemas) }
+    val englishSchema = remember(allSchemas) {
+        allSchemas.find { it.id == KeyboardManager.Slot.ENGLISH_SCHEMA_ID }
+    }
+
+    // 引擎冷启动 / 首次部署时首帧可能读不到方案：补轮询几次。
+    // 少了这段，页面会一直停在「全部缺方案」的占位列表上，用户以为方案丢了。
+    LaunchedEffect(Unit) {
+        if (allSchemas.isNotEmpty()) return@LaunchedEffect
+        repeat(30) {
+            delay(500)
+            val schemas = withContext(Dispatchers.IO) {
+                EngineFactory.current()?.schemasList() ?: emptyList()
+            }
+            if (schemas.isNotEmpty()) {
+                allSchemas = schemas
+                return@LaunchedEffect
+            }
+        }
+    }
+
+    val activeSlot = remember { KeyboardManager.Slot.getActiveSlot(context) }
+    var chineseKeyboard by remember { mutableStateOf(KeyboardManager.Slot.getChineseKeyboard(context)) }
+    var chineseSchemaId by remember { mutableStateOf(KeyboardManager.Slot.getChineseSchemaId(context)) }
+    // 偏好为空或已失效时，高亮的应该是键盘真正会用的那一项（回落结果）。
+    val selectedItem = remember(chineseItems, chineseKeyboard, chineseSchemaId) {
+        KeyboardSlotPlan.resolve(chineseItems, chineseKeyboard, chineseSchemaId)
+    }
+
     var grammarLanguage by remember { mutableStateOf<String?>(null) }
     var grammarReady by remember { mutableStateOf(false) }
     var grammarDownloading by remember { mutableStateOf(false) }
     var grammarProgress by remember { mutableFloatStateOf(0f) }
     var grammarFailed by remember { mutableStateOf(false) }
     var grammarButtonWidth by remember { mutableStateOf(0.dp) }
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
 
-    val allSchemas = EngineFactory.current()?.schemasList() ?: emptyList()
-    if (!loaded && allSchemas.isNotEmpty()) {
-        val allItems =
-            allSchemas.map { SchemaItem(it.id, it.name, it.layout, it.punctuation, it.kind) }
-        val enabledIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
-            ?.filter { it.isNotBlank() } ?: emptyList()
-        val byId = allItems.associateBy { it.id }
-        val seen = mutableSetOf<String>()
-        enabledSchemas.clear()
-        enabledSchemas.addAll(enabledIds.mapNotNull { byId[it]?.also { seen.add(it.id) } })
-        availableSchemas.clear()
-        availableSchemas.addAll(allItems.filter { it.id !in seen })
-        loaded = true
+    fun selectChinese(item: SlotSwitchItem) {
+        if (!item.available) return
+        KeyboardManager.Slot.setChineseSelection(context, item.keyboardName, item.schemaId)
+        chineseKeyboard = item.keyboardName
+        chineseSchemaId = item.schemaId
     }
 
     fun downloadGrammar(language: String) {
@@ -178,7 +193,7 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { saveOrder(prefs, enabledSchemas); onBack() }) {
+                    IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = null,
@@ -193,11 +208,11 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        if (!loaded) return@Scaffold
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -242,7 +257,7 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
                 )
             }
 
-            SectionHeader(stringResource(R.string.enabled_schemas))
+            SectionHeader(stringResource(R.string.slot_section_chinese))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = ExpressiveShapes.medium,
@@ -251,215 +266,190 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
-                ReorderableSchemaList(enabledSchemas) { schema ->
-                    if (enabledSchemas.size > 1) {
-                        IconButton(onClick = {
-                            availableSchemas.add(schema)
-                            enabledSchemas.remove(schema)
-                            saveOrder(prefs, enabledSchemas)
-                        }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                }
-            }
-            if (availableSchemas.isNotEmpty()) {
-                SectionHeader(stringResource(R.string.available_schemas))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = ExpressiveShapes.medium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    LazyColumn {
-                        itemsIndexed(availableSchemas, key = { _, s -> s.id }) { _, schema ->
-                            SchemaListItem(
-                                schema = schema,
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.RadioButtonUnchecked,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                                trailingIcon = {
-                                    IconButton(onClick = {
-                                        enabledSchemas.add(schema)
-                                        availableSchemas.remove(schema)
-                                        saveOrder(prefs, enabledSchemas)
-                                    }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Add,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReorderableSchemaList(
-    items: MutableList<SchemaItem>,
-    trailingIcon: @Composable (SchemaItem) -> Unit,
-) {
-    val context = LocalContext.current
-    val prefs =
-        remember { context.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE) }
-    var dragIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var itemHeight by remember { mutableFloatStateOf(0f) }
-
-    LazyColumn {
-        itemsIndexed(items, key = { _, s -> s.id }) { index, schema ->
-            val isDragging = dragIndex == index
-            val dragScale by animateFloatAsState(
-                targetValue = if (isDragging) 1.03f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium,
-                ),
-                label = "dragScale",
-            )
-
-            Box(
-                modifier = Modifier
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .offset { IntOffset(0, if (isDragging) dragOffset.roundToInt() else 0) }
-                    .scale(dragScale)
-                    .graphicsLayer {
-                        this.shadowElevation = if (isDragging) 8f else 0f
-                    }
-                    .onGloballyPositioned {
-                        if (itemHeight == 0f) itemHeight = it.size.height.toFloat()
-                    }
-                    .pointerInput(index) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                dragIndex = index
-                                dragOffset = 0f
-                            },
-                            onDragEnd = {
-                                val target =
-                                    (dragIndex + (dragOffset / itemHeight).roundToInt()).coerceIn(
-                                        0, items.size - 1
-                                    )
-                                if (target != dragIndex) {
-                                    val item = items.removeAt(dragIndex)
-                                    items.add(target, item)
-                                    saveOrder(prefs, items)
-                                }
-                                dragIndex = -1
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragOffset += amount.y
-                            },
+                Column(Modifier.fillMaxWidth()) {
+                    chineseItems.forEach { item ->
+                        ChineseSlotRow(
+                            item = item,
+                            selected = item.keyboardName == selectedItem?.keyboardName &&
+                                item.schemaId == selectedItem.schemaId,
+                            active = activeSlot == KeyboardSlot.Chinese,
+                            onClick = { selectChinese(item) },
                         )
-                    },
+                    }
+                }
+            }
+
+            SectionHeader(stringResource(R.string.slot_section_english))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = ExpressiveShapes.medium,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
-                SchemaListItem(
-                    schema = schema,
-                    isDefault = index == 0,
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Default.DragHandle,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    trailingIcon = { trailingIcon(schema) },
+                EnglishSlotRow(
+                    schemaName = englishSchema?.name?.takeIf { it.isNotBlank() }
+                        ?: KeyboardManager.Slot.ENGLISH_SCHEMA_ID,
+                    active = activeSlot == KeyboardSlot.English,
                 )
             }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
+/**
+ * 中文槽的一行。
+ *
+ * 不可用时整行变灰且不可点，并把「缺键盘 / 缺方案 / 两者都缺」直接写在副标题上 ——
+ * 只说「不可用」用户没法判断是自己没装方案还是这个版本没这个键盘。
+ */
 @Composable
-private fun SchemaListItem(
-    schema: SchemaItem,
-    isDefault: Boolean = false,
-    leadingIcon: @Composable () -> Unit,
-    trailingIcon: @Composable () -> Unit,
+private fun ChineseSlotRow(
+    item: SlotSwitchItem,
+    selected: Boolean,
+    active: Boolean,
+    onClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (item.available) Modifier.clickable(onClick = onClick) else Modifier
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (item.available) 1f else DISABLED_ALPHA),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (selected) Icons.Default.CheckCircle
+            else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = when {
+                selected -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = item.displayName,
+                fontSize = rowFontSize,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val reason = item.unavailableReason
+                if (reason != null) {
+                    Text(
+                        text = stringResource(reason.labelRes()),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    if (active && selected) {
+                        TagBadge(
+                            stringResource(R.string.slot_in_use),
+                            MaterialTheme.colorScheme.secondaryContainer,
+                            MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    val schema = item.schema
+                    if (schema != null) {
+                        TagBadge(
+                            schemaLayoutTag(context, schema.layout),
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        val punctText =
+                            if (schema.punctuation == "full-width") stringResource(R.string.tag_punctuation_full)
+                            else stringResource(R.string.tag_punctuation_half)
+                        TagBadge(
+                            punctText,
+                            MaterialTheme.colorScheme.tertiaryContainer,
+                            MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                        if (item.schemaName.isNotBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = item.schemaName,
+                                fontSize = rowSubFontSize,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 英文槽固定项：只展示当前方案，不提供任何可点的动作。 */
+@Composable
+private fun EnglishSlotRow(schemaName: String, active: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        leadingIcon()
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                schema.name.ifBlank { schema.id },
+                text = stringResource(R.string.slot_english),
                 fontSize = rowFontSize,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (schema.name.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isDefault) {
-                        TagBadge(
-                            stringResource(R.string.tag_default),
-                            MaterialTheme.colorScheme.secondaryContainer,
-                            MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    val tagText = schemaLayoutTag(context, schema.layout)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (active) {
                     TagBadge(
-                        tagText,
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.onPrimaryContainer,
+                        stringResource(R.string.slot_in_use),
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                     Spacer(Modifier.width(4.dp))
-                    val punctText =
-                        if (schema.punctuation == "full-width") stringResource(R.string.tag_punctuation_full)
-                        else stringResource(R.string.tag_punctuation_half)
-                    TagBadge(
-                        punctText,
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                        MaterialTheme.colorScheme.onTertiaryContainer,
-                    )
                 }
+                TagBadge(
+                    schemaLayoutTag(LocalContext.current, "Qwerty"),
+                    MaterialTheme.colorScheme.primaryContainer,
+                    MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = schemaName,
+                    fontSize = rowSubFontSize,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.slot_english_fixed),
+                fontSize = rowSubFontSize,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        trailingIcon()
     }
-}
-
-private fun saveOrder(prefs: SharedPreferences, schemas: List<SchemaItem>) {
-    prefs.edit { putString(SchemaManager.KEY_ENABLED_IDS, schemas.joinToString(",") { it.id }) }
 }
 
 @Composable

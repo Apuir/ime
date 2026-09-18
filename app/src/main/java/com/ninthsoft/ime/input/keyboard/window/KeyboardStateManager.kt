@@ -1,10 +1,10 @@
 package com.ninthsoft.ime.input.keyboard.window
 
-import android.content.Context
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.base.util.appContext
 import com.ninthsoft.ime.data.PunctuationMode
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.manager.SchemaManager
 import com.ninthsoft.ime.engine.EngineFactory
 import com.ninthsoft.ime.engine.data.EngineMessage
@@ -12,6 +12,11 @@ import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
+import com.ninthsoft.ime.input.keyboard.slot.SlotInputMethod
+import com.ninthsoft.ime.input.keyboard.slot.SlotSwitchItem
+import com.ninthsoft.ime.input.keyboard.slot.buildChineseSlotItems
 import timber.log.Timber
 
 object KeyboardStateManager {
@@ -25,6 +30,17 @@ object KeyboardStateManager {
         fun onShowKeyboard(keyboard: IKeyboard)
         fun onHideKeyboard(keyboard: IKeyboard)
         fun onKeyboardChanged(keyboard: IKeyboard)
+
+        /**
+         * 当前槽选中的是「手写」。
+         *
+         * 手写不经过 `createKeyboard`（没有键盘实例可交出去），也不经过引擎、不需要方案，
+         * 面板只有 View 层持有，所以这里只发一个请求，由 View 打开手写面板。
+         */
+        fun onHandwritingRequested()
+
+        /** 当前槽不再是手写：收起手写面板，把键盘让出来。 */
+        fun onHandwritingDismissed()
     }
 
     var callback: Callback? = null
@@ -35,10 +51,19 @@ object KeyboardStateManager {
     private var keyboardAttached = false
     /**
      * 「返回上一个键盘」导航栈：记录用户按切换键 / 面板入口之前所在的键盘。
-     * 与 [currentKeyboardName] 分离，程序化切换（换方案、换输入框）不会入栈。
+     * 与 [currentKeyboardName] 分离，程序化切换（换槽、换输入框）不会入栈。
      */
     private val backStack = ArrayDeque<String>()
+    /** 引擎里全部可用方案（含英文方案）；中文槽的平铺列表由它推出。 */
     private var schemas: List<EngineMessage.Schema> = emptyList()
+    /** 中文槽的平铺切换列表（含不可用占位项，设置页要用）。 */
+    private var slotItems: List<SlotSwitchItem> = emptyList()
+    /** 当前生效的键盘槽。 */
+    private var activeSlot: KeyboardSlot = KeyboardSlot.Chinese
+    /** 中文槽偏好里的键盘名与方案 id；槽内切换时更新。 */
+    private var chineseKeyboardName: String = QwertyKeyboard.NAME
+    private var chineseSchemaId: String? = null
+    /** 引擎当前方案；英文槽时是 wanxiang_english。 */
     private var currentSchema: EngineMessage.Schema? = null
     private var defaultKeyboardName = QwertyKeyboard.NAME
 
@@ -71,22 +96,37 @@ object KeyboardStateManager {
 
     fun getSchemas(): List<EngineMessage.Schema> = schemas
     fun getCurrentSchema(): EngineMessage.Schema? = currentSchema
+    fun getCurrentKeyboardName(): String? = currentKeyboardName
+    fun getActiveSlot(): KeyboardSlot = activeSlot
+
+    /** 中文槽的平铺切换列表（含不可用项，UI 自己决定灰掉还是隐藏）。 */
+    fun getChineseSlotItems(): List<SlotSwitchItem> = slotItems
+
+    /**
+     * 中文槽当前选中的那一项（可能是手写）。
+     *
+     * 不能用 [getCurrentKeyboardName] 代替：选到手写时并没有键盘实例，那个字段还停在
+     * 「上一个键位」上，UI 高亮必须看槽里的选择。
+     */
+    fun getSelectedChineseItem(): SlotSwitchItem? = resolveChineseItem()
+
     fun get(name: String): IKeyboard? = keyboards[name]
 
 
     fun onAttach() {
         if (schemas.isEmpty()) refreshSchemas()
         if (currentKeyboardName == null) {
-            switchTo(currentSchema?.layout ?: defaultKeyboardName)
+            // 首次挂载（或上一次停在手写、根本没建键盘）：按当前槽落实一次。
+            applyActiveSlot()
             return
         }
         if (keyboardAttached) return
         val name = currentKeyboardName
         val keyboard = name?.let { keyboards[it] }
         if (keyboard == null) {
-            // 注册表被 rebuild 清空后名字可能还留着：按新配置重新创建，
+            // 注册表被 rebuild 清空后名字可能还留着：按当前槽重新创建，
             // 不要只把 keyboardAttached 置真却没有任何键盘可显示。
-            switchTo(name ?: currentSchema?.layout ?: defaultKeyboardName)
+            applyActiveSlot()
             return
         }
         keyboard.onAttach()
@@ -106,43 +146,153 @@ object KeyboardStateManager {
     }
 
     fun onConfigChanged(key: String) {
-        if (key == SchemaManager.KEY_ENABLED_IDS) refreshSchemas()
+        when (key) {
+            // 可用方案集合变了（重新部署）：整份列表重建，槽选择再收敛一次。
+            SchemaManager.KEY_ENABLED_IDS -> refreshSchemas()
+            // 槽偏好被设置页改了：重新读入并落实（键盘收起时只更新状态，不强行建键盘）。
+            KeyboardManager.Slot.KEY_ACTIVE,
+            KeyboardManager.Slot.KEY_CHINESE_KEYBOARD,
+            KeyboardManager.Slot.KEY_CHINESE_SCHEMA,
+            -> reloadSlotPreferences()
+        }
     }
 
-    fun rotateSchema(): String {
-        if (schemas.isEmpty()) return ""
-        val index = schemas.indexOf(currentSchema)
-        currentSchema = if (index >= 0) schemas[(index + 1) % schemas.size] else schemas.first()
+    /** 中 / 英键（地球键）：在两个键盘槽之间来回切；返回切换后的槽。 */
+    fun toggleSlot(): KeyboardSlot {
+        activeSlot =
+            if (activeSlot == KeyboardSlot.English) KeyboardSlot.Chinese else KeyboardSlot.English
+        KeyboardManager.Slot.setActiveSlot(appContext, activeSlot)
         backStack.clear()
-        switchTo(currentSchema?.layout ?: QwertyKeyboard.NAME)
-        return currentSchema?.id.orEmpty()
+        applyActiveSlot()
+        return activeSlot
     }
 
+    /**
+     * 选中中文槽平铺列表里的一项：必要时换方案，再换键盘（手写则打开面板）。
+     *
+     * 不可用项直接忽略 —— UI 已经把它们画成不可点。
+     */
+    fun selectSlotItem(item: SlotSwitchItem) {
+        if (!item.available) return
+        activeSlot = KeyboardSlot.Chinese
+        KeyboardManager.Slot.setActiveSlot(appContext, KeyboardSlot.Chinese)
+        KeyboardManager.Slot.setChineseSelection(appContext, item.keyboardName, item.schemaId)
+        chineseKeyboardName = item.keyboardName
+        chineseSchemaId = item.schemaId
+        backStack.clear()
+        applyChineseItem(item)
+    }
+
+    /**
+     * 按方案 id 选中（兼容旧入口）：等价于选中中文槽里承载这个方案的那一项。
+     *
+     * 键盘**不再**由 `schema.layout` 决定 —— 那是槽的偏好；`layout` 只在找不到槽项时兜底。
+     */
     fun selectSchema(schemaId: String): String {
+        // 同一个方案可能同时挂在 26 键与 15 键下面（都发字母、都用 PinYin），
+        // 优先选当前键位对应的那一项，避免「点一下方案键位却跳回 26 键」。
+        val item = slotItems.find {
+            it.available && it.schemaId == schemaId && it.keyboardName == chineseKeyboardName
+        } ?: slotItems.find { it.available && it.schemaId == schemaId }
+        if (item != null) {
+            selectSlotItem(item)
+            return schemaId
+        }
+
         val schema = schemas.find { it.id == schemaId } ?: return ""
-        if (currentSchema?.id == schemaId) return schemaId
-        currentSchema = schema
-        EngineFactory.current()?.selectSchema(schema.id)
+        if (currentSchema?.id != schema.id) {
+            currentSchema = schema
+            EngineFactory.current()?.selectSchema(schema.id)
+        }
         backStack.clear()
-        switchTo(schema.layout.ifEmpty { QwertyKeyboard.NAME })
+        switchToKeyboard(schema.layout.ifEmpty { QwertyKeyboard.NAME })
         return schema.id
     }
 
     fun refreshSchemas() {
-        val prefs = appContext.getSharedPreferences(SchemaManager.PREFS_NAME, Context.MODE_PRIVATE)
-        val schemaIds = prefs.getString(SchemaManager.KEY_ENABLED_IDS, "")?.split(",")
-            ?.filter { it.isNotBlank() } ?: emptyList()
-        val schemaList = EngineFactory.current()?.schemasList() ?: emptyList()
-        val byId = schemaList.associateBy { it.id }
-        schemas = schemaIds.mapNotNull { byId[it] }
-        currentSchema = schemas.firstOrNull()
-        currentSchema?.id?.let { EngineFactory.current()?.selectSchema(it) }
-
+        schemas = EngineFactory.current()?.schemasList() ?: emptyList()
+        slotItems = buildChineseSlotItems(appContext, schemas)
         backStack.clear()
-        // 只有在已经挂载到窗口时才切换键盘布局，避免在 factory 尚未注入、
-        if (keyboardAttached) {
-            switchTo(currentSchema?.layout ?: defaultKeyboardName)
+        // 读入槽偏好并收敛当前选择；已挂载到窗口时由 reloadSlotPreferences 落实键位。
+        reloadSlotPreferences()
+    }
+
+    /** 读入槽偏好；已经挂载到窗口时立刻落实，否则等 [onAttach] / 下次切换。 */
+    private fun reloadSlotPreferences() {
+        activeSlot = KeyboardManager.Slot.getActiveSlot(appContext)
+        chineseKeyboardName =
+            KeyboardManager.Slot.getChineseKeyboard(appContext) ?: chineseKeyboardName
+        chineseSchemaId = KeyboardManager.Slot.getChineseSchemaId(appContext)
+        ensureChineseSelection()
+        if (keyboardAttached) applyActiveSlot()
+    }
+
+    /**
+     * 偏好里存的 (键盘, 方案) 已经不在一项可用输入方式里时（方案被删、键盘不再支持），
+     * 回落到第一项可用的并写回偏好 —— 否则会卡在「选中了一个用不了的输入方式」上。
+     *
+     * 方案列表还没加载出来（引擎未就绪）时什么都不做：那时所有项都是占位，
+     * 拿它做回落会把「暂时读不到方案」误存成用户的永久选择。
+     */
+    private fun ensureChineseSelection() {
+        if (schemas.isEmpty()) return
+        if (resolveChineseItem() != null) return
+        val fallback = slotItems.firstOrNull { it.available } ?: return
+        chineseKeyboardName = fallback.keyboardName
+        chineseSchemaId = fallback.schemaId
+        KeyboardManager.Slot.setChineseSelection(appContext, fallback.keyboardName, fallback.schemaId)
+    }
+
+    private fun resolveChineseItem(): SlotSwitchItem? =
+        KeyboardSlotPlan.resolve(slotItems, chineseKeyboardName, chineseSchemaId)
+
+    /** 把「当前槽 + 槽内选择」落实到引擎与键盘。 */
+    private fun applyActiveSlot() {
+        when (activeSlot) {
+            KeyboardSlot.English -> applyEnglishSlot()
+            KeyboardSlot.Chinese -> {
+                val item = resolveChineseItem()
+                if (item != null) applyChineseItem(item) else switchToKeyboard(defaultKeyboardName)
+            }
         }
+    }
+
+    private fun applyChineseItem(item: SlotSwitchItem) {
+        val schema = item.schema
+        if (schema != null && currentSchema?.id != schema.id) {
+            currentSchema = schema
+            EngineFactory.current()?.selectSchema(schema.id)
+        }
+        if (item.method == SlotInputMethod.Handwriting) {
+            // 手写面板盖在键盘上：它自己不是键盘实例，但底下的键位得在
+            // （窗口测量与「返回」路径都依赖它）。没有键盘时兜一个默认键位。
+            if (currentKeyboardName == null) switchToKeyboard(defaultKeyboardName)
+            callback?.onHandwritingRequested()
+        } else {
+            switchToKeyboard(item.keyboardName)
+        }
+    }
+
+    /** 英文槽固定：`wanxiang_english` + Qwerty，ascii 输入留在英文方案内部。 */
+    private fun applyEnglishSlot() {
+        val english = schemas.find { it.id == KeyboardManager.Slot.ENGLISH_SCHEMA_ID }
+        if (english != null && currentSchema?.id != english.id) {
+            currentSchema = english
+            EngineFactory.current()?.selectSchema(english.id)
+        }
+        switchToKeyboard(KeyboardManager.Slot.ENGLISH_KEYBOARD)
+    }
+
+    /**
+     * 切到某个真实键盘。
+     *
+     * 手写面板要先让位 —— 它铺在键盘内容区上，不收起会把刚切出来的键位整个遮住。
+     * 单独开一个入口而不是塞进 [switchTo]，是为了让「手写 → 键盘」的收起动作只发生一次，
+     * 也避免影响 [pushTo] / [resume] 这些纯粹在键盘之间跳的路径。
+     */
+    private fun switchToKeyboard(name: String) {
+        callback?.onHandwritingDismissed()
+        switchTo(name)
     }
 
     private fun create(name: String): IKeyboard {
@@ -226,14 +376,20 @@ object KeyboardStateManager {
 
     fun startInput(info: EditorInfo) {
         backStack.clear()
+        // 数字 / 电话输入框要的是数字键盘，覆盖槽的常规键位（含手写）。
         val start = when (info.inputType and InputType.TYPE_MASK_CLASS) {
             InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE -> NumberKeyboard.NAME
-            else -> currentSchema?.layout ?: defaultKeyboardName
+            else -> null
         }
-        switchTo(start)
+        if (start != null) {
+            switchToKeyboard(start)
+            return
+        }
+        // 其余输入框回到「当前槽」的键位：中文槽可能是九键 / 26键 / 15键 / 手写。
+        applyActiveSlot()
     }
 
-    /** 返回上一个键盘（用户按「切换/返回」触发）；栈空时回落到当前方案的布局。 */
+    /** 返回上一个键盘（用户按「切换/返回」触发）；栈空时回到当前槽的键位。 */
     fun resume() {
         while (true) {
             val previous = backStack.removeLastOrNull() ?: break
@@ -242,7 +398,7 @@ object KeyboardStateManager {
                 return
             }
         }
-        switchTo(currentSchema?.layout ?: defaultKeyboardName)
+        applyActiveSlot()
     }
 
     fun onInputChanged(info: EditorInfo?, text: String, virtualInputConnection: Boolean = false) {

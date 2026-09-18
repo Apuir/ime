@@ -171,8 +171,10 @@ fun ThemeEditorScreen(
     val draftId = remember { themeId ?: ThemeStore.newThemeId() }
 
     var editingColor by remember { mutableStateOf<ColorField?>(null) }
+    // 预览的布局取「当前槽实际用的键盘」，不再取方案自带的 layout：
+    // 槽里选的是键位，方案只是承载它的引擎配置。
     var previewLayout by remember {
-        mutableStateOf(PreviewLayout.fromName(KeyboardStateManager.getCurrentSchema()?.layout))
+        mutableStateOf(PreviewLayout.fromName(KeyboardStateManager.getCurrentKeyboardName()))
     }
 
     // 预览是真实键盘 View，重建成本较高：拖动滑杆时防抖，停手后再重建。

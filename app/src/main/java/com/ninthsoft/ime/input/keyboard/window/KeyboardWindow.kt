@@ -44,6 +44,14 @@ class KeyboardWindow(
             override fun onKeyboardChanged(keyboard: IKeyboard) {
                 view.onKeyboardChanged(keyboard)
             }
+
+            override fun onHandwritingRequested() {
+                view.onHandwritingRequested()
+            }
+
+            override fun onHandwritingDismissed() {
+                view.onHandwritingDismissed()
+            }
         }
     }
 

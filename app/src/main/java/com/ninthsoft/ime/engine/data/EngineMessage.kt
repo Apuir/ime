@@ -25,7 +25,18 @@ sealed class EngineMessage {
     }
 
     data class Schema(
-        val id: String, val name: String, val layout: String = "", val punctuation: String = "", val kind: String = ""
+        val id: String,
+        val name: String,
+        val layout: String = "",
+        val punctuation: String = "",
+        val kind: String = "",
+        /**
+         * 方案声明的候选类型（`PinYin` / `T9PinYin`…），键盘与方案的耦合点。
+         *
+         * 它不在 native 返回的 `SchemaItem` 里，由 [com.ninthsoft.ime.engine.RimeEngine.schemasList]
+         * 打开方案配置补上；方案切换消息不经过那条路径，因此这里默认空串。
+         */
+        val candidateKind: String = "",
     ) : EngineMessage()
 
     data class Depoly(val state: State) : EngineMessage() {

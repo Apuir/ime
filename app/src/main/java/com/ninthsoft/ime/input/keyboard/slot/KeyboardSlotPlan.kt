@@ -1,0 +1,182 @@
+package com.ninthsoft.ime.input.keyboard.slot
+
+import com.ninthsoft.ime.base.util.PinYinUtil
+import com.ninthsoft.ime.engine.data.EngineMessage
+import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
+import com.ninthsoft.ime.input.keyboard.impl.T15Keyboard
+import com.ninthsoft.ime.input.keyboard.impl.T9Keyboard
+
+/**
+ * 「手写」作为一种槽内输入方式使用的键盘名。
+ *
+ * 它不是 `KeyboardWindowView.createKeyboard` 认识的名字（手写面板由 WindowView 直接打开），
+ * 但槽的可用性判定要和别的输入方式走同一条路，所以在这里也给它一个键盘名。
+ */
+const val HANDWRITING_KEYBOARD_NAME = "Handwriting"
+
+/**
+ * 键盘槽：一共两个。
+ *
+ * - [English] 固定为 `wanxiang_english` + Qwerty，用户不可改（ascii 输入留在英文方案内部）。
+ * - [Chinese] 里换的是「输入方式（布局）」，可选项由 [KeyboardSlotPlan] 推出。
+ */
+enum class KeyboardSlot { Chinese, English }
+
+/**
+ * 中文槽里可切换的「输入方式」：一种键盘 + 它要求的方案候选类型。
+ *
+ * 声明顺序就是平铺切换列表与设置页的展示顺序。
+ *
+ * [requiredCandidateKind] 是输入方式与方案的唯一耦合点：
+ * 九键发数字，必须配 `T9PinYin` 方案；26 键与 15 键发字母（T15 自己那套键位发 q/w/e/r…），
+ * 配 `PinYin` 方案；手写不走引擎，为 null。
+ */
+enum class SlotInputMethod(
+    val keyboardName: String,
+    val requiredCandidateKind: String?,
+) {
+    T9(T9Keyboard.NAME, PinYinUtil.CandidateKindT9),
+    Qwerty(QwertyKeyboard.NAME, PinYinUtil.CandidateKindFull),
+    T15(T15Keyboard.NAME, PinYinUtil.CandidateKindFull),
+
+    /** 手写：唯一不需要方案的输入方式，面板直接识别上屏。 */
+    Handwriting(HANDWRITING_KEYBOARD_NAME, null),
+}
+
+/** 一个输入方式「用不了」的原因；设置页要把缺的是哪一半写清楚。 */
+enum class SlotUnavailableReason {
+    /** 应用不支持这个键盘（不在 [KeyboardSlotPlan.plan] 的 supportedKeyboards 里）。 */
+    MissingKeyboard,
+
+    /** 应用支持键盘，但没有 candidateKind 匹配的可用方案。 */
+    MissingSchema,
+
+    /** 键盘与方案都缺。 */
+    MissingKeyboardAndSchema,
+}
+
+/**
+ * 平铺切换列表里的一项：一个「输入方式 × 方案」组合。
+ *
+ * [schema] 为 null 有两种情况：[SlotInputMethod.Handwriting]（本来就不需要方案）
+ * 与「缺方案 / 缺键盘」占位项；后者 [unavailableReason] 一定非空，UI 靠它区分。
+ */
+data class SlotSwitchItem(
+    val method: SlotInputMethod,
+    val keyboardName: String,
+    val schema: EngineMessage.Schema?,
+    /** 平铺列表里的显示名，如「九键1」「手写」。 */
+    val displayName: String,
+    val unavailableReason: SlotUnavailableReason? = null,
+) {
+    val available: Boolean get() = unavailableReason == null
+    val schemaId: String? get() = schema?.id
+    val schemaName: String get() = schema?.name.orEmpty()
+}
+
+/**
+ * 「两个键盘槽」的纯计算部分：由可用方案与应用支持的键盘名，推出中文槽的平铺切换列表。
+ *
+ * 这一层不依赖 Android，便于 JVM 单测；偏好存取与真正切换键盘的动作在 `KeyboardStateManager`。
+ */
+object KeyboardSlotPlan {
+
+    /** 英文方案的 kind；中文槽不能接受它（英文输入留在英文槽自己的方案里）。 */
+    const val SCHEMA_KIND_ENGLISH = "English"
+
+    /**
+     * 应用在切换槽时实际认识的键盘名，与 `KeyboardWindowView.createKeyboard` 保持一致。
+     * 「手写」由面板接管，也算一种槽键盘。
+     */
+    val APP_SLOT_KEYBOARDS: Set<String> = setOf(
+        T9Keyboard.NAME,
+        QwertyKeyboard.NAME,
+        T15Keyboard.NAME,
+        HANDWRITING_KEYBOARD_NAME,
+    )
+
+    /**
+     * 平铺：每个输入方式一项或多项。
+     *
+     * 可用性规则（哈基箱原话）：*只要应用支持这个键盘、且你有对应方案，就能切换成它*。
+     * 「对应方案」按 candidateKind 匹配 —— 发同类按键的键盘共用同一种方案
+     * （`PinYin` 既能驱动 26 键也能驱动 15 键），所以同一个方案可能同时出现在两个输入方式下面：
+     * 那不是重复，而是「同一套方案、不同键位」。
+     *
+     * 同一输入方式匹配到多个方案时，按 [schemas] 里的顺序编号（九键1 / 九键2）；
+     * 只有一个时不加编号 —— 否则会冒出「手写1」这种没意义的序号。
+     *
+     * @param displayLabelOf 输入方式的基础名（九键 / 26键 / 15键 / 手写），由 UI 层本地化。
+     */
+    fun plan(
+        schemas: List<EngineMessage.Schema>,
+        supportedKeyboards: Set<String>,
+        displayLabelOf: (SlotInputMethod) -> String,
+    ): List<SlotSwitchItem> {
+        // 英文方案属于英文槽。candidateKind 为空本来就不该被匹配到，但 kind 是显式标记，
+        // 排除它比依赖「它恰好没有 candidateKind」更稳。
+        val chineseSchemas = schemas.filterNot {
+            it.kind.equals(SCHEMA_KIND_ENGLISH, ignoreCase = true)
+        }
+
+        val items = ArrayList<SlotSwitchItem>()
+        for (method in SlotInputMethod.entries) {
+            val keyboardSupported = method.keyboardName in supportedKeyboards
+            val label = displayLabelOf(method)
+
+            if (method.requiredCandidateKind == null) {
+                // 手写：唯一不需要方案的输入方式，只要应用认识这个键盘就能用。
+                items += SlotSwitchItem(
+                    method = method,
+                    keyboardName = method.keyboardName,
+                    schema = null,
+                    displayName = label,
+                    unavailableReason = if (keyboardSupported) null
+                    else SlotUnavailableReason.MissingKeyboard,
+                )
+                continue
+            }
+
+            val matched = chineseSchemas.filter { it.candidateKind == method.requiredCandidateKind }
+            if (matched.isEmpty()) {
+                // 一个方案都没有：也要占一项，设置页才能把「缺方案」写出来。
+                items += SlotSwitchItem(
+                    method = method,
+                    keyboardName = method.keyboardName,
+                    schema = null,
+                    displayName = label,
+                    unavailableReason = if (keyboardSupported) SlotUnavailableReason.MissingSchema
+                    else SlotUnavailableReason.MissingKeyboardAndSchema,
+                )
+                continue
+            }
+
+            val numbered = matched.size > 1
+            matched.forEachIndexed { index, schema ->
+                items += SlotSwitchItem(
+                    method = method,
+                    keyboardName = method.keyboardName,
+                    schema = schema,
+                    displayName = if (numbered) "$label${index + 1}" else label,
+                    unavailableReason = if (keyboardSupported) null
+                    else SlotUnavailableReason.MissingKeyboard,
+                )
+            }
+        }
+        return items
+    }
+
+    /**
+     * 把偏好里存的 (键盘名, 方案 id) 收敛到 [items] 里的一项。
+     *
+     * 存的组合已经不可用时（方案被删、键盘不再支持）回落到第一项可用的；
+     * 没有可用项时返回 null，由调用方决定怎么办。
+     */
+    fun resolve(
+        items: List<SlotSwitchItem>,
+        keyboardName: String?,
+        schemaId: String?,
+    ): SlotSwitchItem? = items.find {
+        it.available && it.keyboardName == keyboardName && it.schemaId == schemaId
+    } ?: items.firstOrNull { it.available }
+}
