@@ -85,15 +85,14 @@ class PanelActionListener(
     }
 
     /**
-     * 手写候选上屏。
+     * 手写候选换字。
      *
-     * 走 [[KeyboardAction.CommitAction]] 而不是自己去动 `InputConnection`：手写不认识 Rime，
-     * 但「怎么把一段文本交给输入框」这件事只应该有一条路（与常用语、剪贴板选词同一条）。
+     * 走 IME 服务的组合态入口而不是自己去动 `InputConnection`：手写不认识 Rime，
+     * 但「未上屏文本怎么写进输入框」这件事只应该有一条路（与拼音 preedit 同一条 composing 通道）。
+     * 具体把文本换成哪一段由 [KeyboardWindowView.selectHandwritingCandidate] 定。
      */
     override fun onHandwritingCandidateSelected(text: String) {
-        service.keyActionListener.onKeyAction(KeyboardAction.CommitAction(text))
-        // 上屏即收栏：候选已经用掉了，顶栏该回到工具条（用户不必再手动点一次删除）
-        service.keyboardWindow?.view?.clearHandwritingCandidates()
+        service.keyboardWindow?.view?.selectHandwritingCandidate(text)
     }
 
     override fun onSidePanelAction(action: KeyboardAction) {

@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.core.content.edit
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardTheme
+import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.key.SwipeUpMath
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
 import kotlin.math.roundToInt
 
 object KeyboardManager {
@@ -601,7 +603,6 @@ object KeyboardManager {
                 }
             }
         }
-
         /**
          * 横屏悬浮键盘：横屏时键盘不再铺满整个屏幕宽度，而是以一张可拖动的小卡片悬浮在应用之上。
          *
@@ -713,6 +714,60 @@ object KeyboardManager {
             /** 把悬浮卡片位置恢复到默认（水平居中、贴底）。 */
             fun resetPosition(context: Context) {
                 setPosition(context, DEFAULT_POSITION_X, DEFAULT_POSITION_Y)
+            }
+        }
+    }
+
+    /**
+     * 「两个键盘槽」的偏好。
+     *
+     * 键盘一共两个槽：英文槽固定为 [ENGLISH_SCHEMA_ID] + Qwerty（用户不可改，
+     * ascii 输入留在英文方案内部），中文槽记录用户选中的「输入方式（键盘名）+ 方案」。
+     * 可用输入方式怎么算不在这里 —— 那是 `input/keyboard/slot/KeyboardSlotPlan.kt` 的纯逻辑，
+     * 这里只负责把这个选择存下来 / 读出来。
+     */
+    object Slot {
+        private const val PREFIX = "keyboard.slot"
+        const val KEY_ACTIVE = "$PREFIX.active"
+        const val KEY_CHINESE_KEYBOARD = "$PREFIX.chinese.keyboard"
+        const val KEY_CHINESE_SCHEMA = "$PREFIX.chinese.schema"
+
+        /** 英文槽固定方案：随包 wanxiang_english（kind=English、无 candidateKind）。 */
+        const val ENGLISH_SCHEMA_ID = "wanxiang_english"
+
+        /** 英文槽固定键盘：26 键。 */
+        val ENGLISH_KEYBOARD = QwertyKeyboard.NAME
+
+        fun getActiveSlot(context: Context): KeyboardSlot {
+            val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_ACTIVE, null)
+            // 存坏了 / 没存过都回到中文槽：中文是主输入。
+            return if (raw == KeyboardSlot.English.name) KeyboardSlot.English
+            else KeyboardSlot.Chinese
+        }
+
+        fun setActiveSlot(context: Context, slot: KeyboardSlot) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString(KEY_ACTIVE, slot.name)
+            }
+        }
+
+        /** 中文槽当前键盘名；没存过返回 null，由调用方决定默认值。 */
+        fun getChineseKeyboard(context: Context): String? =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_CHINESE_KEYBOARD, null)
+
+        /** 中文槽当前方案 id；手写不需要方案，此时为 null。 */
+        fun getChineseSchemaId(context: Context): String? =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_CHINESE_SCHEMA, null)
+
+        fun setChineseSelection(context: Context, keyboardName: String, schemaId: String?) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString(KEY_CHINESE_KEYBOARD, keyboardName)
+                // 手写没有方案：写 null 等价于清掉旧值，免得下次读出一个过期的方案。
+                if (schemaId.isNullOrBlank()) remove(KEY_CHINESE_SCHEMA)
+                else putString(KEY_CHINESE_SCHEMA, schemaId)
             }
         }
     }

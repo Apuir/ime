@@ -10,6 +10,7 @@ import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import com.ninthsoft.ime.ImeApplication
@@ -109,6 +110,11 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 转屏会重建窗口尺寸：整屏手写必须先退出整屏形态（触摸区域/窗口背景都是按旧方向算的），
+        // 否则会出现「可写区域还在上一方向的整屏、顶栏却按新方向排」的错位。
+        // 偏好在退出的路径里刻意保留（applyHandwritingFullScreen(false) 不写偏好），
+        // 所以下次进手写仍是用户上次选的范围。
+        keyboardWindow?.view?.exitHandwritingFullScreen()
         // 横竖屏切换时框架会重建输入视图，这里同步一次悬浮模式，保证窗口尺寸立即跟随方向变化。
         applyFloatingMode(KeyboardManager.Keyboard.Floating.shouldUseFloating(this))
         keyboardWindow?.view?.refreshColors()
@@ -138,16 +144,40 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     /**
-     * 切换悬浮模式：除了通知键盘视图，还要同步 IME 窗口自身的背景。
-     *
-     * 悬浮模式下 IME 窗口会占满整个屏幕，如果窗口背景不透明（例如默认的
-     * `Theme.DeviceDefault.InputMethod` / 应用主题的 `windowBackground`）就会把下层应用整个挡住，
-     * 因此悬浮时把窗口背景换成透明，离开悬浮模式时还原。
+     * 切换悬浮模式：除了通知键盘视图，还要同步 IME 窗口本身的状态。
      */
     private fun applyFloatingMode(floating: Boolean) {
         keyboardWindow?.setFloatingMode(floating)
+        syncImeWindow(floating)
+    }
+
+    /**
+     * 把 IME 窗口的**背景**与**尺寸**同步到键盘视图当前的形态上。
+     *
+     * 会改变这两件事的入口全部走这里，窗口状态因此只有一个更新点：
+     * 输入视图创建 / 窗口重新显示 / 转屏 / 悬浮开关变化（[applyFloatingMode]），
+     * 以及键盘视图进出「真·整屏手写」（[KeyboardWindowView.isFullScreenHandwriting]）。
+     *
+     * 两个来源：
+     * - **横屏悬浮卡片**：卡片本身就画在一个铺满屏幕的透明窗口里，窗口背景必须透明；
+     * - **真·整屏手写**：窗口要铺满整屏、背景透明、可触摸区域给整窗，同时窗口**高度**也要
+     *   显式设成整屏（见 [applyWindowSize]）。
+     *
+     * 窗口背景不清成透明的话，铺满屏幕的窗口底会把下层应用整个盖住 ——
+     * 整屏手写就变成「整屏黑/白板」，悬浮卡片则会把应用挡掉。
+     */
+    internal fun syncImeWindow(
+        floating: Boolean = KeyboardManager.Keyboard.Floating.shouldUseFloating(this),
+    ) {
         val win = window?.window ?: return
-        if (floating) {
+        val overlay = keyboardWindow?.view?.isFullScreenHandwriting == true
+        applyWindowBackground(win, transparent = floating || overlay)
+        applyWindowSize(win, fullScreen = overlay)
+    }
+
+    /** 按「是否需要整窗透明」刷新 IME 窗口背景；离开透明状态时还原成原来的 decor 背景。 */
+    private fun applyWindowBackground(win: Window, transparent: Boolean) {
+        if (transparent) {
             if (!imeWindowBackgroundCleared) {
                 originalImeWindowBackground = win.decorView.background
                 imeWindowBackgroundCleared = true
@@ -160,11 +190,64 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     /**
-     * 悬浮键盘模式下 IME 窗口占满整个屏幕但背景透明，键盘只是窗口内的一张卡片。
+     * 整屏手写时把 IME 窗口高度设成 `MATCH_PARENT`，让窗口**直接**铺满可用区域。
+     *
+     * 为什么不能沿用默认的 `WRAP_CONTENT`（让内容把窗口撑高）：
+     * IME 窗口默认是 `MATCH_PARENT × WRAP_CONTENT`（框架在 `InputMethodService.onCreate()`
+     * 里设的，API 30 起还带 `setFitInsetsTypes(statusBars | navigationBars)`、
+     * `setFitInsetsSides(all & ~bottom)` —— 窗口避开状态栏，但允许铺到导航栏后面）。
+     * 同时 `ViewRootImpl` 对 `TYPE_INPUT_METHOD` 有专门分支（`shouldUseDisplaySize()`）：
+     * 它给根视图的高度 MeasureSpec 用的是**屏幕真实高度**（AT_MOST），而不是窗口当前高度。
+     * 于是「内容愿意多高」与「窗口现在多高」是两件事：整屏要经过
+     * 「测量 → relayout → 窗口管理器按测量值改窗口 → 再测一次」这一圈才收敛，
+     * 中间任何一步没跟上，底部三条就会被排在窗口下沿之外 —— 看起来就是「键盘整块消失」。
+     *
+     * `MATCH_PARENT` 是平台自己的全屏窗口策略（系统默认的 [onConfigureWindow] 在 fullscreen
+     * 提取模式下用的就是它）：窗口一次到位，根视图随后拿到的是 `EXACTLY(窗口高度)`，
+     * 测量与布局不再依赖收敛过程；万一某次测量先于窗口放大发生，退化的结果也只是
+     * 「三条挤在窗口底部」而不会排到屏幕外。
+     *
+     * 退出时必须还原成 `WRAP_CONTENT`：否则窗口会一直是整屏高度，普通键盘会被排在窗口
+     * 顶部，而且 [onComputeInsets] 上报给应用的底衬也不再是键盘高度。
+     *
+     * 这一段在 API 31~36 上没有版本差异：`Window.setLayout` 是 API 1 就有的公开接口，
+     * `TYPE_INPUT_METHOD` 的「按屏幕真实高度测量」与 IME 窗口的 fit insets 从 API 30 起
+     * 就是现在这个样子（31 与 36 的 `InputMethodService.onCreate()` 两处源码一致）。
+     */
+    private fun applyWindowSize(win: Window, fullScreen: Boolean) {
+        win.setLayout(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            if (fullScreen) {
+                WindowManager.LayoutParams.MATCH_PARENT
+            } else {
+                WindowManager.LayoutParams.WRAP_CONTENT
+            },
+        )
+    }
+
+    /**
+     * 系统在「全屏提取模式 / 仅候选模式」变化时会重设窗口尺寸，默认实现是
+     * 「fullscreen → MATCH_PARENT，否则 WRAP_CONTENT」。它会在整屏手写期间把窗口改回
+     * WRAP_CONTENT，所以这里按同一个策略覆写一次，补上「整屏手写 = 全屏窗口」这条：
+     * 窗口尺寸只有一个来源（本方法 + [applyWindowSize]），不会被系统回调改回去。
+     */
+    override fun onConfigureWindow(win: Window, isFullscreen: Boolean, isCandidatesOnly: Boolean) {
+        val overlay = keyboardWindow?.view?.isFullScreenHandwriting == true
+        applyWindowSize(win, fullScreen = isFullscreen || overlay)
+    }
+
+    /**
+     * 悬浮键盘 / 整屏手写模式下 IME 窗口占满整个屏幕但背景透明。
      *
      * 这里把 `contentTopInsets` / `visibleTopInsets` 设为窗口底部，使 IME 上报给下层应用的
-     * 内容边衬为零（应用不会被顶起），同时通过 `touchableRegion` 声明只有卡片区域接收触摸，
-     * 卡片之外的手势会穿透到下层应用。这正是主流输入法「悬浮键盘」的实现方式。
+     * 内容边衬为零（应用不会被顶起），同时通过 `touchableRegion` 声明哪些区域接收触摸。
+     * 悬浮卡片时只报卡片矩形，卡片之外的手势会穿透到下层应用；整屏手写时键盘视图会把
+     * 可触摸区域报成整窗（见 `KeyboardWindowView.floatingTouchableRegion`），
+     * 于是「整个屏幕都能写」。这正是主流输入法「悬浮键盘 / 全屏手写」的实现方式。
+     *
+     * 注意「报整窗」只有在**窗口本身就是整屏**时才有意义：窗口尺寸由 [syncImeWindow] /
+     * [applyWindowSize] 负责（整屏手写会把窗口高度设成 MATCH_PARENT），
+     * 两边必须同时成立，缺一个都会变成「触摸区域在屏幕上、窗口却只有键盘那么高」。
      */
     override fun onComputeInsets(outInsets: InputMethodService.Insets?) {
         val view = keyboardWindow?.view
@@ -181,6 +264,11 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
+        // 新的输入会话：正常路径上组合态已被上一次 onFinishInputView 收尾（保留了那个字），
+        // 这里兜底再收一次（只在确实是我们设过组合时才动，不会误伤应用自己的组合）。
+        // 用「收尾」而不是直接清标记：万一这次是同一连接上的 restart、上一次没收尾，
+        // 清标记会让这个字在下一笔时被 setComposingText 整段替换掉，那就丢了。
+        finalizeHandwritingComposing()
         keyboardWindow?.onStartInputView(info, restarting)
         engine?.onStartInputView(currentInputConnection)
         notifyInputChanged()
@@ -189,6 +277,9 @@ class ImeInputMethodService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         showingDialog?.dismiss()
+        // 手写组合态要先收尾：面板隐藏/键盘销毁那条路径（onDetachedFromWindow）不一定
+        // 还拿得到活动的 InputConnection，在这里做才能保证那个字一定留在输入框里。
+        finalizeHandwritingComposing()
         // 收起键盘前按设置决定是否保留已上屏内容，再重置引擎组合。
         livePreview.finalizeForKeyboardSwitch()
         engine?.resetComposition()
@@ -198,6 +289,8 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onWindowHidden() {
+        // 窗口隐藏（关闭输入法）同样按「保留这个字」收尾，与收起键盘一致。
+        finalizeHandwritingComposing()
         keyboardWindow?.onWindowHidden()
         ClipboardManager.stopMonitoring(this)
         super.onWindowHidden()
@@ -219,6 +312,9 @@ class ImeInputMethodService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        // 输入法进程里的这条服务实例要销毁了：如果还有未上屏的手写组合，先把它收尾
+        // （正常路径上 onFinishInputView / onWindowHidden 已经做过，这里是兜底）。
+        finalizeHandwritingComposing()
         messageObserveJob?.cancel()
         scope?.cancel()
         scope = null
@@ -390,6 +486,67 @@ class ImeInputMethodService : InputMethodService() {
         }
 
         livePreview.commitPreview()
+        engine?.resetComposition()
+        keyboardWindow?.setCandidates(emptyList())
+    }
+
+    /**
+     * 手写组合态当前内容；非空表示输入框里有一段手写未上屏文本。
+     *
+     * 手写不复用 [LivePreviewController]：那条路是 Rime 的 preedit，读的是「上屏模式」偏好，
+     * 默认模式下什么都不写，而手写组合态是**无条件**要显示在输入框里的。但两者走的是
+     * 同一条底层通道（`InputConnection.setComposingText`），所以行为（下划线、被 commitText
+     * 替换、被退格整体删掉）与拼音完全一致。
+     */
+    private var handwritingComposing: String = ""
+
+    /**
+     * 手写候选进入组合态 / 用户换字：把 [text] 作为未上屏文本写进输入框。
+     *
+     * 由 [keyboardWindow] 转来（面板不认识 `InputConnection`）。用 `setComposingText`
+     * 而不是 `commitText`：换字时它会**替换**现有组合区，不需要任何退格动作。
+     */
+    internal fun setHandwritingComposing(text: String) {
+        if (text.isEmpty()) {
+            discardHandwritingComposing()
+            return
+        }
+        val ic = activeInputConnection() ?: return
+        ic.setComposingText(text, 1)
+        handwritingComposing = text
+    }
+
+    /**
+     * 把当前组合文本收尾成正式文本：结束 composing 但**不删除**内容，
+     * 输入框里显示的那个字就此成为普通文本（用户说的「保留这个字」）。
+     *
+     * 落笔写下一个字 / 切键盘 / 收起键盘 / 空格回车标点都会走到这里。
+     */
+    internal fun finalizeHandwritingComposing() {
+        if (handwritingComposing.isEmpty()) return
+        handwritingComposing = ""
+        activeInputConnection()?.finishComposingText()
+    }
+
+    /** 丢掉当前组合文本（不保留在输入框里）：⌫ 撤销本次手写时用。 */
+    internal fun discardHandwritingComposing() {
+        if (handwritingComposing.isEmpty()) return
+        handwritingComposing = ""
+        val ic = activeInputConnection() ?: return
+        ic.setComposingText("", 1)
+        ic.finishComposingText()
+    }
+
+    /**
+     * 打开手写面板前，把引擎当前未结束的组合收尾掉。
+     *
+     * 手写组合态与 Rime 的组合区是两套东西：不先结束 Rime 的组合，它的组合文本会与手写的
+     * `setComposingText` 互相替换，而且手写期间按空格/回车/标点时 Rime 的 `requestCommit`
+     * 会先把它的组合提交掉（见 `RimeEngine.requestCommit`），凭空多出一段字。
+     * 收尾语义沿用既有的「切换键盘」：按偏好决定预览文本留还是丢，再重置组合区。
+     */
+    internal fun settleCompositionForHandwriting() {
+        livePreview.finalizeForKeyboardSwitch()
         engine?.resetComposition()
         keyboardWindow?.setCandidates(emptyList())
     }

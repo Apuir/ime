@@ -58,8 +58,10 @@ import com.ninthsoft.ime.input.handwriting.MlKitSupport
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ActionRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ProgressButton
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -147,6 +149,17 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
     var downloadState by remember { mutableStateOf<HwDownloadState>(HwDownloadState.Idle) }
     var downloadProgress by remember { mutableStateOf(0f) }
     var downloadBtnWidth by remember { mutableStateOf(0.dp) }
+
+    /**
+     * 停手识别时长，滑杆用「秒」表示。
+     *
+     * 进来时从偏好读一次、之后只在本页内维护：偏好写下去后由 IME 服务的偏好监听转发给
+     * `KeyboardWindowView.onConfigChanged`，面板会重读一次（见 `refreshRecognizeDelay`），
+     * 本页不需要再回读。
+     */
+    var recognizeDelaySeconds by remember {
+        mutableStateOf(HandwritingManager.recognizeDelayMs(context) / 1000f)
+    }
 
     /**
      * 重新解析一遍引擎并刷新页面上的两处状态。
@@ -306,6 +319,36 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                     description = stringResource(R.string.handwriting_engine_local_desc),
                     selected = mode == HwEngineMode.LOCAL,
                     onClick = { selectMode(HwEngineMode.LOCAL) },
+                )
+            }
+
+            // ----------------------------------------------------------
+            // 识别时机（停手多久算「写完一个字」）
+            // ----------------------------------------------------------
+            SettingsGroup(title = stringResource(R.string.handwriting_timing_group)) {
+                SliderRow(
+                    title = stringResource(R.string.handwriting_recognize_delay),
+                    value = recognizeDelaySeconds,
+                    valueLabel = stringResource(
+                        R.string.handwriting_recognize_delay_value, recognizeDelaySeconds
+                    ),
+                    range = (HandwritingManager.RECOGNIZE_DELAY_MS_MIN / 1000f)..
+                        (HandwritingManager.RECOGNIZE_DELAY_MS_MAX / 1000f),
+                    onValueChange = {
+                        // 量化到 0.1 秒一档：连续值会滑出 0.63 秒这种既没法复现、
+                        // 也没法在文档里描述的档位（与「上滑触发距离」滑杆同款做法）。
+                        val quantized = (it * 10f).roundToInt() / 10f
+                        recognizeDelaySeconds = quantized
+                        HandwritingManager.setRecognizeDelayMs(
+                            context, (quantized * 1000f).roundToInt()
+                        )
+                    },
+                )
+                Text(
+                    text = stringResource(R.string.handwriting_recognize_delay_desc),
+                    fontSize = rowSubFontSize,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
             }
 

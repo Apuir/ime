@@ -173,6 +173,19 @@ class HandwritingInkView @JvmOverloads constructor(
     }
 
     /**
+     * 只清「已落定」的笔，保留正在写的那一笔。
+     *
+     * 识别是抬笔之后过一段停手时间才发起的，结果回来时用户很可能已经在下个字上落笔了：
+     * 这时候整块 [clearAll] 会把正在画的那一笔一起抹掉，而且那一笔从此不再计入识别
+     * （等于凭空丢了一笔）。所以「识别完成」走这条路径，「用户按 ⌫ / 面板重开」才走 [clearAll]。
+     */
+    fun clearRecognizedStrokes() {
+        if (strokes.isEmpty()) return
+        strokes.clear()
+        invalidate()
+    }
+
+    /**
      * 笔迹快照，交给引擎识别。
      *
      * 返回一份浅拷贝：[HwStroke] 本身不可变，但外层列表必须复制 —— 引擎在后台线程读它的

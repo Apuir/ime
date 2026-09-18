@@ -57,7 +57,14 @@ class KawaiiPanel(
 
     sealed class State {
         data object Idle : State()
-        data class Composing(val candidates: List<EngineMessage.Candidate>) : State()
+
+        /**
+         * 组字态（含手写候选）。手写候选与方案候选共用这条渲染路径：首候选不以「已上屏」
+         * 之类的注释区分，它本身就在输入框的组合区里（见 `HandwritingPanelView`）。
+         */
+        data class Composing(
+            val candidates: List<EngineMessage.Candidate>,
+        ) : State()
         data class Prediction(val candidates: List<EngineMessage.Candidate>) : State()
         data object Menu : State()
         data object Clipboard : State()
@@ -454,7 +461,8 @@ class KawaiiPanel(
                     InputFeedbacks.hapticFeedback(view)
                     InputFeedbacks.soundEffect(context, InputFeedbacks.SoundEffect.Standard)
                     if (handwritingMode) {
-                        // 手写候选不属于任何方案：直接上屏，不进 Rime 的选词
+                        // 手写候选不属于任何方案：点了就是把手写的组合文本换成它，
+                        // 不进 Rime 的选词，也不需要位次（见 PanelListener.onHandwritingCandidateSelected）。
                         listener?.onHandwritingCandidateSelected(result.candidate.text)
                     } else {
                         listener?.onCandidateSelected(result.candidate)
@@ -593,13 +601,16 @@ class KawaiiPanel(
      *
      * 刻意复用 [applyCandidates]（也就是方案候选那条路径）：顶栏的候选条、索引、展开网格、
      * 点击命中全都由同一套渲染器负责，手写不需要另写一套；差别只在「点下去之后干什么」。
+     *
+     * 首候选不再带「已上屏」注释：新模型里它正作为组合文本停在输入框里，与拼音的 preedit
+     * 一样，不需要额外说明（见 `HandwritingPanelView`）。
      */
     fun setHandwritingCandidates(list: List<HwCandidate>) {
         handwritingMode = true
         applyCandidates(
             list.mapIndexed { index, candidate ->
                 EngineMessage.Candidate(index = index, text = candidate.text)
-            }
+            },
         )
     }
 
@@ -638,7 +649,11 @@ class KawaiiPanel(
                     return@forEach
                 }
             }
-            state = if (predictions) State.Prediction(list) else State.Composing(list)
+            state = if (predictions) {
+                State.Prediction(list)
+            } else {
+                State.Composing(list)
+            }
 
             if (view.isExpanded) {
                 candidateGrid.updateCandidates(list)

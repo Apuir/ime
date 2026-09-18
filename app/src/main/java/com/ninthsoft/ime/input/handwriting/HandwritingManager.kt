@@ -31,6 +31,42 @@ object HandwritingManager {
     private const val KEY_RECOGNIZE_ON_LIFT = "handwriting.recognize_on_lift"
 
     /**
+     * 抬笔后停手多久才识别（毫秒）。
+     *
+     * 设置页滑杆按 0.1 秒一档给值，范围 [RECOGNIZE_DELAY_MS_MIN]..[RECOGNIZE_DELAY_MS_MAX]：
+     * 低于 0.2s 会把一个字拆成几段去识别，高于 2s 又会觉得「写完了没反应」。
+     * 读写都夹取 —— 手改、迁移或未来的默认值变更留下的越界值，不该让面板陷入「一直不识别」。
+     */
+    const val KEY_RECOGNIZE_DELAY_MS = "handwriting.recognize_delay_ms"
+    const val RECOGNIZE_DELAY_MS_MIN = 200
+    const val RECOGNIZE_DELAY_MS_MAX = 2000
+    const val RECOGNIZE_DELAY_MS_DEFAULT = 700
+
+    /**
+     * 手写范围：false = 只在键盘区域内写（半屏），true = 整个屏幕都能写。
+     *
+     * 要**记住**（下次进手写仍是上次选的），所以落盘而不是只放内存。
+     * 面板上的「半/全」键切换的就是它。
+     */
+    const val KEY_FULL_SCREEN = "handwriting.full_screen"
+
+    /**
+     * 「全屏手写」的落地方式 —— 真机兜底开关。
+     *
+     * - [HwFullScreenImpl.OVERLAY]：把 IME 窗口铺满整屏（窗口高度给 `MATCH_PARENT`）、
+     *   背景透明、可触摸区域给整窗，笔迹直接盖在应用内容上（默认）。
+     * - [HwFullScreenImpl.GROW]：完全不动窗口，只把键盘内容临时长高到
+     *   [FULL_SCREEN_GROW_PERCENT]，面板形态与半屏一致，只是能写的范围小一圈。
+     *
+     * 若 OVERLAY 在某些 ROM 上不稳定（窗口不变透明、触摸区域被裁、转屏后卡住），
+     * **把这一行改成 [HwFullScreenImpl.GROW] 即可整体退化**，不需要动其它任何代码。
+     */
+    val FULL_SCREEN_IMPL = HwFullScreenImpl.OVERLAY
+
+    /** GROW 兜底模式下键盘内容临时长到的高度（% 屏高）。 */
+    const val FULL_SCREEN_GROW_PERCENT = 62
+
+    /**
      * Google 引擎可用性探测结果的缓存。
      *
      * 取值语义（**这个区别很重要，不要压成 Boolean**）：
@@ -70,6 +106,28 @@ object HandwritingManager {
         prefs(context).edit { putBoolean(KEY_RECOGNIZE_ON_LIFT, enabled) }
     }
 
+    /** 停手识别时长（毫秒），读写都夹取到 [RECOGNIZE_DELAY_MS_MIN]..[RECOGNIZE_DELAY_MS_MAX]。 */
+    fun recognizeDelayMs(context: Context): Int =
+        prefs(context).getInt(KEY_RECOGNIZE_DELAY_MS, RECOGNIZE_DELAY_MS_DEFAULT)
+            .coerceIn(RECOGNIZE_DELAY_MS_MIN, RECOGNIZE_DELAY_MS_MAX)
+
+    fun setRecognizeDelayMs(context: Context, ms: Int) {
+        prefs(context).edit {
+            putInt(
+                KEY_RECOGNIZE_DELAY_MS,
+                ms.coerceIn(RECOGNIZE_DELAY_MS_MIN, RECOGNIZE_DELAY_MS_MAX),
+            )
+        }
+    }
+
+    /** 是否整屏手写，默认否（半屏：只在键盘区域内写）。 */
+    fun fullScreen(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FULL_SCREEN, false)
+
+    fun setFullScreen(context: Context, enabled: Boolean) {
+        prefs(context).edit { putBoolean(KEY_FULL_SCREEN, enabled) }
+    }
+
     /** Google 引擎可用性的缓存；`null` 表示未探测。语义见 [KEY_GOOGLE_USABLE]。 */
     fun googleUsable(context: Context): Boolean? =
         when (prefs(context).getInt(KEY_GOOGLE_USABLE, PROBE_UNKNOWN)) {
@@ -90,4 +148,10 @@ object HandwritingManager {
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(KeyboardManager.PREFS_NAME, Context.MODE_PRIVATE)
+}
+
+/** 全屏手写的两种落地方式。见 [HandwritingManager.FULL_SCREEN_IMPL]。 */
+enum class HwFullScreenImpl {
+    OVERLAY,
+    GROW,
 }

@@ -43,6 +43,9 @@ import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
 import com.ninthsoft.ime.input.handwriting.HandwritingManager
 import com.ninthsoft.ime.input.handwriting.HwCandidate
+import com.ninthsoft.ime.input.handwriting.HwFullScreenImpl
+import com.ninthsoft.ime.input.handwriting.panel.HANDWRITING_FULL_SCREEN_STACK_DP
+import com.ninthsoft.ime.input.handwriting.panel.HANDWRITING_ROW_HEIGHT_DP
 import com.ninthsoft.ime.input.handwriting.panel.HandwritingPanelView
 import com.ninthsoft.ime.input.panel.KawaiiPanel
 import com.ninthsoft.ime.input.pinner.PreeditPinner
@@ -53,6 +56,7 @@ import com.ninthsoft.ime.input.ImeInputMethodService
 import com.ninthsoft.ime.input.ImeInputConnection
 import com.ninthsoft.ime.input.dialog.SchemaPickerDialog
 import com.ninthsoft.ime.input.keyboard.impl.T15Keyboard
+import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
 import com.ninthsoft.ime.input.panel.PanelListener
 import kotlin.math.roundToInt
 
@@ -64,7 +68,13 @@ class KeyboardWindowView(
 ) : FrameLayout(context), IManagedView {
 
     companion object {
-        const val PANEL_HEIGHT_DP = 48
+        /**
+         * 顶栏（候选/工具条）的高度（dp）。
+         *
+         * 直接引用手写面板的行高：整屏手写时顶栏就是「底部三条」里的第一条，
+         * 面板给它的占位必须严丝合缝，否则中间会露一条缝或者被压掉一半。
+         */
+        const val PANEL_HEIGHT_DP = HANDWRITING_ROW_HEIGHT_DP
 
         /** 悬浮卡片顶部拖动手柄的高度（dp）。 */
         private const val FLOATING_HANDLE_DP = 18
@@ -203,6 +213,24 @@ class KeyboardWindowView(
     // ==================== 手写面板 ====================
 
     /**
+     * 手写「整屏」偏好当前值。
+     *
+     * 面板可见时与偏好一致；进面板时从偏好读入（「记住上次选的」），按「半/全」键时写回偏好。
+     * 转屏等场景会把形态退出（见 [exitHandwritingFullScreen]），但偏好保留。
+     */
+    private var handwritingFullScreen = false
+
+    /**
+     * 「真·整屏」形态是否已生效（与偏好分开：[HwFullScreenImpl.GROW] 兜底模式下
+     * 偏好为 true 但窗口形态不变，只是键盘内容变高）。
+     */
+    private var handwritingOverlayActive = false
+
+    /** 整屏手写时手写层的测量尺寸（px）。0 表示当前不是整屏形态。 */
+    private var fsPanelW = 0
+    private var fsPanelH = 0
+
+    /**
      * 手写面板。默认 `GONE`；显示时不需要改任何 measure/layout 代码 ——
      * 它是本 View 的普通子 View，会跟键盘视图一样被铺满键盘内容区（含悬浮卡片）。
      *
@@ -215,7 +243,23 @@ class KeyboardWindowView(
         view.isClickable = true
         view.listener = object : HandwritingPanelView.Listener {
             override fun onCandidates(candidates: List<HwCandidate>) {
+                // 手写候选没有「已上屏」这种中间态了：首候选就在输入框的组合区里，
+                // 顶栏只是同一批候选的可点版本，不需要额外注释。
                 panel.setHandwritingCandidates(candidates)
+            }
+
+            override fun onComposing(text: String) {
+                // 组合态走 IME 服务那条与拼音 preedit 相同的 composing 通道；
+                // 面板不认识 InputConnection，这里也不自己去摸（见 service 里的注释）。
+                (context as? ImeInputMethodService)?.setHandwritingComposing(text)
+            }
+
+            override fun onFinalizeComposing() {
+                (context as? ImeInputMethodService)?.finalizeHandwritingComposing()
+            }
+
+            override fun onDiscardComposing() {
+                (context as? ImeInputMethodService)?.discardHandwritingComposing()
             }
 
             override fun onCommit(text: String) {
@@ -227,6 +271,10 @@ class KeyboardWindowView(
             }
 
             override fun onBackspace() {
+                // 走到这里说明面板手上已经没有「可撤销的手写内容」了，这是真正的退格。
+                // 先明着撤掉上屏带出来的联想：联想态下引擎的第一次退格被用来「收起联想」
+                // （见 RimeEngine.handleBackspace），不撤这一下这一按会什么都没删。
+                (context as? ImeInputMethodService)?.engine?.dismissPrediction()
                 keyActionListener.onKeyAction(KeyboardAction.BackspaceAction)
             }
 
@@ -241,6 +289,10 @@ class KeyboardWindowView(
             override fun onSwitchKeyboard(name: String) {
                 hideHandwritingPanel()
                 switchKeyboard(name)
+            }
+
+            override fun onToggleFullScreen() {
+                toggleHandwritingFullScreen()
             }
 
             override fun onRecognizeFailed(message: String) {
@@ -258,30 +310,123 @@ class KeyboardWindowView(
 
     fun showHandwritingPanel() {
         if (isHandwritingPanelVisible) return
+        // 进手写前先把引擎/Rime 未结束的组合收尾掉：手写组合态与 Rime 的组合区是两套文本，
+        // 同时存在会互相替换，手写期间按空格/回车还会让 Rime 先把它的组合提交掉。
+        (context as? ImeInputMethodService)?.settleCompositionForHandwriting()
+        // 先置可见、再定形态：形态里的「铺满整窗」测量会跳过 GONE 的子视图，
+        // 顺序反过来的话第一轮测量会先把面板跳过一次，白等一帧。
         handwritingPanel.visibility = View.VISIBLE
+        // 每次进面板都按偏好恢复上次的范围选择：偏好在隐藏期间可能被转屏等路径退出过形态，
+        // 但「用户选的是全屏」这件事一直记在偏好里。
+        applyHandwritingFullScreen(HandwritingManager.fullScreen(context))
         handwritingPanel.onShown()
         requestLayout()
     }
 
     /**
-     * 手写候选已上屏：顶栏立刻收掉候选、回到工具条。
+     * 顶栏手写候选被点击：把选中的候选**换成组合文本**（第 2..N 个候选就是换字）。
      *
-     * 候选是「用掉了就该消失」的东西 —— 留着它还停在候选态，用户会以为要再点一次，
-     * 或者以为刚才没上屏。顺带把面板的「本次手写还在手上」计数归零，
-     * 这样紧接着按 ⌫ 就是正常退格（删刚上屏的那个字），而不是先被吞一次。
+     * 不需要退格/重打那一套：组合区里的文本会被 `setComposingText` 直接替换，
+     * 这正是拼音里点候选的手感。候选条**不在这里收起** —— 用户可以接着换下一个，
+     * 直到落笔 / 切键盘 / 空格回车标点 / 收起面板才由面板统一收尾（见 [HandwritingPanelView]）。
      */
-    fun clearHandwritingCandidates() {
-        handwritingPanel.clearCandidates()
+    fun selectHandwritingCandidate(text: String) {
+        (context as? ImeInputMethodService)?.setHandwritingComposing(text)
     }
 
     fun hideHandwritingPanel() {
         if (!isHandwritingPanelVisible) return
+        // 退出整屏形态（切键盘 / 开菜单 / 进调整大小 / 键盘销毁都从这里走），
+        // 但**不改偏好**：偏好记的是用户的选择，这几种只是暂时收起面板。
+        applyHandwritingFullScreen(false)
         handwritingPanel.onHidden()
         handwritingPanel.visibility = View.GONE
         // 顶栏恢复成工具条（手写候选与方案候选共用那条栏，退出时要把状态还回去）
         panel.setHandwritingMode(false)
         requestLayout()
     }
+
+    /**
+     * 「半/全」键：在「键盘区域内手写」与「整个屏幕手写」之间切换。
+     *
+     * 偏好是唯一事实来源（要记住上次选择），所以先读偏好取反、写回偏好，再按新值调整形态；
+     * 不用内存里的标志取反，是为了让「转屏退出了形态、但偏好仍是全屏」这种情况下的按键
+     * 语义依然符合用户预期（按一下 = 关掉全屏）。
+     */
+    private fun toggleHandwritingFullScreen() {
+        val next = !HandwritingManager.fullScreen(context)
+        HandwritingManager.setFullScreen(context, next)
+        applyHandwritingFullScreen(next)
+    }
+
+    /** 转屏等场景：退出整屏形态，但保留偏好（下次进手写仍是用户上次选的）。 */
+    fun exitHandwritingFullScreen() {
+        applyHandwritingFullScreen(false)
+    }
+
+    /**
+     * 应用「整屏手写」。
+     *
+     * 真·整屏（[HwFullScreenImpl.OVERLAY]）要动四样东西：面板自己的形态、子视图层级
+     * （顶栏要压在书写层上面）、IME 窗口背景透明、以及 IME 窗口高度铺满整屏
+     * （后两件由 [ImeInputMethodService.syncImeWindow] 一起做，见
+     * [isFullScreenHandwriting]）。[HwFullScreenImpl.GROW] 兜底模式则只改内容高度
+     * （见 [contentHeight]），窗口形态一律不动 —— 它正是靠「窗口保持原样」兜底的。
+     */
+    private fun applyHandwritingFullScreen(enabled: Boolean) {
+        val heightChanged = handwritingFullScreen != enabled
+        handwritingFullScreen = enabled
+
+        val overlay = enabled && HandwritingManager.FULL_SCREEN_IMPL == HwFullScreenImpl.OVERLAY
+        if (overlay == handwritingOverlayActive) {
+            // 形态没变就不用碰窗口：窗口背景/窗口尺寸都跟着这个形态走，
+            // 只有 GROW 模式下的内容高度是靠 contentHeight() 现算的，需要重排一次。
+            if (heightChanged) requestLayout()
+            return
+        }
+        handwritingOverlayActive = overlay
+        // 与「调整大小」编辑模式互斥：整屏手写要的是整窗、编辑模式要的是卡片，
+        // 两个测量分支同时开着会打架（而且编辑模式的可拖手柄在整屏手写下没有意义）。
+        // 正常路径上进不来（编辑模式会屏蔽工具栏），这里兜底并顺带把尺寸落盘。
+        // 悬浮卡片同理：下面的测量分支会直接走整屏、不再画卡片，退出整屏后按原设置恢复。
+        if (overlay && isResizing) exitResizeMode()
+        handwritingPanel.setFullScreenLayout(overlay)
+        applyHandwritingFullScreenZOrder(overlay)
+        applyBackgroundTint()
+        // 真·整屏要盖在应用内容上、并且窗口本身也必须铺满整屏：窗口背景清透明 + 窗口高度给
+        // MATCH_PARENT 都在服务端那一个入口里做（见 ImeInputMethodService.syncImeWindow），
+        // 这里只负责把「形态变了」这件事报出去。
+        (context as? ImeInputMethodService)?.syncImeWindow()
+        requestLayout()
+        invalidate()
+    }
+
+    /**
+     * 整屏手写时重排子视图层级：手写层要垫在顶栏之下。
+     *
+     * 半屏时面板在顶栏下方、两者不重叠，靠初始的添加顺序（面板最后加）就够了；整屏时
+     * 面板铺满整窗，会和顶栏重叠 —— 不换层级的话，顶栏（候选/工具条）会被垫在书写层下面，
+     * 整屏手写就没有候选可点了。退出时还原成「紧挨着提示条之前」，与初始顺序一致。
+     */
+    private fun applyHandwritingFullScreenZOrder(overlay: Boolean) {
+        removeView(handwritingPanel)
+        addView(
+            handwritingPanel,
+            if (overlay) indexOfChild(panel.view) else indexOfChild(imeToastView),
+        )
+        requestLayout()
+    }
+
+    /**
+     * 是否处于「真·整屏手写」形态。
+     *
+     * 服务端靠这一个事实做两件事（见 `ImeInputMethodService.syncImeWindow`）：
+     * 把 IME 窗口背景清成透明（否则整块不透明的窗口底会把应用挡住），
+     * 以及把 IME 窗口高度设成 `MATCH_PARENT`（窗口必须与根视图同高，整屏才成立）。
+     * 两件事都属于窗口层，所以由视图把「形态」报出去，服务端不自己判断状态。
+     */
+    val isFullScreenHandwriting: Boolean
+        get() = handwritingOverlayActive
 
     private val imeToastView = ImeToastView(context)
 
@@ -296,8 +441,9 @@ class KeyboardWindowView(
     fun transformed(action: KeyboardAction): KeyboardAction? {
         val transformed: KeyboardAction? = when (action) {
             is KeyboardAction.RotateSchema -> {
-                val schemeId = keyboardStateManager.rotateSchema()
-                return KeyboardAction.SelectSchema(schemeId)
+                // 键盘槽只有两个：中 / 英键直接来回切。
+                keyboardStateManager.toggleSlot()
+                null
             }
 
             is KeyboardAction.LayoutSwitchAction -> {
@@ -319,17 +465,9 @@ class KeyboardWindowView(
             is KeyboardAction.ShowInputMethodPickerAction -> {
                 val dialog = SchemaPickerDialog.build(
                     context = context,
-                    schemas = keyboardStateManager.getSchemas(),
-                    currentSchemaId = keyboardStateManager.getCurrentSchema()?.id,
+                    entries = buildSlotPickerEntries(),
                     colors = cachedColors,
-                    onSchemaSelected = { schemaId ->
-                        // 切换方案会重置引擎组合，按设置决定已上屏的预览内容留还是丢。
-                        if (keyboardStateManager.getCurrentSchema()?.id != schemaId) {
-                            (context as? ImeInputMethodService)?.livePreview
-                                ?.finalizeForKeyboardSwitch()
-                        }
-                        keyboardStateManager.selectSchema(schemaId)
-                    })
+                )
                 (context as ImeInputMethodService).showDialog(dialog)
                 null
             }
@@ -379,10 +517,57 @@ class KeyboardWindowView(
         return transformed
     }
 
+    /**
+     * 切换弹窗的内容：中文槽列全部可用输入方式（平铺），英文槽只列固定的那一项。
+     *
+     * 不可用项不进弹窗 —— 列表里只放能点的；要看清缺的是键盘还是方案，去设置页
+     * （那里会把原因写在灰掉的行上）。
+     */
+    private fun buildSlotPickerEntries(): List<SchemaPickerDialog.Entry> {
+        if (keyboardStateManager.getActiveSlot() == KeyboardSlot.English) {
+            val english = keyboardStateManager.getSchemas()
+                .find { it.id == KeyboardManager.Slot.ENGLISH_SCHEMA_ID }
+            return listOf(
+                SchemaPickerDialog.Entry(
+                    title = context.getString(R.string.slot_english),
+                    subtitle = english?.name?.takeIf { it.isNotBlank() }
+                        ?: KeyboardManager.Slot.ENGLISH_SCHEMA_ID,
+                    selected = true,
+                    // 英文槽固定不可改：这一项只用于展示，点了不做事。
+                    onClick = null,
+                )
+            )
+        }
+
+        val selected = keyboardStateManager.getSelectedChineseItem()
+        return keyboardStateManager.getChineseSlotItems()
+            .filter { it.available }
+            .map { item ->
+                SchemaPickerDialog.Entry(
+                    title = item.displayName,
+                    subtitle = item.schemaName.takeIf { it.isNotBlank() },
+                    selected = item.keyboardName == selected?.keyboardName &&
+                        item.schemaId == selected.schemaId,
+                    onClick = {
+                        // 换方案 / 换键位会重置引擎组合，按设置决定已上屏的预览内容留还是丢。
+                        if (keyboardStateManager.getCurrentSchema()?.id != item.schemaId) {
+                            (context as? ImeInputMethodService)?.livePreview
+                                ?.finalizeForKeyboardSwitch()
+                        }
+                        keyboardStateManager.selectSlotItem(item)
+                    },
+                )
+            }
+    }
+
 
     fun onConfigChanged(key: String) {
         when (key) {
-            SchemaManager.KEY_ENABLED_IDS -> keyboardStateManager.onConfigChanged(key)
+            SchemaManager.KEY_ENABLED_IDS,
+            KeyboardManager.Slot.KEY_ACTIVE,
+            KeyboardManager.Slot.KEY_CHINESE_KEYBOARD,
+            KeyboardManager.Slot.KEY_CHINESE_SCHEMA,
+            -> keyboardStateManager.onConfigChanged(key)
             KeyboardManager.Keyboard.KEY_HEIGHT, KeyboardManager.Keyboard.KEY_HEIGHT_LANDSCAPE,
             KeyboardManager.Keyboard.KEY_WIDTH,
             KeyboardManager.Keyboard.Padding.KEY_HORIZONTAL, KeyboardManager.Keyboard.Padding.KEY_BOTTOM, KeyboardManager.Keyboard.KEY_IGNORE_INSETS -> post {
@@ -449,6 +634,14 @@ class KeyboardWindowView(
                 HandwritingEngineHolder.reset()
                 HandwritingEngineHolder.ensureReady(context) { _, _ -> }
             }
+
+            // 停手识别时长：面板只在 onShown 读一次偏好，正写着的时候改设置也要立刻生效，
+            // 所以把这次变更转给面板重读一次（不重读的话最坏情况是「下次开面板才生效」）。
+            HandwritingManager.KEY_RECOGNIZE_DELAY_MS -> handwritingPanel.refreshRecognizeDelay()
+
+            // 「半/全」是面板的键当场切的（写偏好只是为了记住），这里不再重放：
+            // 同一次点击会被应用两遍、窗口形态来回切一次。
+            HandwritingManager.KEY_FULL_SCREEN -> Unit
         }
     }
 
@@ -499,6 +692,20 @@ class KeyboardWindowView(
     fun onKeyboardChanged(keyboard: IKeyboard) {
         currentKeyboard = keyboard
         addKeyboardView(keyboard)
+    }
+
+    /**
+     * 当前槽选中「手写」。
+     *
+     * 手写没有键盘实例（不走 createKeyboard），状态管理里只能发请求，真正打开面板在这里做。
+     */
+    fun onHandwritingRequested() {
+        showHandwritingPanel()
+    }
+
+    /** 当前槽不再是手写：面板让位给键盘（它盖在键盘上，留着会把新键盘遮住）。 */
+    fun onHandwritingDismissed() {
+        hideHandwritingPanel()
     }
 
     init {
@@ -627,9 +834,15 @@ class KeyboardWindowView(
         ?: if (isLandscape) KeyboardManager.Keyboard.Floating.getPositionYRatio(context)
         else KeyboardManager.Keyboard.getPositionYRatio(context)
 
-    /** 是否使用「全屏透明窗口 + 悬浮卡片」布局：编辑模式、或键盘宽度小于整屏。 */
+    /**
+     * 是否使用「全屏透明窗口 + 悬浮卡片」布局：编辑模式、键盘宽度小于整屏、或整屏手写。
+     *
+     * 这三种情况下本 View 都会占满整个 IME 窗口；具体画什么由 [onMeasure] 分支决定，
+     * 应用是否需要被顶起、窗口哪些区域可触摸由 [ImeInputMethodService.onComputeInsets] 决定。
+     */
     val usesOverlayLayout: Boolean
-        get() = isResizing || effectiveWidthPercent() < KeyboardManager.Keyboard.WIDTH_PERCENT_MAX
+        get() = isResizing || handwritingOverlayActive ||
+            effectiveWidthPercent() < KeyboardManager.Keyboard.WIDTH_PERCENT_MAX
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
@@ -642,10 +855,20 @@ class KeyboardWindowView(
         val stripH = if (addPhraseActive) (fullScreenHeight() * 0.20f).roundToInt() else 0
         val cHeight = contentHeight()
 
+        // 手写层的测量尺寸只对整屏形态有效，每轮测量都先清掉，免得残留旧值
+        fsPanelW = 0
+        fsPanelH = 0
+
         if (usesOverlayLayout) {
-            // 悬浮卡片布局：本 View 占满整个 IME 窗口（背景透明），键盘绘制在一张卡片里。
+            // 悬浮卡片 / 整屏手写共用同一个前提：本 View 占满整个 IME 窗口（背景透明）。
             // 应用是否需要缩放、哪些区域可触摸由 ImeInputMethodService.onComputeInsets 决定。
             val availHeight = measureSpecHeight(heightMeasureSpec)
+
+            // 整屏手写优先：不要卡片，手写层铺满整窗、底部压三条
+            if (handwritingOverlayActive) {
+                measureFullScreenHandwriting(totalWidth, availHeight, bottomInset, barH)
+                return
+            }
             val maxContentH = (availHeight - bottomInset - handleH - barH - bPad)
                 .coerceAtLeast(minimumHeight)
 
@@ -714,6 +937,36 @@ class KeyboardWindowView(
         setMeasuredDimension(totalWidth, stripH + barH + cHeight + bPad + bottomInset)
     }
 
+    /**
+     * 整屏手写的测量：IME 窗口铺满整屏，手写层铺满整窗，底部压三条（顶栏 + 标点行 + 功能行）。
+     *
+     * 键盘本身要整块让位（测量成 0 尺寸）：手写层是一层极淡的遮罩，键盘要是还按原尺寸画着，
+     * 就会从遮罩底下透出来 —— 「整屏时键盘只剩底部三条」这条约束靠这里和 [onLayout] 一起保证。
+     */
+    private fun measureFullScreenHandwriting(
+        totalWidth: Int, availHeight: Int, bottomInset: Int, barH: Int,
+    ) {
+        // 底部三条要落在导航栏之上；手写层则一直铺到导航栏（不可触摸、也不影响绘制主体）
+        val panelH = (availHeight - bottomInset).coerceAtLeast(1)
+        val stackH = dpToPx(HANDWRITING_FULL_SCREEN_STACK_DP)
+        val barTop = (panelH - stackH).coerceAtLeast(0)
+
+        fsPanelW = totalWidth
+        fsPanelH = panelH
+        measureContentChildren(
+            barW = totalWidth, barH = barH,
+            // 内容区（候选网格 / 编辑 / 剪贴板 / 菜单）留在三条之上，不压在顶栏与标点行上
+            contentW = totalWidth, contentH = barTop,
+            stripW = totalWidth, stripH = 0,
+        )
+        rememberGeometry(
+            barLeft = 0, barTop = barTop, barW = totalWidth, barH = barH,
+            contentLeft = 0, contentTop = 0, contentW = totalWidth, contentH = barTop,
+            stripW = totalWidth, stripH = 0,
+        )
+        setMeasuredDimension(totalWidth, availHeight)
+    }
+
     /** 把编辑中的卡片限制在窗口内，并保证最小可用尺寸。 */
     private fun clampOverlayCard(
         totalWidth: Int, totalHeight: Int, bottomInset: Int, handleH: Int, barH: Int, bPad: Int,
@@ -760,6 +1013,22 @@ class KeyboardWindowView(
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             if (child === panel.view || child === panel.textEditingView || child === panel.clipboardView || child === panel.menuGridView || child === panel.confirmOverlay || child === addPhraseLayer || child === imeToastView || child.isGone) continue
+            if (child === handwritingPanel) {
+                // 手写层单独给尺寸：半屏跟内容区一样大，整屏铺满整窗（见 measureFullScreenHandwriting）
+                child.measure(
+                    MeasureSpec.makeMeasureSpec(if (fsPanelH > 0) fsPanelW else contentW, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(if (fsPanelH > 0) fsPanelH else contentH, MeasureSpec.EXACTLY),
+                )
+                continue
+            }
+            if (fsPanelH > 0) {
+                // 整屏手写：键盘与其它浮层整块让位，0 尺寸即不绘制、也收不到触摸
+                child.measure(
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY),
+                )
+                continue
+            }
             child.measure(
                 MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(contentH, MeasureSpec.EXACTLY),
@@ -828,6 +1097,10 @@ class KeyboardWindowView(
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        if (handwritingOverlayActive) {
+            layoutFullScreenHandwriting(bottom - top)
+            return
+        }
         val contentW = geomContentW
         val contentH = geomContentH
         val y0 = geomContentTop
@@ -862,8 +1135,70 @@ class KeyboardWindowView(
         )
     }
 
+    /**
+     * 整屏手写的布局：手写层铺满整窗，顶栏压在底部三条的第一条上，键盘与其它浮层让位成空矩形。
+     *
+     * 与 [measureFullScreenHandwriting] 共用同一份几何缓存，测量与布局不会各算一套。
+     */
+    private fun layoutFullScreenHandwriting(height: Int) {
+        val panelW = if (fsPanelW > 0) fsPanelW else width
+        val panelH = if (fsPanelH > 0) fsPanelH else height
+
+        handwritingPanel.layout(0, 0, panelW, panelH)
+        panel.view.layout(geomBarLeft, geomBarTop, geomBarLeft + geomBarW, geomBarTop + geomBarH)
+
+        // 面板类的子视图（候选网格 / 编辑 / 剪贴板 / 菜单 / 确认）仍铺在书写层上方的内容区，
+        // 它们一展开就是整块不透明面板，正好盖住笔迹 —— 与半屏时的行为一致
+        panel.candidateGrid.layout(
+            geomContentLeft, geomContentTop,
+            geomContentLeft + geomContentW, geomContentTop + geomContentH,
+        )
+        panel.textEditingView.layout(
+            geomContentLeft, geomContentTop,
+            geomContentLeft + geomContentW, geomContentTop + geomContentH,
+        )
+        panel.clipboardView.layout(
+            geomContentLeft, geomContentTop,
+            geomContentLeft + geomContentW, geomContentTop + geomContentH,
+        )
+        panel.menuGridView.layout(
+            geomContentLeft, geomContentTop,
+            geomContentLeft + geomContentW, geomContentTop + geomContentH,
+        )
+        panel.confirmOverlay.layout(
+            geomContentLeft, geomContentTop,
+            geomContentLeft + geomContentW, geomContentTop + geomContentH,
+        )
+
+        // 键盘与其它非面板视图（语音悬浮条等）：整屏手写时整体让位
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child === handwritingPanel || child === panel.view || child === panel.candidateGrid ||
+                child === panel.textEditingView || child === panel.clipboardView ||
+                child === panel.menuGridView || child === panel.confirmOverlay ||
+                child === addPhraseLayer || child === imeToastView || child.isGone
+            ) {
+                continue
+            }
+            child.layout(0, 0, 0, 0)
+        }
+
+        addPhraseLayer.layout(0, 0, geomStripW, geomStripH)
+
+        // 提示条贴在顶栏上方：整屏时顶栏在底部三条的第一条，提示条就落在书写区下沿
+        val toastLeft = geomBarLeft + (geomBarW - imeToastView.measuredWidth) / 2
+        val toastBottom = (geomBarTop - dpToPx(12)).coerceAtLeast(imeToastView.measuredHeight)
+        imeToastView.layout(
+            toastLeft,
+            toastBottom - imeToastView.measuredHeight,
+            toastLeft + imeToastView.measuredWidth,
+            toastBottom,
+        )
+    }
+
     override fun dispatchDraw(canvas: Canvas) {
-        if (usesOverlayLayout) {
+        // 整屏手写不画悬浮卡片：书写层本身就是整窗，卡片边框/阴影会横在手写区中间
+        if (usesOverlayLayout && !handwritingOverlayActive) {
             val density = resources.displayMetrics.density
             val radius = FLOATING_CORNER_DP * density
             val shadowOffset = 2 * density
@@ -907,6 +1242,8 @@ class KeyboardWindowView(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (isResizing) return handleResizeTouch(event)
+        // 整屏手写时整窗都是书写区，没有卡片可拖（触摸本来就由书写层吃掉，这里只是兜底）
+        if (handwritingOverlayActive) return super.onTouchEvent(event)
         if (!usesOverlayLayout) return super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -1284,8 +1621,9 @@ class KeyboardWindowView(
      * 本 View 在窗口内的位置，避免依赖具体布局。
      */
     fun floatingTouchableRegion(out: Rect) {
-        if (isResizing || addPhraseActive || isVoiceRecording) {
-            // 编辑模式 / 添加常用语 / 语音悬浮条需要在整窗口范围内交互。
+        if (isResizing || addPhraseActive || isVoiceRecording || handwritingOverlayActive) {
+            // 编辑模式 / 添加常用语 / 语音悬浮条 / 整屏手写需要在整窗口范围内交互。
+            // 整屏手写就是「整屏可写」：触摸区域必须是整窗，笔迹才铺得开。
             out.set(0, 0, width, height)
         } else {
             out.set(floatingCard)
@@ -1376,11 +1714,16 @@ class KeyboardWindowView(
     }
 
     private fun contentHeight(): Int {
-        val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val percent = if (isLandscape) {
-            KeyboardManager.Keyboard.getHeightPercentLandscape(context)
-        } else {
-            KeyboardManager.Keyboard.getHeightPercent(context)
+        val percent = when {
+            // GROW 兜底模式：整屏手写在这里退化成「键盘临时长高」——形态与半屏完全一致，
+            // 只是能写的范围大一圈。窗口、触摸区域、窗口背景都不动。
+            handwritingFullScreen && HandwritingManager.FULL_SCREEN_IMPL == HwFullScreenImpl.GROW ->
+                HandwritingManager.FULL_SCREEN_GROW_PERCENT
+
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ->
+                KeyboardManager.Keyboard.getHeightPercentLandscape(context)
+
+            else -> KeyboardManager.Keyboard.getHeightPercent(context)
         }
         val fullHeight = fullScreenHeight()
         return (fullHeight * percent / 100).coerceAtLeast(minimumHeight)
