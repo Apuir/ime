@@ -493,12 +493,7 @@ class KeyboardWindowView(
             }
 
             is KeyboardAction.ShowInputMethodPickerAction -> {
-                val dialog = SchemaPickerDialog.build(
-                    context = context,
-                    entries = buildSlotPickerEntries(),
-                    colors = cachedColors,
-                )
-                (context as ImeInputMethodService).showDialog(dialog)
+                showLayoutPicker()
                 null
             }
 
@@ -545,6 +540,20 @@ class KeyboardWindowView(
             else -> action
         }
         return transformed
+    }
+
+    /**
+     * 弹出「切换布局 / 输入方式」列表：工具栏的「切换布局」与地球键长按共用。
+     *
+     * 列表内容只含**方案里真的有的**输入方式（见 [buildSlotPickerEntries]）。
+     */
+    fun showLayoutPicker() {
+        val dialog = SchemaPickerDialog.build(
+            context = context,
+            entries = buildSlotPickerEntries(),
+            colors = cachedColors,
+        )
+        (context as ImeInputMethodService).showDialog(dialog)
     }
 
     /**

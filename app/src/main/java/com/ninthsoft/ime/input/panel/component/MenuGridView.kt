@@ -5,14 +5,15 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.HorizontalScrollView
+import android.widget.ScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import kotlin.math.roundToInt
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.feedback.InputFeedbacks
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
@@ -41,10 +42,8 @@ class MenuGridView(
         val action: PanelAction,
     )
 
-    // Each inner array is one horizontally scrollable page.
-    // 每页固定塞满 8 个（4 列 × 2 行）再翻页：超过 8 个会让 onMeasure 把该页算成 3 行、
-    // 进而把**所有**页的格子一起缩小，所以这里按 8 个一行填满。
-    private val items = arrayOf(
+    // 工具顺序就是这里的平铺顺序（内层分组只是可读性，以前一组是一页）。
+    private val items: List<MenuItem> = arrayOf(
         arrayOf(
             MenuItem(
                 context.getString(R.string.menu_emoji),
@@ -114,6 +113,11 @@ class MenuGridView(
                 PanelAction.SchemaSettings
             ),
             MenuItem(
+                context.getString(R.string.menu_switch_layout),
+                R.drawable.ic_keyboard_layout_switch,
+                PanelAction.SwitchLayout
+            ),
+            MenuItem(
                 context.getString(R.string.menu_settings),
                 R.drawable.ic_keyboard_setting,
                 PanelAction.Settings
@@ -136,141 +140,64 @@ class MenuGridView(
                 PanelAction.About
             ),
         ),
-    )
+    ).flatten()
 
     private val columns = 4
-    private val radius = dp(16).toFloat()
-    private val iconSize = dp(28)
-    private val indicatorSize = dp(6)
-    private val indicatorGap = dp(6)
 
-    var gap: Int = dp(10)
+    /**
+     * 算键格大小时按「一屏两行」估：与分页那会儿一致，所以工具的**大小没变**；
+     * 行数多出这一屏就纵向滑动（单页、无级滑动，不翻页也不吸附）。
+     */
+    private val rowsPerScreen = 2
+    private val radius = dp(16).toFloat()
+
+    var gap: Int = dp(BASE_GAP_DP)
         private set
 
-    var pad: Int = dp(16)
+    var pad: Int = dp(BASE_PAD_DP)
         private set
 
     var itemSize: Int = 0
         private set
 
-    private val pager = object : HorizontalScrollView(context) {
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            val handled = super.onTouchEvent(event)
-            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                postDelayed({ snapToPage() }, 120L)
-            }
-            return handled
-        }
-    }.apply {
-        isHorizontalScrollBarEnabled = false
-        isFillViewport = true
+    /** 图标边长（px）。随笔格等比缩小，见 [REFERENCE_ITEM_DP]。 */
+    private var iconSize: Int = dp(ICON_DP)
+
+    /** 工具名字号（sp）。随笔格等比缩小，见 [REFERENCE_ITEM_DP]。 */
+    private var labelSizeSp: Float = LABEL_SP
+
+    /** 单页网格的滚动容器。关掉滚动条与边缘光晕：在 IME 里视觉上很脏。 */
+    private val scroller = ScrollView(context).apply {
+        isVerticalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
     }
 
-    private val pages = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
+    private val grid = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
     }
-
-    private val indicators = LinearLayout(context).apply {
-        gravity = Gravity.CENTER
-        orientation = LinearLayout.HORIZONTAL
-    }
-
-    private var currentPage = 0
 
     init {
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        pager.addView(pages, ViewGroup.LayoutParams(matchParent, wrapContent))
-        root.addView(
-            pager,
-            LinearLayout.LayoutParams(matchParent, 0).apply { weight = 1f },
-        )
-        root.addView(
-            indicators,
-            LinearLayout.LayoutParams(matchParent, dp(18)),
-        )
-        addView(root, LayoutParams(matchParent, matchParent))
-
-        items.forEach { pageItems -> pages.addView(createPage(pageItems)) }
-        repeat(items.size) { index ->
-            indicators.addView(createIndicator(index))
-        }
-        updateIndicators()
-        pager.setOnScrollChangeListener { _, scrollX, _, _, _ ->
-            val width = pager.width
-            if (width > 0) {
-                val page = ((scrollX + width / 2) / width).coerceIn(0, items.lastIndex)
-                if (page != currentPage) {
-                    currentPage = page
-                    updateIndicators()
-                }
-            }
-        }
+        scroller.addView(grid, ViewGroup.LayoutParams(matchParent, wrapContent))
+        addView(scroller, LayoutParams(matchParent, matchParent))
+        // 单页：按 4 列一行行铺，行内左对齐（最后一行不满也从左侧起排）
+        items.chunked(columns).forEach { rowItems -> grid.addView(createRow(rowItems)) }
     }
 
-    private fun snapToPage() {
-        val width = pager.width
-        if (width <= 0 || items.isEmpty()) return
-        val targetPage = ((pager.scrollX + width / 2) / width).coerceIn(0, items.lastIndex)
-        pager.smoothScrollTo(targetPage * width, 0)
-    }
-
-    private fun createPage(pageItems: Array<MenuItem>): LinearLayout {
-        val page = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-        }
-        val rows = (pageItems.size + columns - 1) / columns
-        repeat(rows) { rowIndex ->
-            val row = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(matchParent, wrapContent)
-                setPadding(
-                    pad,
-                    if (rowIndex == 0) pad else gap,
-                    pad,
-                    if (rowIndex == rows - 1) pad else 0,
+    /** 一行：左对齐铺开，不满一行时剩下的位置空着（**不居中**）。 */
+    private fun createRow(rowItems: List<MenuItem>): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(matchParent, wrapContent)
+            rowItems.forEachIndexed { index, item ->
+                addView(
+                    createItemView(item),
+                    LinearLayout.LayoutParams(0, 0).apply {
+                        if (index < rowItems.lastIndex) marginEnd = gap
+                    },
                 )
             }
-            repeat(columns) { colIndex ->
-                val itemIndex = rowIndex * columns + colIndex
-                if (itemIndex < pageItems.size) {
-                    row.addView(
-                        createItemView(pageItems[itemIndex]),
-                        LinearLayout.LayoutParams(0, 0).apply {
-                            if (colIndex < columns - 1) marginEnd = gap
-                        },
-                    )
-                }
-            }
-            page.addView(row)
         }
-        return page
-    }
-
-    private fun createIndicator(index: Int): View = View(context).apply {
-        layoutParams = LinearLayout.LayoutParams(indicatorSize, indicatorSize).apply {
-            if (index > 0) marginStart = indicatorGap
-        }
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-        }
-    }
-
-    private fun updateIndicators() {
-        for (index in 0 until indicators.childCount) {
-            val indicator = indicators.getChildAt(index)
-            val color = if (index == currentPage) {
-                colors.panel.toolbarIcon
-            } else {
-                colors.panel.toolbarIcon and 0x66FFFFFF
-            }
-            (indicator.background as GradientDrawable).setColor(color)
-        }
-    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val oldVisibility = visibility
@@ -278,33 +205,53 @@ class MenuGridView(
 
         val totalWidth = MeasureSpec.getSize(widthMeasureSpec)
         val totalHeight = MeasureSpec.getSize(heightMeasureSpec)
-        val indicatorHeight = dp(18)
-        val pageHeight = (totalHeight - indicatorHeight).coerceAtLeast(0)
-        val rows = items.maxOfOrNull { (it.size + columns - 1) / columns } ?: 0
-        if (rows > 0) {
-            val widthBased = (totalWidth - pad * 2 - gap * (columns - 1)) / columns
-            val heightBased = (pageHeight - pad * 2 - gap * (rows - 1)) / rows
-            itemSize = minOf(widthBased, heightBased).coerceAtLeast(0)
-        }
+        // 先用原始间距估一版键格，拿它定「等比缩放」系数，再按缩放后的间距算最终键格：
+        // 横屏悬浮卡片、键盘被拖小时，格子 / 图标 / 文字 / 间距一起变小，
+        // 而不是只有格子变小、字还那么大。键格本来就够大时系数封顶 1，观感与以前一致。
+        val probe = minOf(
+            (totalWidth - dp(BASE_PAD_DP) * 2 - dp(BASE_GAP_DP) * (columns - 1)) / columns,
+            (totalHeight - dp(BASE_PAD_DP) * 2 - dp(BASE_GAP_DP) * (rowsPerScreen - 1)) /
+                rowsPerScreen,
+        ).coerceAtLeast(0)
+        val scale = ((probe / resources.displayMetrics.density) / REFERENCE_ITEM_DP)
+            .coerceIn(MIN_SCALE, 1f)
+        pad = (dp(BASE_PAD_DP) * scale).roundToInt()
+        gap = (dp(BASE_GAP_DP) * scale).roundToInt()
+        iconSize = (dp(ICON_DP) * scale).roundToInt()
+        labelSizeSp = LABEL_SP * scale
 
-        pager.layoutParams = pager.layoutParams.apply { height = pageHeight }
-        indicators.layoutParams = indicators.layoutParams.apply { height = indicatorHeight }
-        for (pageIndex in 0 until pages.childCount) {
-            val page = pages.getChildAt(pageIndex) as ViewGroup
-            page.layoutParams = page.layoutParams.apply { width = totalWidth; height = pageHeight }
-            for (rowIndex in 0 until page.childCount) {
-                val row = page.getChildAt(rowIndex) as ViewGroup
-                row.setPadding(
-                    pad,
-                    if (rowIndex == 0) pad else gap,
-                    pad,
-                    if (rowIndex == page.childCount - 1) pad else 0,
-                )
-                for (itemIndex in 0 until row.childCount) {
-                    val item = row.getChildAt(itemIndex)
-                    item.layoutParams = item.layoutParams.apply {
-                        width = itemSize
-                        height = itemSize
+        val widthBased = (totalWidth - pad * 2 - gap * (columns - 1)) / columns
+        val heightBased =
+            (totalHeight - pad * 2 - gap * (rowsPerScreen - 1)) / rowsPerScreen
+        itemSize = minOf(widthBased, heightBased).coerceAtLeast(0)
+
+        val lastRow = grid.childCount - 1
+        for (rowIndex in 0 until grid.childCount) {
+            val row = grid.getChildAt(rowIndex) as ViewGroup
+            row.setPadding(
+                pad,
+                if (rowIndex == 0) pad else gap,
+                pad,
+                // 滚到底时底部也要有一圈内边距，与顶部对称
+                if (rowIndex == lastRow) pad else 0,
+            )
+            for (itemIndex in 0 until row.childCount) {
+                val item = row.getChildAt(itemIndex) as ViewGroup
+                item.layoutParams = item.layoutParams.apply {
+                    width = itemSize
+                    height = itemSize
+                }
+                // 图标与文字跟着键格一起缩放（文字用 sp：系统字号放大时它跟着放大）
+                for (childIndex in 0 until item.childCount) {
+                    when (val child = item.getChildAt(childIndex)) {
+                        is ImageView -> child.layoutParams = child.layoutParams.apply {
+                            width = iconSize
+                            height = iconSize
+                        }
+
+                        is TextView -> child.setTextSize(
+                            TypedValue.COMPLEX_UNIT_SP, labelSizeSp
+                        )
                     }
                 }
             }
@@ -345,7 +292,7 @@ class MenuGridView(
 
             val label = textView {
                 text = item.label
-                textSize = 12f
+                textSize = labelSizeSp
                 setTextColor(itemTextColor(item))
                 typeface = Typeface.DEFAULT
                 gravity = Gravity.CENTER
@@ -362,50 +309,43 @@ class MenuGridView(
     override fun refreshTheme(newColors: KeyboardColors.ColorScheme) {
         super.refreshTheme(newColors)
         setBackgroundColor(newColors.background)
-        for (pageIndex in 0 until pages.childCount) {
-            val page = pages.getChildAt(pageIndex) as ViewGroup
-            for (rowIndex in 0 until page.childCount) {
-                val row = page.getChildAt(rowIndex) as ViewGroup
-                for (itemIndex in 0 until row.childCount) {
-                    val item = row.getChildAt(itemIndex) as ViewGroup
-                    (item.background as? GradientDrawable)?.setColor(newColors.keyBackground)
-                    val action = item.tag as? PanelAction
-                    for (childIndex in 0 until item.childCount) {
-                        when (val child = item.getChildAt(childIndex)) {
-                            is ImageView -> {
-                                if (isToggleAction(action)) {
-                                    child.setImageResource(toggleIcon(action!!))
-                                }
-                                child.imageTintList = ColorStateList.valueOf(itemIconColor(action))
+        for (rowIndex in 0 until grid.childCount) {
+            val row = grid.getChildAt(rowIndex) as ViewGroup
+            for (itemIndex in 0 until row.childCount) {
+                val item = row.getChildAt(itemIndex) as ViewGroup
+                (item.background as? GradientDrawable)?.setColor(newColors.keyBackground)
+                val action = item.tag as? PanelAction
+                for (childIndex in 0 until item.childCount) {
+                    when (val child = item.getChildAt(childIndex)) {
+                        is ImageView -> {
+                            if (isToggleAction(action)) {
+                                child.setImageResource(toggleIcon(action!!))
                             }
-
-                            is TextView -> child.setTextColor(itemTextColor(action))
+                            child.imageTintList = ColorStateList.valueOf(itemIconColor(action))
                         }
+
+                        is TextView -> child.setTextColor(itemTextColor(action))
                     }
                 }
             }
         }
-        updateIndicators()
     }
 
     fun refreshPredictionState() {
-        for (pageIndex in 0 until pages.childCount) {
-            val page = pages.getChildAt(pageIndex) as ViewGroup
-            for (rowIndex in 0 until page.childCount) {
-                val row = page.getChildAt(rowIndex) as ViewGroup
-                for (itemIndex in 0 until row.childCount) {
-                    val item = row.getChildAt(itemIndex) as ViewGroup
-                    if (!isToggleAction(item.tag as? PanelAction)) continue
-                    for (childIndex in 0 until item.childCount) {
-                        when (val child = item.getChildAt(childIndex)) {
-                            is ImageView -> {
-                                child.setImageResource(toggleIcon(item.tag as PanelAction))
-                                child.imageTintList =
-                                    ColorStateList.valueOf(itemIconColor(item.tag as PanelAction))
-                            }
-
-                                is TextView -> child.setTextColor(itemTextColor(item.tag as PanelAction))
+        for (rowIndex in 0 until grid.childCount) {
+            val row = grid.getChildAt(rowIndex) as ViewGroup
+            for (itemIndex in 0 until row.childCount) {
+                val item = row.getChildAt(itemIndex) as ViewGroup
+                if (!isToggleAction(item.tag as? PanelAction)) continue
+                for (childIndex in 0 until item.childCount) {
+                    when (val child = item.getChildAt(childIndex)) {
+                        is ImageView -> {
+                            child.setImageResource(toggleIcon(item.tag as PanelAction))
+                            child.imageTintList =
+                                ColorStateList.valueOf(itemIconColor(item.tag as PanelAction))
                         }
+
+                        is TextView -> child.setTextColor(itemTextColor(item.tag as PanelAction))
                     }
                 }
             }
@@ -438,6 +378,19 @@ class MenuGridView(
         else -> android.R.drawable.ic_menu_help
     }
 
+
+    private companion object {
+        /** 键格参考尺寸（dp）：图标 28dp / 字号 12sp 是照它定的，键格小于它才等比缩小。 */
+        const val REFERENCE_ITEM_DP = 64f
+
+        /** 缩放下限：键盘再小也留一个能看清的下限，不至于缩成一条线。 */
+        const val MIN_SCALE = 0.4f
+
+        const val BASE_PAD_DP = 16
+        const val BASE_GAP_DP = 10
+        const val ICON_DP = 28
+        const val LABEL_SP = 12f
+    }
 
     private fun itemIconColor(item: MenuItem): Int = itemIconColor(item.action)
 

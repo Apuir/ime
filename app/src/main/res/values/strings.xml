@@ -373,6 +373,7 @@
     <string name="voice_permission_message">语音转文字功能需要录音权限，是否前往授权？</string>
     <string name="voice_model_missing_message">语音转文字功能需要下载识别模型，是否前往下载？</string>
     <string name="menu_cursor">编辑模式</string>
+    <string name="menu_switch_layout">切换布局</string>
     <string name="menu_settings">设置</string>
     <string name="menu_schema">方案管理</string>
     <string name="schema_files">文件管理</string>

@@ -17,6 +17,9 @@ sealed class PanelAction {
 
     /** 打开/收起手写面板（工具栏与菜单里的「手写」入口）。 */
     data object ToggleHandwriting : PanelAction()
+
+    /** 切换中文输入方式（九键 / 26键 / 15键 / 手写）：弹出与地球键长按同一个列表。 */
+    data object SwitchLayout : PanelAction()
     data object Settings : PanelAction()
     data object SchemaSettings : PanelAction()
     data object About : PanelAction()

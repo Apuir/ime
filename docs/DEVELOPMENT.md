@@ -94,7 +94,7 @@
 - 候选为**组合态**：写完即进输入框但未定型，点其它候选直接替换；写下一个字 / 切键盘 / 收键盘 /
   关输入法 / 空格回车标点 时正式保留
 - 抬笔停手自动识别并清空笔迹，停手时长可调（0.2–2.0 秒）
-- 「半/全」切换键盘区域内手写 / 整屏手写（整屏时写在应用内容之上、应用不被顶起）
+- 「半/全」切换键盘区域内手写 / 整屏手写（整屏时写在应用内容之上，应用被顶到键盘之上）
 
 **语音**
 
@@ -591,6 +591,13 @@ listOf(
 - 渲染：`input/panel/toolbar/ToolbarRenderer.kt` 的中央按钮由 `ToolbarRendererResources.centerButtons`（`configuredToolbarButtons()`）动态生成；`KawaiiPanel.refreshToolbarConfig()` 在配置变更后重建渲染器
 - 配置界面：`ui/screen/ToolbarSettingsScreen.kt` + `ui/ToolbarSettingsActivity.kt`
 - 注意：菜单网格与工具栏共用「切换类」动作处理，逻辑集中在 `KawaiiPanel.handleToggleAction()`，新增工具时在这里补分支
+- 菜单网格（工具栏左端「展开」出来的那块，`input/panel/component/MenuGridView.kt`）里的工具是固定的：
+  **单页、纵向无级滑动**（不再分页吸附、也没有页码点），4 列一行行铺、行内左对齐（最后一行不满也从左侧起排）；
+  键格大小仍按「一屏两行」估，所以工具大小与分页时期一致，行数多出来就往下滚。
+  图标 / 文字 / 内边距 / 格间距随键格**等比缩放**（系数 = 键格dp / 64，封顶 1、下限 0.4）：
+  竖屏与宽屏上是 1（观感与以前一致），横屏悬浮卡片或键盘被拖小时整套跟着变小。
+  其中**「切换布局」（`PanelAction.SwitchLayout`）**弹出中文槽输入方式列表（九键 / 26键 / 15键 / 手写，
+  只列方案里真的有的），与地球键长按共用 `KeyboardWindowView.showLayoutPicker()`
 
 ### 9.3.2 符号 / 数字输入手势（长按 vs 上滑）
 
@@ -1327,6 +1334,22 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
 
 - **上屏通道**：面板自己不碰 `InputConnection`。提交/退格/空格/回车一律经 `Listener` 回到宿主，
   由宿主发 `KeyboardAction`（`CommitAction` / `CommitPairAction` / `BackspaceAction` / `SpaceAction` / `ReturnAction`）。
+- **点候选 = 换字 + 立刻收尾**（`HandwritingPanelView.selectCandidate`）：只换组合文本的话，
+  输入框里换了字、顶栏候选却原样留着，界面上看不出这一按生效（用户会以为「只能选第一个」）。
+  收尾时序必须留在面板（宿主不自己写 `InputConnection`）：收完字之后 ⌫ 是退格还是撤销本轮，
+  由面板这一处判定。
+- **⌫ 长按连删**：时序直接引用键盘键的 `CustomGestureView.longPressDelay / RepeatInterval`
+  （250ms 起、每 100ms 一次）；长按已触发过就不再补一次点击（否则抬手会多删一个字），
+  切换半/全或收起面板时停掉。
+- **符号栏与九键共用**：见 9.3.4；面板在 `rebuildContent()` 读一次偏好，宿主在
+  `keyboard.side_panel_symbols.t9` 变化时转发 `refreshPunctuationSymbols()`。
+- **回车键图标与键盘共用**：映射在 `key/ReturnKeyIcon.kt`，`KeyboardStateManager` 在图标变化时
+  通过 `onReturnKeyIconChanged` 下发；进面板时补一次当前值（`currentReturnKeyIcon()`）。
+- **中/英键切的是「槽」不是键盘**：走 `KeyboardStateManager.selectSlot(English)`；
+  工具栏的手写入口同样走槽（`selectHandwriting()`）—— 绕开槽会让「显示的键盘」与「槽里的选择」
+  分叉，回手写要按两下。进手写时 `ensureChineseBackdrop()` 会把底下那套键盘的方案换成中文方案，
+  收起面板（开菜单 / 调大小 / 切符号页）露出来的就不是英文键盘；菜单收起时
+  `KawaiiPanel.onMenuClosed` 会把手写面板放回来。
 - **候选为组合态**：`ImeInputMethodService` 提供手写专用入口
   （`setHandwritingComposing` / `finalizeHandwritingComposing` / `discardHandwritingComposing`），
   走的就是 `setComposingText` / `finishComposingText` 这条与拼音相同的组合通道；
@@ -1337,8 +1360,12 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
   - `OVERLAY`（默认）：进入整屏时把输入法窗口整屏化 —— 覆写
     `InputMethodService.onConfigureWindow()` 并在整屏时把窗口高度设为 `MATCH_PARENT`
     （`ImeInputMethodService.syncImeWindow()` 是窗口背景+尺寸的唯一入口），
-    窗口背景透明、`floatingTouchableRegion()` 给整窗、应用底衬报 0（应用不被顶起），
-    书写层铺满窗口并叠一层很淡的遮罩；键盘只剩底部三条（顶栏 + 标点行 + 功能行）。
+    窗口背景透明、`floatingTouchableRegion()` 给整窗，书写层铺满整窗并叠一层很淡的遮罩；
+    键盘只剩底部三条（顶栏 + 标点行 + 功能行）：
+    - 底部三条给自己留出**导航栏 + 键盘底部内边距**（`setFullScreenBottomSpace()`），
+      并刷成不透明的键盘底色 —— 否则异形屏 / 手势导航下会空一条，键帽的半透明还会透出应用内容；
+    - `onComputeInsets` 的内容边衬取**底部三条的上沿**，应用因此被顶到键盘之上（输入框可见），
+      书写层仍覆盖应用区域。
   - `GROW`：退化方案 —— 键盘临时加高到 62% 屏高，形态不变、窗口/触摸/背景全不动。
     **真机上若整屏异常，把这一行改掉即可回退。**
 
@@ -1371,5 +1398,12 @@ ML Kit 数字墨水**只有「按需下载」一种安装路径**（不能随包
   已经不存在的模型报成「确认可用」，设置页的「重新检测」「删除模型」正好都踩在这条上。
 - 探测结果缓存在 `handwriting.google_usable`（-1 未探测 / 0 硬不可用 / 1 确认可用）；
   **自检没过不写 0**（残缺模型可以靠删除后重下修好），而是退回 -1，下次解析如实再查。
+- ⚠️ 这个缓存是**跨进程**的：`true` 只说明「上次自检通过」，**不能**说明本进程里已有引擎对象。
+  `useGoogleLocked()` 因此必须真调一次 `MlKitEngine.load()`（它内部会跳过「本进程已加载」的情况，
+  每个进程最多自检一次）；否则新进程里会直接短路成 `USE_GOOGLE` 而引擎为 null，
+  表现为面板「手写引擎不可用」、设置页「未就绪」，点「重新检测」又立刻能用。
+- 设置页的模型状态是**五态**（`GoogleModelState`）：状态未知（查询失败，不能当成未下载去引导下载）/
+  未下载 / 已下载未确认 / 确认可用 / 模型残缺；「删除模型」与「下载结束后」的结论统一走
+  `HandwritingEngineHolder.verifyNow()`（只判定、不下载，避免 AUTO/GOOGLE 又自动下一轮）。
 - AUTO 模式在模型未下载时会**自动下载**（`HandwritingEngineResolver` 的 `DOWNLOAD_GOOGLE`），
   也就是「第一次用手写」会静默拉一次模型；这是 ML Kit 的默认行为，但 App 不提示。

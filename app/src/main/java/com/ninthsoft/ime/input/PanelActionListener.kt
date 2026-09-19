@@ -53,6 +53,9 @@ class PanelActionListener(
             PanelAction.ToggleVoice -> service.keyboardWindow?.toggleVoiceLocked()
             PanelAction.ToggleHandwriting -> service.keyboardWindow?.view?.toggleHandwritingPanel()
 
+            // 工具栏「切换布局」：与地球键长按同一个列表（中文槽的输入方式 / 英文槽）
+            PanelAction.SwitchLayout -> service.keyboardWindow?.view?.showLayoutPicker()
+
             PanelAction.Settings -> service.startActivity(
                 Intent(service, MainActivity::class.java).apply {
                     addFlags(
