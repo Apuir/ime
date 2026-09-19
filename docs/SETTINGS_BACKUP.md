@@ -13,7 +13,7 @@
 {
   "format": "ime-settings",
   "version": 1,
-  "appVersion": "2.5.0",
+  "appVersion": "2.6.0",
   "exportedAt": 1789000000000,
   "settings": {
     "keyboard_settings": { "keyboard.height": 30, "keyboard.follow_system": true },

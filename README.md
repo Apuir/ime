@@ -9,7 +9,7 @@
 |---|---|
 | 应用名 | 简意输入法 |
 | 包名 | `com.ninthsoft.ime` |
-| 当前版本 | `2.5.0`（20500） |
+| 当前版本 | `2.6.0`（20600） |
 | 系统要求 | Android 7.0+（minSdk 24） |
 | 架构 | 仅 `arm64-v8a` |
 | 引擎 | librime + lua / octagram（语法模型）/ predict（预测） |
