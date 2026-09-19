@@ -28,17 +28,24 @@ import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import splitties.dimensions.dp
 
 /**
- * 手写面板每一条横排控件的高度（dp）。
+ * 手写顶栏（候选 / 工具条）的高度（dp）。
  *
- * 半屏形态下只有底部一条功能行；全屏形态下是「顶栏占位 + 标点行 + 功能行」三条。
- * 宿主 [com.ninthsoft.ime.input.keyboard.window.KeyboardWindowView] 摆最上面那条顶栏时
- * 要用同一份值，所以放在文件级而不是 private companion 里 —— 两处各写一个 48，
- * 迟早会对不上。
+ * 宿主摆全屏形态最上面那条顶栏占位时要用同一份值，所以放在文件级而不是 private companion 里
+ * —— 两处各写一个数，迟早会对不上。
  */
 const val HANDWRITING_ROW_HEIGHT_DP = 48
 
-/** 全屏手写底部三条的总高度（dp）。 */
-const val HANDWRITING_FULL_SCREEN_STACK_DP = HANDWRITING_ROW_HEIGHT_DP * 3
+/**
+ * 手写自己的键行高度（dp）：半屏的功能行，全屏的标点行与功能行。
+ *
+ * 比顶栏高：键帽本身还要内缩一圈（见 `KeyView` 的键帽内缩），48dp 的行扣完只剩 42dp，
+ * 一排又宽又矮的按钮看着很扁。
+ */
+const val HANDWRITING_KEY_ROW_HEIGHT_DP = 56
+
+/** 全屏手写底部三条的总高度（dp）：顶栏占位 + 标点行 + 功能行。 */
+const val HANDWRITING_FULL_SCREEN_STACK_DP =
+    HANDWRITING_ROW_HEIGHT_DP + HANDWRITING_KEY_ROW_HEIGHT_DP * 2
 
 /**
  * 手写面板：半屏时「左边书写区、右边竖排标点栏、底部一条功能行」，
@@ -209,10 +216,12 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
             def = functionIconKey(R.drawable.ic_keyboard_language, KeyboardAction.RotateSchema),
             description = "中英切换",
         ),
-        // 空格 / 回车 / 标点都属于「下一个动作」：先收尾当前组合（保留这个字），再执行动作
+        // 空格 / 回车 / 标点都属于「下一个动作」：先收尾当前组合（保留这个字），再执行动作。
+        // 空格是功能行里唯一加宽的键：打得最多、最怕按偏，其余键一律等宽。
         FunctionKey(
             def = functionIconKey(R.drawable.ic_keyboard_space, KeyboardAction.SpaceAction),
             description = "空格",
+            weight = SPACE_KEY_WEIGHT,
         ),
         // 半/全放在空格与 123 之间：左边是「输入」类键（符号/中英/空格），
         // 右边是「换键盘」类键（123/回车），范围切换贴着空格这一侧最顺手
@@ -365,7 +374,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     fun setFullScreenBottomSpace(px: Int) {
         if (fullScreenBottomSpacePx == px) return
         fullScreenBottomSpacePx = px
-        fullScreenStack?.setPadding(0, 0, 0, px)
+        // 左右那份键盘边距要一起给，不能只覆盖底部 —— setPadding 是整份替换
+        fullScreenStack?.setPadding(horizontalPaddingPx, 0, horizontalPaddingPx, px)
     }
 
     fun setFullScreenLayout(enabled: Boolean) {
@@ -402,6 +412,19 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         fullScreenStack?.setBackgroundColor(colors.background)
         // 墨迹用 keyText：它在任何主题里都是对比度最高的内容色；提示语退一档用 altText
         ink.setColors(colors.keyText, colors.altText)
+        // 半屏时书写区只是面板里的一块，用键帽那套底色/描边圈出来才看得出字该落在哪儿；
+        // 全屏时它铺满整窗、本身是遮罩，再套一圈边框反而怪。
+        ink.setWritingSurface(
+            enabled = !fullScreenLayout,
+            fill = colors.keyBackground,
+            stroke = colors.keyBorderStroke,
+            radius = dp(colors.cornerRadius),
+            strokeWidth = if (KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)) {
+                dp(colors.keyBorderWidth)
+            } else {
+                0f
+            },
+        )
     }
 
     /**
@@ -514,7 +537,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private fun buildContent(): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         addView(buildMiddleRow(), lp(MATCH_PARENT, 0, weight = 1f))
-        addView(buildFunctionBar(), lp(MATCH_PARENT, dp(FUNCTION_BAR_HEIGHT_DP)))
+        addView(buildFunctionBar(), lp(MATCH_PARENT, dp(HANDWRITING_KEY_ROW_HEIGHT_DP)))
     }
 
     /**
@@ -531,11 +554,15 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         // 导航栏 + 键盘底部内边距靠内边距留出来，底色由 [applyColors] 刷成键盘底色
         // （见 [fullScreenBottomSpacePx]）。吃掉这一条上的触摸：留空的话手指会落到下面的书写层上，
         // 在导航栏区域画出一条看不见的笔迹。
-        setPadding(0, 0, 0, fullScreenBottomSpacePx)
+        //
+        // 左右还要留出键盘的「边距」偏好：半屏时面板本身已经被宿主按这份边距收窄了
+        // （见 KeyboardWindowView 的 contentLeft / contentW），整屏时面板铺满整窗、没有这层收窄
+        // —— 不补上，整屏的键会比半屏的宽一圈、两侧也更贴边。
+        setPadding(horizontalPaddingPx, 0, horizontalPaddingPx, fullScreenBottomSpacePx)
         isClickable = true
         addView(Space(context), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
-        addView(buildFullScreenPunctuationRow(), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
-        addView(buildFunctionBar(), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
+        addView(buildFullScreenPunctuationRow(), lp(MATCH_PARENT, dp(HANDWRITING_KEY_ROW_HEIGHT_DP)))
+        addView(buildFunctionBar(), lp(MATCH_PARENT, dp(HANDWRITING_KEY_ROW_HEIGHT_DP)))
     }.also { fullScreenStack = it }
 
     /**
@@ -543,6 +570,9 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      *
      * 半屏时符号竖排在右边、⌫ 也永远钉在同一个位置（见 [buildRail]）；全屏把符号横过来，
      * 但「⌫ 必须永远在同一个位置」这条不能变，所以它同样必须放在滚动容器之外。
+     *
+     * 标点键宽度写死（它在一条横向滚动带里，本来就与下面的功能行不同列），
+     * 但 ⌫ 与功能行的回车键**占同一份权重**，于是最右边那一列宽度、高度都对得上。
      */
     private fun buildFullScreenPunctuationRow(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -551,8 +581,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         for (key in buildPunctuationKeys()) {
             row.addView(
                 buildKey(punctuationKeyDef(key), key.label),
-                lp(dp(PUNCTUATION_KEY_WIDTH_DP), MATCH_PARENT)
-                    .apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
+                lp(dp(PUNCTUATION_KEY_WIDTH_DP), MATCH_PARENT),
             )
         }
 
@@ -567,20 +596,28 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
                 ),
             )
         }
-        addView(scroll, lp(0, MATCH_PARENT, weight = 1f))
-
-        addView(
-            buildBackspaceKey(),
-            lp(dp(FULL_SCREEN_BACKSPACE_WIDTH_DP), MATCH_PARENT)
-                .apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
-        )
+        addView(scroll, lp(0, MATCH_PARENT, weight = functionWeightSum - 1f))
+        addView(buildBackspaceKey(), lp(0, MATCH_PARENT, weight = 1f))
     }
 
-    /** 书写区吃满剩余宽度，标点栏固定 [RAIL_WIDTH_DP]。 */
+    /**
+     * 书写区吃满剩余宽度，右栏占「回车」那一格。
+     *
+     * 两块都走权重、都不加 LayoutParams 边距。键与键之间的间隔由**主题的键帽内缩**给
+     * （和键盘同一份）；这里一旦再补一层边距，这一行的可用宽度就变了，
+     * 右栏那一列会比回车键宽出几个 dp —— 两列宽度对不上就是这么来的。
+     *
+     * 书写区自己的四周空档因此也不能用边距（那会改变可用宽度），改用一层不带权重的
+     * 容器的 padding，既不参与分摊、又能和键帽留一样的空隙。
+     */
     private fun buildMiddleRow(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
-        addView(ink, lp(0, MATCH_PARENT, weight = 1f))
-        addView(buildRail(), lp(dp(RAIL_WIDTH_DP), MATCH_PARENT))
+        val inkBox = FrameLayout(context).apply {
+            setPadding(keyCapInsetH, keyCapInsetV, keyCapInsetH, keyCapInsetV)
+            addView(ink, LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+        addView(inkBox, lp(0, MATCH_PARENT, weight = functionWeightSum - 1f))
+        addView(buildRail(), lp(0, MATCH_PARENT, weight = 1f))
     }
 
     /**
@@ -595,10 +632,9 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private fun buildRail(): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
 
-        addView(
-            buildBackspaceKey(),
-            lp(MATCH_PARENT, dp(RAIL_KEY_HEIGHT_DP)).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
-        )
+        // ⌫ 与下面的符号栏同宽（都是这一列的整幅），且 ⌫ 那一格的高度与功能行一样 ——
+        // 于是它和回车键是**同样大小**的一块，两个方向都对得上。
+        addView(buildBackspaceKey(), lp(MATCH_PARENT, dp(HANDWRITING_KEY_ROW_HEIGHT_DP)))
 
         val rail = SidePanelKeyView(
             context,
@@ -609,13 +645,10 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
                 border = Border.Off,
             ),
         ).apply {
-            // 面板用 LayoutParams 摆位（栏宽 44dp 是定值），不要再叠一层键帽内缩
-            hMargin = 0
-            vMargin = 0
             updateItems(symbolItems())
             setOnItemActionListener { action -> onPanelAction(action) }
-            // 一屏放几个符号由栏高决定，一格 [RAIL_ITEM_HEIGHT_DP]（与旧的一格 44dp 键 + 2dp 边距
-            // 等高，符号疏密不变）；九键那边行数写死是因为它的栏高本来就是按行算出来的。
+            // 一屏放几个符号由栏高决定，一格 [RAIL_ITEM_HEIGHT_DP]（与键帽同宽同高的方格子）；
+            // 九键那边行数写死是因为它的栏高本来就是按行算出来的。
             addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
                 updateVisibleItemCount(
                     ((bottom - top) / dp(RAIL_ITEM_HEIGHT_DP)).coerceAtLeast(1),
@@ -719,7 +752,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
                 // 回车键的图标跟着输入框动作走：模板里是默认回车，建完按当前值补一次
                 returnKeyView?.updateImage(returnKeyIcon())
             }
-            addView(view, lp(0, MATCH_PARENT, weight = 1f).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) })
+            addView(view, lp(0, MATCH_PARENT, weight = key.weight))
         }
     }
 
@@ -738,10 +771,6 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
             contentDescription = description
             // 描边跟随键盘的同一条偏好，两边的键帽描边才不会各走各的
             borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
-            // 面板用 LayoutParams 摆放键（行高、边距都是定值），不要再叠一层键帽内缩，
-            // 否则键帽比原来小一圈；键盘那边按行分宽，才需要这层内缩。
-            hMargin = 0
-            vMargin = 0
             def.behaviors.forEach { behavior ->
                 when (behavior) {
                     is KeyDef.Behavior.Press ->
@@ -833,7 +862,32 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private val keyColors: KeyboardColors.ColorScheme
         get() = lastColors ?: KeyboardColors.resolve(context)
 
-    private val keyMargin: Int get() = dp(KEY_MARGIN_DP)
+    /**
+     * 键帽在视图里的内缩（px）。
+     *
+     * 面板不再自己加 LayoutParams 边距：键与键之间的间隔**就是**主题这份内缩（和键盘同一份），
+     * 书写区四周的空档也照它留，这样书写区、右栏、功能行才落在同一个网格上。
+     */
+    private val keyCapInsetH: Int get() = dp(keyColors.keyHMargin).toInt()
+    private val keyCapInsetV: Int get() = dp(keyColors.keyVMargin).toInt()
+
+    /**
+     * 键盘「边距」偏好里的左右内边距（px）。
+     *
+     * 半屏时宿主按这份值把手写面板收窄了（`contentLeft = hPad`），整屏时面板铺满整窗，
+     * 得由面板自己给底部三条留出来，两个形态的键宽才会一致。
+     */
+    private val horizontalPaddingPx: Int
+        get() = dp(KeyboardManager.Keyboard.Padding.getHorizontalDp(context))
+
+    /**
+     * 功能行所有键的权重和。
+     *
+     * 右栏与全屏标点行都按「拿走回车那一格、剩下的给别的」来分宽度，
+     * 所以这个和是从 [functionKeys] 算出来的 —— 改了键表，三处的宽度会一起跟着变。
+     */
+    private val functionWeightSum: Float
+        get() = functionKeys.sumOf { it.weight.toDouble() }.toFloat()
 
     // ------------------------------------------------------------------
     // 停手识别
@@ -905,6 +959,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         val description: String,
         /** 回车键的图标跟随输入框动作（见 [setReturnKeyIcon]），建键时要留个引用。 */
         val isReturn: Boolean = false,
+        /** 这一格在功能行里占的宽度权重。只有空格用非 1 的值（见 [SPACE_KEY_WEIGHT]）。 */
+        val weight: Float = 1f,
     )
 
     /** 一个标点键。[close] 为 null 表示单字符。 */
@@ -917,14 +973,11 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         /** 要几个候选。6 个大致是顶栏一行放得下、又不用翻页的数量。 */
         const val NBEST = 6
 
-        const val RAIL_WIDTH_DP = 44
-        const val RAIL_KEY_HEIGHT_DP = 44
-
         /**
-         * 符号栏里一格的高度（dp）：旧的「44dp 键 + 上下各 2dp 边距」。
+         * 符号栏里一格的高度（dp）。
          *
          * 换成 [SidePanelKeyView] 后一格的疏密由「栏高 ÷ 可见格数」决定，这个值就是拿它
-         * 反算可见格数的尺子 —— 符号看起来和以前一样密，但滚动与按压高亮归键盘那边管。
+         * 反算可见格数的尺子：一格约等于一个键帽高，符号不会泡在大片空白里。
          */
         const val RAIL_ITEM_HEIGHT_DP = 48
 
@@ -932,23 +985,12 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         const val RAIL_FALLBACK_ITEMS = 5
 
         /**
-         * 半屏形态下功能行的高度。
-         *
-         * 直接引用文件级的行高：半屏的功能行与全屏的顶栏/标点行/功能行必须一样高，
-         * 否则切范围时底部会跳一下。
-         */
-        const val FUNCTION_BAR_HEIGHT_DP = HANDWRITING_ROW_HEIGHT_DP
-
-        /**
          * 全屏标点行里每个标点键的宽度（dp）。
          *
-         * 6 个标点 + ⌫ 加内外边距合计约 356dp，360dp 宽的机器上一屏放得下、不用滑；
-         * 更窄的机器（320dp）才需要横向滚动 —— 这正是「标点可滚、⌫ 不滚」要兜的情况。
+         * 它是一条横向滚动带，本来就与下面的功能行不同列，所以宽度写死、键多了一眼看不全就滑；
+         * ⌫ 不写死 —— 它占功能行「回车」那一格的权重，两行最右边那一列才对得齐。
          */
-        const val PUNCTUATION_KEY_WIDTH_DP = 46
-
-        /** 全屏标点行里 ⌫ 的宽度（dp）。比标点键略宽，因为它是这一行唯一的图标键。 */
-        const val FULL_SCREEN_BACKSPACE_WIDTH_DP = 52
+        const val PUNCTUATION_KEY_WIDTH_DP = 52
 
         /**
          * 全屏遮罩的两种颜色，都是约 6% 不透明度。
@@ -963,9 +1005,18 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         /** 背景亮度低于它就算暗色主题（0..255）。 */
         const val DARK_LUMINANCE = 128f
 
-        const val KEY_MARGIN_DP = 2
         const val FUNCTION_TEXT_SIZE_DP = 16f
-        const val PUNCTUATION_TEXT_SIZE_DP = 15f
+
+        /**
+         * 空格键在功能行里占的宽度权重（其余键都是 1）。
+         *
+         * 1.6 ≈ 主流输入法空格相对普通键的宽度比；**不能再大** —— 功能行一共 6 格，
+         * 空格吃掉的每一分宽度都是从其余 5 个键身上扣的，扣到 44dp 以下「半/全」就写不下了。
+         */
+        const val SPACE_KEY_WEIGHT = 1.6f
+
+        /** 符号的字号。符号栏一格只有一个键帽那么大，字小了整栏看着空、像没画完。 */
+        const val PUNCTUATION_TEXT_SIZE_DP = 18f
 
         const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
     }

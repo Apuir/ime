@@ -296,7 +296,8 @@ class KeyboardWindowView(
             }
 
             override fun onSwitchKeyboard(name: String) {
-                hideHandwritingPanel()
+                // 收起面板与压栈都由 switchKeyboard 负责，且顺序不能反：
+                // 它要趁面板还在，才能把「上一个状态是手写」压进返回栈。
                 switchKeyboard(name)
             }
 
@@ -2055,8 +2056,14 @@ class KeyboardWindowView(
 
     // 面板入口（emoji / 符号）也属于用户主动切换，走 pushTo 以便「返回」原路回退
     fun switchKeyboard(name: String) {
+        // 这次切换是不是从手写里出来的：面板开着是明摆着的；菜单展开时面板会被宿主收起，
+        // 但槽里选的仍是手写（用户的上下文还在手写上），也要算进去。
+        // 必须在收起面板**之前**问 —— 压栈压的只是面板底下那套键位，
+        // 少了这一笔，「返回」就只切回键位、面板回不来（中/英要按两下才回得到手写）。
+        val fromHandwriting =
+            isHandwritingPanelVisible || keyboardStateManager.isHandwritingSelected()
         hideHandwritingPanel()
-        keyboardStateManager.pushTo(name)
+        keyboardStateManager.pushTo(name, fromHandwriting)
     }
     fun onDepolyFinished() = keyboardStateManager.refreshSchemas()
 }

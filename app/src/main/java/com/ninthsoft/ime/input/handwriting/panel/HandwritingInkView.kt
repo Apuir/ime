@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.MotionEvent
@@ -22,7 +23,9 @@ import splitties.dimensions.dp
  *   归一化由引擎内部完成（ochwpro 自带逐轴包围盒归一化），外面再缩一次是双重归一化，
  *   而且会让 [writingAreaWidth] / [writingAreaHeight] 与坐标不再同单位 —— 那两个值
  *   是要原样交给引擎当「书写区实际尺寸」用的。
- * - **不画边框、不画底色**。面板本身就是同一块底色，多画一层会在换主题时露馅。
+ * - **不画边框、不画底色**（除了半屏那张「纸」，见 [setWritingSurface]）。面板本身就是同一块
+ *   底色，多画一层会在换主题时露馅；只有半屏时书写区只是面板里的一块、不圈出来就不知道
+ *   字该落在哪儿，才由面板明确要求画一层。
  */
 class HandwritingInkView @JvmOverloads constructor(
     context: Context,
@@ -91,6 +94,19 @@ class HandwritingInkView @JvmOverloads constructor(
     /** 复用同一个 Path：每次重画都会 reset，没有跨帧状态需要保留。 */
     private val path = Path()
 
+    /**
+     * 书写区那张「纸」：圆角浅底 + 细描边。
+     *
+     * 只在半屏形态开。全屏时书写层铺满整窗、本身就是一层遮罩，再套一圈边框反而怪；
+     * 半屏时它只是面板里的一块，没有这层底色就只是一片和键盘底一样的空白。
+     */
+    private val surfacePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val surfaceStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val surfaceRect = RectF()
+    private val surfacePath = Path()
+    private var surfaceEnabled = false
+    private var surfaceRadius = 0f
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -134,15 +150,55 @@ class HandwritingInkView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        // 开着「纸」时墨迹也要裁在它里面：不裁的话写到圆角上的笔画会翘出卡片外面
+        val surfaceLayer = if (surfaceEnabled) drawWritingSurface(canvas) else -1
         if (strokes.isEmpty() && pendingCount == 0) {
             drawHint(canvas)
-            return
+        } else {
+            for (stroke in strokes) {
+                drawPolyline(canvas, stroke.points, stroke.pointCount)
+            }
+            // 正在写的那一笔也要画，否则手指抬起前画布一直是空的（看起来像没写上）
+            drawPolyline(canvas, pendingPoints, pendingCount)
         }
-        for (stroke in strokes) {
-            drawPolyline(canvas, stroke.points, stroke.pointCount)
+        if (surfaceLayer >= 0) canvas.restoreToCount(surfaceLayer)
+    }
+
+    /** 画「纸」并进入它的裁剪区，返回要给 [Canvas.restoreToCount] 的层号。 */
+    private fun drawWritingSurface(canvas: Canvas): Int {
+        val inset = surfaceStrokePaint.strokeWidth / 2f
+        surfaceRect.set(inset, inset, width - inset, height - inset)
+        canvas.drawRoundRect(surfaceRect, surfaceRadius, surfaceRadius, surfacePaint)
+        if (surfaceStrokePaint.strokeWidth > 0f) {
+            canvas.drawRoundRect(surfaceRect, surfaceRadius, surfaceRadius, surfaceStrokePaint)
         }
-        // 正在写的那一笔也要画，否则手指抬起前画布一直是空的（看起来像没写上）
-        drawPolyline(canvas, pendingPoints, pendingCount)
+        surfacePath.rewind()
+        surfacePath.addRoundRect(surfaceRect, surfaceRadius, surfaceRadius, Path.Direction.CW)
+        val layer = canvas.save()
+        canvas.clipPath(surfacePath)
+        return layer
+    }
+
+    /**
+     * 书写区那张「纸」的开关与配色。面板按形态调：半屏开、全屏关。
+     *
+     * 底色与描边直接借主题里键帽那一套（`keyBackground` / `keyBorderStroke`），
+     * 所以它看起来就是「键盘上的一块区域」而不是另画的一种面板；
+     * [strokeWidth] 传 0（用户在设置里关了按键描边）就只留底色。
+     */
+    fun setWritingSurface(
+        enabled: Boolean,
+        fill: Int,
+        stroke: Int,
+        radius: Float,
+        strokeWidth: Float,
+    ) {
+        surfaceEnabled = enabled
+        surfaceRadius = if (enabled) radius else 0f
+        surfacePaint.color = fill
+        surfaceStrokePaint.color = stroke
+        surfaceStrokePaint.strokeWidth = strokeWidth
+        invalidate()
     }
 
     /** 墨迹色与提示色。都由面板在 [HandwritingPanelView.refreshColors] 里按主题给。 */

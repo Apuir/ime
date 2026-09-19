@@ -59,11 +59,21 @@ object KeyboardStateManager {
     private var keyboardFactory: ((String) -> IKeyboard)? = null
     private var currentKeyboardName: String? = null
     private var keyboardAttached = false
+
+    /**
+     * 返回栈里的一条记录。
+     *
+     * [keyboardName] 是要切回去的键位；[handwriting] 表示那条记录对应的状态是**手写面板**。
+     * 手写不是键盘实例，压栈的只能是它底下那套键位，所以「上一个是不是手写」必须另记一笔：
+     * 光凭键位名，回到手写与回到那套键位是分不出来的。
+     */
+    private data class BackEntry(val keyboardName: String, val handwriting: Boolean)
+
     /**
      * 「返回上一个键盘」导航栈：记录用户按切换键 / 面板入口之前所在的键盘。
      * 与 [currentKeyboardName] 分离，程序化切换（换槽、换输入框）不会入栈。
      */
-    private val backStack = ArrayDeque<String>()
+    private val backStack = ArrayDeque<BackEntry>()
     /** 引擎里全部可用方案（含英文方案）；中文槽的平铺列表由它推出。 */
     private var schemas: List<EngineMessage.Schema> = emptyList()
     /** 中文槽的平铺切换列表（含不可用占位项，设置页要用）。 */
@@ -390,12 +400,19 @@ object KeyboardStateManager {
      * 用户主动切到别的键盘（键盘上的切换键 / 候选面板入口）。
      * 与 [switchTo] 的区别：会把当前键盘压入 [backStack]，之后 [resume] 能原路返回，
      * 因此“主键盘 → 数字 → 符号 → 返回”会回到数字键盘而不是直接回主键盘。
+     *
+     * [fromHandwriting] 为真表示这次切换是从**手写面板**里发起的。手写没有键盘实例，
+     * [currentKeyboardName] 只是面板底下那套键位，压它进栈只会让 [resume] 把键位切回来、
+     * 面板却不回来 —— 槽里还选着手写、显示的却是 26 键，中/英要按两下才回得到手写。
      */
-    fun pushTo(name: String) {
+    fun pushTo(name: String, fromHandwriting: Boolean = false) {
         val current = currentKeyboardName
         if (name == current) return
-        if (current != null && backStack.lastOrNull() != current) {
-            backStack.addLast(current)
+        if (current != null) {
+            // 只有**第一次**从手写切出去的那条记录带手写标记。之后的当前键位虽然还是同一个，
+            // 但用户已经站在符号 / 数字页上了，再标一次会让「返回」一路弹回面板、跳过上一页。
+            val entry = BackEntry(current, fromHandwriting && backStack.none { it.handwriting })
+            if (backStack.lastOrNull() != entry) backStack.addLast(entry)
         }
         switchTo(name)
     }
@@ -466,11 +483,12 @@ object KeyboardStateManager {
     /** 返回上一个键盘（用户按「切换/返回」触发）；栈空时回到当前槽的键位。 */
     fun resume() {
         while (true) {
-            val previous = backStack.removeLastOrNull() ?: break
-            if (previous != currentKeyboardName) {
-                switchTo(previous)
-                return
-            }
+            val entry = backStack.removeLastOrNull() ?: break
+            if (entry.keyboardName == currentKeyboardName && !entry.handwriting) continue
+            switchTo(entry.keyboardName)
+            // 这条记录来自手写面板：把键位切回去还不够，面板得一起放回来
+            if (entry.handwriting) callback?.onHandwritingRequested()
+            return
         }
         applyActiveSlot()
     }

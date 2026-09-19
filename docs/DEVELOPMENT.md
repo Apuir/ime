@@ -90,7 +90,8 @@
 - 双引擎：本地 ochwpro ONNX（随包、离线、飞行模式可用；经 JNI `dlopen` 复用 APK 内已有的
   `libonnxruntime.so`，不额外打包 ONNX Runtime）+ Google ML Kit 数字墨水识别（主引擎，需 GMS，首次下载约 20 MB）
 - `AUTO`：优先 Google，不可用静默落本地；显式选 Google 时不自动降级
-- 面板：书写区 + 右侧标点栏（⌫ 固定）+ 功能行；候选显示在顶栏候选位（与九键共用渲染与命中）
+- 面板：书写区 + 右侧标点栏（⌫ 固定）+ 功能行，按键是键盘同款 `KeyDef` / `KeyView`；
+  候选显示在顶栏候选位（与九键共用渲染与命中）
 - 候选为**组合态**：写完即进输入框但未定型，点其它候选直接替换；写下一个字 / 切键盘 / 收键盘 /
   关输入法 / 空格回车标点 时正式保留
 - 抬笔停手自动识别并清空笔迹，停手时长可调（0.2–2.0 秒）
@@ -254,7 +255,7 @@
 | `ImeInputConnection.kt` | 内存 InputConnection（“添加常用语”桥接模式用） |
 | `KeyActionListener.kt` / `PanelActionListener.kt` | 按键 → 引擎；面板/工具栏 → 各功能 |
 | `keyboard/impl/` | `BaseKeyboard`、`QwertyKeyboard`、`NumberKeyboard`、`T9Keyboard`、`T15Keyboard`、`SymbolKeyboard`、`EmojiKeyboard` |
-| `keyboard/key/` | `KeyDef`（声明式按键模型）、`KeyPreset`（按键工厂）、`KeyView` 系列、`KeyboardAction`、`CustomGestureView`、`GridKeyboardView`、`KeyDrawable`、`KeyPreviewPopup`、`SidePanelView` |
+| `keyboard/key/` | `KeyDef`（声明式按键模型）、`KeyPreset`（按键工厂）、`KeyViewFactory`（`Appearance` → 键视图，键盘与手写面板共用）、`KeyView` 系列、`KeyboardAction`、`CustomGestureView`、`GridKeyboardView`、`KeyDrawable`、`KeyPreviewPopup`、`SidePanelView` |
 | `keyboard/window/` | `KeyboardWindow`（门面）、`KeyboardWindowView`（根 FrameLayout）、`KeyboardStateManager`（进程级状态/键盘注册表）、`InputBoxLayerView`、`MessageHandler` |
 | `panel/` | `KawaiiPanel` + 渲染器 + `component/`（候选网格、剪贴板、菜单、文本编辑、确认浮层）+ `toolbar/` + `state/` |
 | `pinner/` | 预编辑悬浮条 |
@@ -525,6 +526,7 @@ adb install -r app/build/outputs/apk/release/ime-2.3.1.apk
 | 符号 / Emoji 键盘 | `input/keyboard/impl/SymbolKeyboard.kt` / `EmojiKeyboard.kt` + `data/Symbol.kt`（左侧栏与其它键盘最左列对齐，占屏宽 0.17——展开的候选词面板 `CandidateGridView` 侧栏同为 0.17；右侧网格仍是 5 等分） |
 | 布局数据模型 | `input/keyboard/key/KeyDef.kt`（`KeyDef(appearance, behaviors, popups, bubble)`，行是 `List<KeyDef>`，宽度用 `percentWidth` 分数，每行和 ≈ 1；`bubble` 是该键长按 / 上滑时的气泡内容） |
 | 按键工厂 | `input/keyboard/key/KeyPreset.kt`（`alphabetKey`/`spaceKey`/`returnKey`/`capsLockKey`/`schemaSwitchKey`/`sidePannelKey`…） |
+| 外观 → 键视图 | `input/keyboard/key/KeyViewFactory.kt#create`（键盘与手写面板共用；面板建键时 `viewId` 一律不给，否则会和键盘的 `button_*` 撞车） |
 | 手势阈值 | `input/keyboard/key/CustomGestureView.kt`（长按 250ms、重复 100ms、滑动阈值；按键气泡也在这套状态机里） |
 | 按键外观 / 圆角 / 描边 | `input/keyboard/key/KeyView.kt`、`KeyDrawable.kt`、`data/keyboard/theme/KeyboardColors.kt` |
 | 新增键盘类型 | 实现 `input/keyboard/impl/IKeyboard.kt`（侧栏再加 `ISidePanelKeyboard`），并在 `KeyboardWindowView.createKeyboard()` 注册 |
@@ -1338,13 +1340,29 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
   输入框里换了字、顶栏候选却原样留着，界面上看不出这一按生效（用户会以为「只能选第一个」）。
   收尾时序必须留在面板（宿主不自己写 `InputConnection`）：收完字之后 ⌫ 是退格还是撤销本轮，
   由面板这一处判定。
-- **⌫ 长按连删**：时序直接引用键盘键的 `CustomGestureView.longPressDelay / RepeatInterval`
-  （250ms 起、每 100ms 一次）；长按已触发过就不再补一次点击（否则抬手会多删一个字），
-  切换半/全或收起面板时停掉。
+- **按键与键盘同款**：功能行 / ⌫ / 符号栏的键面用 `KeyDef` 描述，键视图由
+  `key/KeyViewFactory.kt` 建（`BaseKeyboard#createKeyView` 用的是同一个工厂），所以按下态、
+  点击音效、振动、主题取色与键盘是同一份实现；符号栏直接用 `SidePanelView`（九键那条）。
+  面板建键时 `viewId` 一律不给 —— 面板与键盘在**同一个窗口**里，撞上
+  `button_lang` / `button_return` / `button_space` 会让宿主的 `findViewById` 命中面板里的实例。
+- **排版**：顶栏 48dp、键行 56dp（`HANDWRITING_ROW_HEIGHT_DP` / `HANDWRITING_KEY_ROW_HEIGHT_DP`）。
+  面板**不自己加键距**：间隔就是主题那份键帽内缩（与键盘同一份），再叠一层 `LayoutParams` 边距
+  就成了两道间隔（曾经是 10dp）。右栏与全屏标点行的 ⌫ 占功能行「回车」那一格的**权重**，
+  两列宽高因此严格相等；空格按 1.6 倍权重加宽。半屏与全屏键宽一致，靠的是两边都留出键盘的
+  左右「边距」偏好（半屏由宿主收窄面板，全屏由面板给底部三条加内边距）。书写区在半屏是一张
+  圆角浅底 + 细描边的「纸」（颜色借 `keyBackground` / `keyBorderStroke`），全屏是铺满整窗的
+  遮罩、不画边框。
+- **⌫ 长按连删**：`repeatEnabled = true` + `onRepeatListener`，时序（250ms 起、每 100ms 一次）
+  与「长按已触发就不再补一次点击」都由 `CustomGestureView` 管；它在键视图被收起或丢弃时
+  自己收掉重复触发（`onDetachedFromWindow` / `onVisibilityChanged`），面板不用再记一份状态。
+- **从手写切出去再「返回」**：手写没有键盘实例，返回栈里压的只是它底下那套键位，所以栈记录
+  额外带一笔「这条是手写状态」（`KeyboardStateManager.BackEntry`），`resume()` 命中时把面板
+  一起放回来 —— 否则槽里还选着手写、显示的却是 26 键，中/英要按两下。
 - **符号栏与九键共用**：见 9.3.4；面板在 `rebuildContent()` 读一次偏好，宿主在
   `keyboard.side_panel_symbols.t9` 变化时转发 `refreshPunctuationSymbols()`。
 - **回车键图标与键盘共用**：映射在 `key/ReturnKeyIcon.kt`，`KeyboardStateManager` 在图标变化时
-  通过 `onReturnKeyIconChanged` 下发；进面板时补一次当前值（`currentReturnKeyIcon()`）。
+  通过 `onReturnKeyIconChanged` 下发；进面板时补一次当前值（`currentReturnKeyIcon()`），
+  面板用 `ImageKeyView.updateImage()` 换图。
 - **中/英键切的是「槽」不是键盘**：走 `KeyboardStateManager.selectSlot(English)`；
   工具栏的手写入口同样走槽（`selectHandwriting()`）—— 绕开槽会让「显示的键盘」与「槽里的选择」
   分叉，回手写要按两下。进手写时 `ensureChineseBackdrop()` 会把底下那套键盘的方案换成中文方案，
