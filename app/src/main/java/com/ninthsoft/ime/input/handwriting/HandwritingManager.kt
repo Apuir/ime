@@ -28,7 +28,7 @@ object HandwritingManager {
      * 默认开。关掉后由用户点「识别」按钮触发 —— 给「一笔一笔慢慢写、想确认笔顺再识别」
      * 的用法留出口，也让探针式的单笔测试不被 debounce 干扰。
      */
-    private const val KEY_RECOGNIZE_ON_LIFT = "handwriting.recognize_on_lift"
+    const val KEY_RECOGNIZE_ON_LIFT = "handwriting.recognize_on_lift"
 
     /**
      * 抬笔后停手多久才识别（毫秒）。

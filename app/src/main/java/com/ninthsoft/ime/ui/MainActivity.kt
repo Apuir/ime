@@ -77,6 +77,11 @@ class MainActivity : ComponentActivity() {
                             Intent(this@MainActivity, CommitSettingsActivity::class.java)
                         )
                     },
+                    onOpenSettingsShare = {
+                        startActivity(
+                            Intent(this@MainActivity, SettingsShareActivity::class.java)
+                        )
+                    },
                     onOpenKeyboardThemeSettings = {
                         startActivity(
                             Intent(this@MainActivity, KeyboardThemeSettingsActivity::class.java)

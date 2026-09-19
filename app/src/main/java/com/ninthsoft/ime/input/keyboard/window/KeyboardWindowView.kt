@@ -609,11 +609,14 @@ class KeyboardWindowView(
             // （refreshColors 只重建视图、不会重新执行 buildLayout）。
             // 上滑触发距离同理：它是在 BaseKeyboard 构造期读进内存、再下发到每个 KeyView 的，
             // 不重建键盘就还是旧值 —— 表现成「滑块拖了没反应」。
+            // 侧栏符号同样是 T9 / 数字键构造期读进去的，换设备导入设置后要立刻可见也得走重建。
             KeyboardKeyMapping.KEY_QWERTY,
             KeyboardKeyMapping.KEY_T9,
             KeyboardKeyMapping.KEY_BUBBLE_ENABLED,
             KeyboardManager.Keyboard.SwipeUp.KEY,
             KeyboardManager.Keyboard.SwipeUp.KEY_DIRECTION_TAN,
+            KeyboardManager.Keyboard.SidePanelSymbols.KEY_T9,
+            KeyboardManager.Keyboard.SidePanelSymbols.KEY_NUMBER,
             -> post { keyboardStateManager.rebuild() }
 
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {

@@ -60,6 +60,7 @@
 **键盘定制**
 
 - 主题：内置 3 套（暗夜 / 素白 / 落日）+ 不限数量自定义，应用内 GUI 调色并支持二维码分享
+- 设置分享：全部设置项与自定义主题导出为一个 JSON 文件，换设备导入即还原（[格式说明](docs/SETTINGS_BACKUP.md)）
 - 工具栏图标自定义、侧栏快捷符号自定义、26 键符号与九键字母映射自定义
 - 按键气泡（长按 / 上滑弹出：主体悬在按键上方、**与按键同宽同高的指针压住键帽**，连成一体）、长按 vs 上滑手势二选一
 - 横屏悬浮键盘、键盘内直接拖拽调大小、按键振动（系统触感 / 10 级自定义强度）
@@ -196,6 +197,7 @@ ls -lh app/src/main/assets/resource.zip
 |------|------|
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **开发与定制手册**：架构总览、代码目录地图、关键运行流程、构建细节、定制指南、已知坑、SharedPreferences / Room 附录 |
 | [`docs/THEME_FORMAT.md`](docs/THEME_FORMAT.md) | 键盘主题 `themes.json` 与二维码分享格式的字段说明 |
+| [`docs/SETTINGS_BACKUP.md`](docs/SETTINGS_BACKUP.md) | 「设置分享」导出的设置备份 JSON 的字段、包含范围与导入规则 |
 | [`scripts/README.md`](scripts/README.md) | 构建脚本：方案数据重建、本地引擎探针 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史、版本号规则与发布流程 |
 

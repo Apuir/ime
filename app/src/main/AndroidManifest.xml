@@ -168,6 +168,13 @@
             android:theme="@style/Theme.Ime" />
 
         <activity
+            android:name=".ui.SettingsShareActivity"
+            android:exported="false"
+            android:label="@string/settings_share"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Ime" />
+
+        <activity
             android:name=".ui.VoiceSettingsActivity"
             android:exported="false"
             android:label="@string/voice_settings"

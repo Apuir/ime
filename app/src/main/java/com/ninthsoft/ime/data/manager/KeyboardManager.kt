@@ -21,14 +21,17 @@ object KeyboardManager {
         const val MODE_LIGHT = 1
         const val MODE_DARK = 2
 
+        /** 公开给设置备份白名单引用，避免键名在两处各写一份。 */
+        const val KEY_MODE = "$PREFIX.mode"
+
         fun getMode(context: Context): Int {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getInt("$PREFIX.mode", MODE_SYSTEM)
+                .getInt(KEY_MODE, MODE_SYSTEM)
         }
 
         fun setMode(context: Context, mode: Int) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                putInt("$PREFIX.mode", mode)
+                putInt(KEY_MODE, mode)
             }
         }
     }
@@ -243,11 +246,12 @@ object KeyboardManager {
             private const val VIBRATION_LEVEL_SCALE = 2
             private const val LEGACY_LEVEL_OFFSET = 5
 
-            private const val KEY_VIBRATION_LEVEL = "$PREFIX.vibration_level"
+            const val KEY_VIBRATION_LEVEL = "$PREFIX.vibration_level"
             private const val KEY_VIBRATION_LEGACY = "$PREFIX.vibration"
             private const val KEY_VIBRATION_SCALE = "$PREFIX.vibration_scale"
-            private const val KEY_VIBRATION_EFFECT = "$PREFIX.vibration_effect"
-            private const val KEY_VIBRATION_IGNORE_SYSTEM = "$PREFIX.vibration_ignore_system"
+            const val KEY_VIBRATION_EFFECT = "$PREFIX.vibration_effect"
+            const val KEY_VIBRATION_IGNORE_SYSTEM = "$PREFIX.vibration_ignore_system"
+            const val KEY_SOUND = "$PREFIX.sound"
 
             /** 当前振动强度等级（0 表示关闭）。 */
             fun getVibrationLevel(context: Context): Int {
@@ -349,12 +353,12 @@ object KeyboardManager {
 
             fun getSoundEnabled(context: Context): Boolean {
                 return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean("$PREFIX.sound", true)
+                    .getBoolean(KEY_SOUND, true)
             }
 
             fun setSoundEnabled(context: Context, enabled: Boolean) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                    putBoolean("$PREFIX.sound", enabled)
+                    putBoolean(KEY_SOUND, enabled)
                 }
             }
         }
@@ -546,8 +550,8 @@ object KeyboardManager {
          */
         object SidePanelSymbols {
             private const val PREFIX = "keyboard.side_panel_symbols"
-            private const val KEY_T9 = "$PREFIX.t9"
-            private const val KEY_NUMBER = "$PREFIX.number"
+            const val KEY_T9 = "$PREFIX.t9"
+            const val KEY_NUMBER = "$PREFIX.number"
 
             /** 用不可见控制字符分隔，避免与符号本身（如逗号）冲突。 */
             private const val SEPARATOR = "\u001F"

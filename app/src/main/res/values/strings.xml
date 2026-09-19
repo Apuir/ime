@@ -12,6 +12,22 @@
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
 
+    <!-- Settings backup -->
+    <string name="settings_share">设置分享</string>
+    <string name="settings_share_desc">导出、导入全部设置项</string>
+    <string name="settings_share_group">配置备份</string>
+    <string name="settings_share_export">导出设置</string>
+    <string name="settings_share_export_value">保存为 JSON 文件</string>
+    <string name="settings_share_export_info">全部设置项与自定义主题写入一个文件，可在另一台设备导入。</string>
+    <string name="settings_share_import">导入设置</string>
+    <string name="settings_share_import_value">选择文件</string>
+    <string name="settings_share_import_info">只覆盖文件中包含的设置项，其它数据不受影响。</string>
+    <string name="settings_share_import_confirm">导入后当前设置会被文件里的值覆盖，确定继续？</string>
+    <string name="settings_share_exported">已导出 %1$d 项设置、%2$d 个主题</string>
+    <string name="settings_share_imported">已导入 %1$d 项设置、%2$d 个主题</string>
+    <string name="settings_share_export_failed">导出失败</string>
+    <string name="settings_share_invalid_file">不是有效的设置备份文件</string>
+
     <string name="key_feedback">按键设置</string>
     <string name="key_sound">启用按键音</string>
     <string name="key_vibration">点击时振动</string>

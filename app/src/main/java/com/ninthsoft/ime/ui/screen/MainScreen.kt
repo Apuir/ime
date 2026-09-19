@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,6 +56,7 @@ fun MainScreen(
     onOpenSchemaSettings: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenCommitSettings: () -> Unit,
+    onOpenSettingsShare: () -> Unit,
     onOpenKeyboardThemeSettings: () -> Unit,
     onOpenClipboard: () -> Unit,
     onOpenModelSettings: () -> Unit,
@@ -114,6 +116,14 @@ fun MainScreen(
                 subtitle = themes[currentThemeMode],
                 onClick = { showThemeDialog = true },
                 icon = Icons.Filled.Brush,
+                showSpacer = true,
+            )
+
+            ClickableSettingItem(
+                title = stringResource(R.string.settings_share),
+                subtitle = stringResource(R.string.settings_share_desc),
+                onClick = onOpenSettingsShare,
+                icon = Icons.Filled.Share,
                 showSpacer = true,
             )
 

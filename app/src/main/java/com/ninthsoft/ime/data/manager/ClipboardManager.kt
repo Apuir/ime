@@ -22,10 +22,10 @@ object ClipboardManager {
     var onNewEntry: ((Entry) -> Unit)? = null
     var onContentChanged: (() -> Unit)? = null
 
-    private const val PREFS_NAME = "clipboard_settings"
-    private const val KEY_MAX_ENTRIES = "max_entries"
-    private const val KEY_RETENTION_DAYS = "retention_days"
-    private const val KEY_POLL_INTERVAL_SECONDS = "poll_interval_seconds"
+    const val PREFS_NAME = "clipboard_settings"
+    const val KEY_MAX_ENTRIES = "max_entries"
+    const val KEY_RETENTION_DAYS = "retention_days"
+    const val KEY_POLL_INTERVAL_SECONDS = "poll_interval_seconds"
 
     private const val DEFAULT_MAX_ENTRIES = 100
     private const val DEFAULT_RETENTION_DAYS = 30

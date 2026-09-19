@@ -1197,7 +1197,7 @@ zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
 | `keyboard.key_border_stroke` | Bool | true | 绘制键边框 |
 | `keyboard.expand_borders` | Bool | false（**反向**） | 展开键边框 |
 | `keyboard.gesture_input` | Int | 0 | 符号/数字输入手势：0=长按，1=上滑（互斥） |
-| `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
+| `keyboard.toolbar_tools` | String | `undo,redo,cursor,clipboard,palette,handwriting` | 工具栏中间工具的有序 key 列表（逗号分隔，空串=全部移除） |
 | `keyboard.side_panel_symbols.t9` | String | `，。！？：~...` | 九键左侧符号栏的有序符号列表（`\u001F` 分隔；显示/上屏时仍跟随全角-半角标点模式） |
 | `keyboard.side_panel_symbols.number` | String | `+-*/=~?!` | 数字键左侧符号栏的有序符号列表（`\u001F` 分隔，原样使用） |
 | `keyboard.key_mapping.qwerty` | String | 未设置=全默认 | 26 键字母键的次级符号 / 数字；只存用户改过的键，格式 `键\u001F值\u001E…` |
@@ -1210,6 +1210,20 @@ zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
 | `keyboard.floating.width` | Int | 未设置=自适应 | 悬浮卡片宽度（% 屏宽）；未手动设置时取「屏短边/长边」，即按键宽度与竖屏一致（20:9 手机约 45%），拖过滑杆后才写入 |
 | `keyboard.floating.pos_x` | Float | 0.5 | 悬浮卡片水平位置比例（0=贴左，1=贴右；拖动后写入） |
 | `keyboard.floating.pos_y` | Float | 1.0 | 悬浮卡片垂直位置比例（0=贴顶，1=贴底；拖动后写入） |
+| `keyboard.swipe_up.ratio` | Float | 1.0 | 上滑触发距离（当前键高的倍数），见 9.3.6 |
+| `keyboard.swipe_up.direction_tan` | Float | 1.5 | 上滑方向判定系数（纵向 ≥ 横向 × 该值）；无 UI，仅调参用 |
+| `keyboard.slot.active` | String | 未设置=中文 | 当前键盘槽（`Chinese` / `English`），运行时状态 |
+| `keyboard.slot.chinese.keyboard` | String | 未设置=默认 | 中文槽当前输入方式（键盘名），如 `qwerty` / `t9` / `handwriting` |
+| `keyboard.slot.chinese.schema` | String | 未设置=默认 | 中文槽当前方案 id；手写没有方案，此时该键不存在 |
+| `handwriting.engine_mode` | Int | 0 | 手写引擎：0=自动，1=Google，2=本地（`HwEngineMode` 序号） |
+| `handwriting.recognize_on_lift` | Bool | true | 抬笔后是否自动识别 |
+| `handwriting.recognize_delay_ms` | Int | 700 | 抬笔后停手多久才识别（200–2000 ms） |
+| `handwriting.full_screen` | Bool | false | 是否整屏手写（true）/ 键盘区域内手写（false） |
+| `handwriting.google_usable` | Int | -1 | Google 引擎可用性探测缓存：-1 未探测 / 0 不可用 / 1 可用（设备相关，不参与备份） |
+
+**注**：`keyboard_settings` 里还有两个一次性迁移标记（`keyboard.feedback.vibration_scale`、
+`keyboard.toolbar_tools.handwriting_added`）与已被取代的 legacy 键
+`keyboard.feedback.vibration`，只用于存量设置迁移，不参与备份。
 
 **`candidate_settings`**（`CandidateManager`）
 
@@ -1238,6 +1252,11 @@ zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
 **`phrase_prefs`**（`PhraseManager`）：`seeded`=false（内置常用语是否已初始化）
 
 **`asset_extract_prefs`**：`extracted`=false（首次启动资源复制标记）
+
+「设置 → 设置分享」导出的键是这份清单里可迁移部分的子集（内部标记、设备探测缓存、
+运行时状态与 Room 数据都不导出），白名单在
+`data/settings/SettingsBackup.kt` 的 `SettingsBackupSpec.PREFS`，格式见
+[`SETTINGS_BACKUP.md`](./SETTINGS_BACKUP.md)。
 
 ### 12.2 Room 表结构
 
