@@ -213,6 +213,10 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      */
     private var lastColors: KeyboardColors.ColorScheme? = null
 
+    /** 回车键的图标参考；默认回车，输入框有搜索/发送等动作时由宿主下发替换。 */
+    private var returnKeyView: ImageView? = null
+    private var returnKeyIconRes = 0
+
     /** 底部功能行。写成数据表而不是六段重复代码：加键只需在这里添一行。 */
     private val functionKeys: List<FunctionKey> = listOf(
         // 键面用文字而不是图标：符号图标画出来是一堆「!?#」，在这个位置反而不如两个字清楚
@@ -230,7 +234,12 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         // 右边是「换键盘」类键（123/回车），范围切换贴着空格这一侧最顺手
         FunctionKey("切换手写范围", label = "半/全") { it.onToggleFullScreen() },
         FunctionKey("数字", label = "123") { it.onSwitchKeyboard(NumberKeyboard.NAME) },
-        FunctionKey("回车", iconRes = R.drawable.ic_keyboard_search, accent = true) { onReturnPressed() },
+        FunctionKey(
+            "回车",
+            iconRes = R.drawable.ic_keyboard_return,
+            accent = true,
+            isReturn = true,
+        ) { onReturnPressed() },
     )
 
     /**
@@ -308,6 +317,22 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         rebuildContent()
         requestLayout()
         invalidate()
+    }
+
+    /**
+     * 设置回车键图标。宿主在输入框动作变化（搜索 / 发送 / 换行…）时下发，
+     * 用的是与键盘同一份映射（`key/ReturnKeyIcon.kt`）；传 0 表示还不知道，用默认回车图标。
+     */
+    fun setReturnKeyIcon(iconRes: Int) {
+        if (returnKeyIconRes == iconRes) return
+        returnKeyIconRes = iconRes
+        applyReturnKeyIcon()
+    }
+
+    private fun applyReturnKeyIcon() {
+        val icon = returnKeyIconRes.takeIf { it != 0 } ?: R.drawable.ic_keyboard_return
+        // 只换图：内容色（colorFilter）挂在 ImageView 上，换资源不会丢
+        returnKeyView?.setImageResource(icon)
     }
 
     /** 面板隐藏。已经发出去的识别也一并作废，免得结果回来时往一个收起来的界面里推候选。 */
@@ -422,6 +447,21 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     }
 
     /**
+     * 顶栏（或展开网格）里的手写候选被点：把组合文本换成它，然后**立刻收尾这一轮**。
+     *
+     * 收尾是为了给出反馈：候选栏随即收回工具条，跟写完一个字落定时一样。此前只是把组合文本
+     * 换掉、候选栏原样留着，输入框里的确换了字，但界面上看不出这一按生效了 ——
+     * 用户会以为「点其他候选没反应，只能用第一个」。
+     *
+     * 换字与收尾的顺序不能反：收尾会清掉本轮候选状态，之后再换就只能改到下一轮去了。
+     */
+    fun selectCandidate(text: String) {
+        if (pendingCandidates.isEmpty()) return
+        listener?.onComposing(text)
+        finalizeRound()
+    }
+
+    /**
      * 收尾本轮：把组合文本定为正式文本（保留在输入框里），并收起顶栏候选。
      *
      * 这是「开始写下一个字 / 空格 / 回车 / 标点」共用的那一句 —— 它们在语义上都是
@@ -458,6 +498,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         // 底部三条的容器同样会被丢掉：留着旧引用会让 [applyColors] 给一个脱离视图树的
         // 视图上色，看起来「换了主题底部还是旧底色」
         fullScreenStack = null
+        returnKeyView = null
         // 键都被丢掉了，长按连删也必须停：否则换形态后手指还没抬，退格会继续跑
         stopBackspaceRepeat()
         // 先把书写区从旧父容器上摘下来；它可能挂在面板自己（全屏形态）或半屏的
@@ -669,6 +710,10 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         orientation = LinearLayout.HORIZONTAL
         for (key in functionKeys) {
             val button = if (key.iconRes != 0) buildIconKey(key) else buildTextKey(key)
+            if (key.isReturn) {
+                returnKeyView = button as? ImageView
+                applyReturnKeyIcon()
+            }
             button.setOnClickListener {
                 val target = listener ?: return@setOnClickListener
                 key.action(target)
@@ -816,6 +861,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         val label: String = "",
         val iconRes: Int = 0,
         val accent: Boolean = false,
+        /** 回车键的图标跟随输入框动作（见 [setReturnKeyIcon]），建键时要留个引用。 */
+        val isReturn: Boolean = false,
         val action: (Listener) -> Unit,
     )
 

@@ -16,14 +16,6 @@ fun SlotInputMethod.labelRes(): Int = when (this) {
 
 fun SlotInputMethod.label(context: Context): String = context.getString(labelRes())
 
-/** 不可用原因文案：要如实说清缺的是键盘还是方案。 */
-@StringRes
-fun SlotUnavailableReason.labelRes(): Int = when (this) {
-    SlotUnavailableReason.MissingKeyboard -> R.string.slot_missing_keyboard
-    SlotUnavailableReason.MissingSchema -> R.string.slot_missing_schema
-    SlotUnavailableReason.MissingKeyboardAndSchema -> R.string.slot_missing_both
-}
-
 /**
  * 用当前可用方案算出中文槽的平铺列表。
  *

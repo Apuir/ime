@@ -316,6 +316,11 @@ class KeyboardWindowView(
         }
     }
 
+    /** 回车键图标变化：转发给手写面板的回车键（两边的映射是同一份）。 */
+    fun onReturnKeyIconChanged(iconRes: Int) {
+        handwritingPanel.setReturnKeyIcon(iconRes)
+    }
+
     val isHandwritingPanelVisible: Boolean
         get() = handwritingPanel.visibility == View.VISIBLE
 
@@ -340,19 +345,20 @@ class KeyboardWindowView(
         // 每次进面板都按偏好恢复上次的范围选择：偏好在隐藏期间可能被转屏等路径退出过形态，
         // 但「用户选的是全屏」这件事一直记在偏好里。
         applyHandwritingFullScreen(HandwritingManager.fullScreen(context))
+        // 回车键图标：变化时由回调下发，进面板时也要按当前输入框补一次
+        handwritingPanel.setReturnKeyIcon(keyboardStateManager.currentReturnKeyIcon())
         handwritingPanel.onShown()
         requestLayout()
     }
 
     /**
-     * 顶栏手写候选被点击：把选中的候选**换成组合文本**（第 2..N 个候选就是换字）。
+     * 顶栏手写候选被点击：把选中的候选换成组合文本，并收尾这一轮（候选栏随即收回工具条）。
      *
-     * 不需要退格/重打那一套：组合区里的文本会被 `setComposingText` 直接替换，
-     * 这正是拼音里点候选的手感。候选条**不在这里收起** —— 用户可以接着换下一个，
-     * 直到落笔 / 切键盘 / 空格回车标点 / 收起面板才由面板统一收尾（见 [HandwritingPanelView]）。
+     * 收尾的时序在面板那边（见 [HandwritingPanelView.selectCandidate]）：面板才是「本轮组合态
+     * 还在不在手上」的持有者，宿主插一脚会把「选完字之后 ⌫ 该退格还是该撤销本轮」搞乱。
      */
     fun selectHandwritingCandidate(text: String) {
-        (context as? ImeInputMethodService)?.setHandwritingComposing(text)
+        handwritingPanel.selectCandidate(text)
     }
 
     fun hideHandwritingPanel() {
@@ -565,7 +571,6 @@ class KeyboardWindowView(
 
         val selected = keyboardStateManager.getSelectedChineseItem()
         return keyboardStateManager.getChineseSlotItems()
-            .filter { it.available }
             .map { item ->
                 SchemaPickerDialog.Entry(
                     title = item.displayName,

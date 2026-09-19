@@ -23,6 +23,7 @@ import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
 import com.ninthsoft.ime.input.keyboard.key.KeyPreviewPopup
 import com.ninthsoft.ime.input.keyboard.key.KeyboardPopup
+import com.ninthsoft.ime.input.keyboard.key.returnKeyIcon
 import com.ninthsoft.ime.input.keyboard.key.KeyView
 import com.ninthsoft.ime.input.keyboard.key.KeyboardRippleView
 import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
@@ -549,20 +550,8 @@ abstract class BaseKeyboard(
 
 
     override fun updateEditorInfo(info: EditorInfo, empty: Boolean, isComposing: Boolean) {
-        val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
-        val icon = if (empty || isComposing) {
-            R.drawable.ic_keyboard_return
-        } else {
-            when (action) {
-                EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_keyboard_search
-                EditorInfo.IME_ACTION_SEND -> R.drawable.ic_keyboard_send
-                EditorInfo.IME_ACTION_GO -> R.drawable.ic_keyboard_go
-                EditorInfo.IME_ACTION_PREVIOUS -> R.drawable.ic_keyboard_arrow_left
-                EditorInfo.IME_ACTION_NEXT -> R.drawable.ic_keyboard_arrow_right
-                EditorInfo.IME_ACTION_DONE -> R.drawable.ic_keyboard_done
-                else -> R.drawable.ic_keyboard_return
-            }
-        }
+        // 映射与手写面板共用（见 key/ReturnKeyIcon.kt）
+        val icon = returnKeyIcon(info, empty, isComposing)
         if (icon != returnKeyIcon) {
             returnKeyIcon = icon
             returnKeyView?.img?.imageResource = returnKeyIcon

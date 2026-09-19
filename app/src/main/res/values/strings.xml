@@ -287,9 +287,6 @@
     <string name="slot_method_qwerty">26键</string>
     <string name="slot_method_t15">15键</string>
     <string name="slot_method_handwriting">手写</string>
-    <string name="slot_missing_keyboard">当前版本不支持该键盘</string>
-    <string name="slot_missing_schema">缺少可用方案</string>
-    <string name="slot_missing_both">缺少键盘与方案</string>
     <string name="remove">移除</string>
     <string name="add">添加</string>
     <string name="drag_to_reorder">长按拖动排序</string>

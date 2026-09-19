@@ -41,7 +41,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -63,7 +62,6 @@ import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
 import com.ninthsoft.ime.input.keyboard.slot.SlotSwitchItem
 import com.ninthsoft.ime.input.keyboard.slot.buildChineseSlotItems
-import com.ninthsoft.ime.input.keyboard.slot.labelRes
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ActionRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ProgressButton
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
@@ -78,14 +76,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** 不可用项的统一透明度：能看清，但一眼知道点不了。 */
-private const val DISABLED_ALPHA = 0.45f
-
 /**
  * 输入方案设置页：键盘只有两个槽。
  *
- * - 中文槽：平铺列出全部输入方式（九键 / 26键 / 15键 / 手写）。同一个输入方式有多个方案时
- *   全部列出来（九键1 / 九键2）。用不了的项灰掉，并写明缺的是键盘还是方案。
+ * - 中文槽：平铺列出方案里真的有的输入方式（九键 / 26键 / 15键 / 手写）。同一个输入方式
+ *   有多个方案时全部列出来（九键1 / 九键2）；方案里没有的布局整项不出现。
  * - 英文槽：固定 `wanxiang_english` + Qwerty，只展示不可改 —— ascii 输入留在英文方案内部。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,7 +129,6 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
     var grammarButtonWidth by remember { mutableStateOf(0.dp) }
 
     fun selectChinese(item: SlotSwitchItem) {
-        if (!item.available) return
         KeyboardManager.Slot.setChineseSelection(context, item.keyboardName, item.schemaId)
         chineseKeyboard = item.keyboardName
         chineseSchemaId = item.schemaId
@@ -303,8 +297,8 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
 /**
  * 中文槽的一行。
  *
- * 不可用时整行变灰且不可点，并把「缺键盘 / 缺方案 / 两者都缺」直接写在副标题上 ——
- * 只说「不可用」用户没法判断是自己没装方案还是这个版本没这个键盘。
+ * 只列**方案里真的有的**输入方式（见 [KeyboardSlotPlan.plan]）：方案里没有的布局整项不出现，
+ * 不在这里灰掉占位 —— 摆一个点不了的「15键」只会让人以为是自己没装方案。
  */
 @Composable
 private fun ChineseSlotRow(
@@ -317,11 +311,8 @@ private fun ChineseSlotRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (item.available) Modifier.clickable(onClick = onClick) else Modifier
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .alpha(if (item.available) 1f else DISABLED_ALPHA),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -345,48 +336,39 @@ private fun ChineseSlotRow(
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val reason = item.unavailableReason
-                if (reason != null) {
-                    Text(
-                        text = stringResource(reason.labelRes()),
-                        fontSize = rowSubFontSize,
-                        color = MaterialTheme.colorScheme.error,
+                if (active && selected) {
+                    TagBadge(
+                        stringResource(R.string.slot_in_use),
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        MaterialTheme.colorScheme.onSecondaryContainer,
                     )
-                } else {
-                    if (active && selected) {
-                        TagBadge(
-                            stringResource(R.string.slot_in_use),
-                            MaterialTheme.colorScheme.secondaryContainer,
-                            MaterialTheme.colorScheme.onSecondaryContainer,
+                    Spacer(Modifier.width(4.dp))
+                }
+                val schema = item.schema
+                if (schema != null) {
+                    TagBadge(
+                        schemaLayoutTag(context, schema.layout),
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    val punctText =
+                        if (schema.punctuation == "full-width") stringResource(R.string.tag_punctuation_full)
+                        else stringResource(R.string.tag_punctuation_half)
+                    TagBadge(
+                        punctText,
+                        MaterialTheme.colorScheme.tertiaryContainer,
+                        MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    if (item.schemaName.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = item.schemaName,
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    val schema = item.schema
-                    if (schema != null) {
-                        TagBadge(
-                            schemaLayoutTag(context, schema.layout),
-                            MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        val punctText =
-                            if (schema.punctuation == "full-width") stringResource(R.string.tag_punctuation_full)
-                            else stringResource(R.string.tag_punctuation_half)
-                        TagBadge(
-                            punctText,
-                            MaterialTheme.colorScheme.tertiaryContainer,
-                            MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        if (item.schemaName.isNotBlank()) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = item.schemaName,
-                                fontSize = rowSubFontSize,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
                     }
                 }
             }

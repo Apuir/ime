@@ -5,9 +5,7 @@ import com.ninthsoft.ime.input.keyboard.slot.HANDWRITING_KEYBOARD_NAME
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
 import com.ninthsoft.ime.input.keyboard.slot.SlotInputMethod
 import com.ninthsoft.ime.input.keyboard.slot.SlotSwitchItem
-import com.ninthsoft.ime.input.keyboard.slot.SlotUnavailableReason
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,7 +15,7 @@ import org.junit.Test
  *
  * 这一层决定「中文槽里能选什么、选到的到底是什么键位」，错了不会崩，只会表现为
  * 「九键打不出候选」「15 键选了没反应」这类只能靠用户报障发现的问题，
- * 所以按可用性的四种组合逐一钉住。
+ * 所以「方案里有什么 → 列表里出现什么」这条按各种组合逐一钉住。
  */
 class KeyboardSlotPlanTest {
 
@@ -65,89 +63,84 @@ class KeyboardSlotPlanTest {
                 schema("qwerty_b", "Qwerty", "PinYin"),
             )
         )
-        // 顺序按 SlotInputMethod 声明顺序（九键 → 26键 → 15键 → 手写），组内按方案顺序编号
+        // 顺序按 SlotInputMethod 声明顺序（九键 → 26键 → 15键 → 手写），组内按方案顺序编号；
+        // 这里没有声明 T15 布局的方案，15 键整项不出现
         assertEquals(
-            listOf("九键1", "九键2", "26键1", "26键2", "15键1", "15键2", "手写"),
+            listOf("九键1", "九键2", "26键1", "26键2", "手写"),
             items.names(),
         )
-        assertEquals(listOf("t9_a", "t9_b"), items.filter { it.method == SlotInputMethod.T9 }.map { it.schemaId })
+        assertEquals(
+            listOf("t9_a", "t9_b"),
+            items.filter { it.method == SlotInputMethod.T9 }.map { it.schemaId },
+        )
     }
 
     @Test
     fun `同一输入方式只有一个方案时不加序号`() {
         val items = plan(listOf(schema("t9_a", "T9", "T9PinYin")))
-        assertEquals(listOf("九键", "26键", "15键", "手写"), items.names())
+        assertEquals(listOf("九键", "手写"), items.names())
     }
 
-    // ---------------- candidateKind 是唯一耦合点 ----------------
+    // ---------------- 布局 + 候选类型 一起匹配 ----------------
 
     @Test
-    fun `15 键借 PinYin 方案`() {
-        // 15 键发字母，与 26 键同用 PinYin；一个 PinYin 方案要让两个键位都可用。
+    fun `方案里没有 15 键布局时 15 键不出现`() {
+        // 26 键与 15 键都用 PinYin，只按候选类型匹配会让方案里没有 15 键布局的设备也冒出
+        // 一个「15键」选项 —— 用户看到的就是「方案里没有 15 键，却能切到 15 键」。
         val pinYin = schema("wanxiang", "Qwerty", "PinYin")
         val items = plan(listOf(pinYin))
 
-        val qwerty = items.single { it.method == SlotInputMethod.Qwerty }
-        val t15 = items.single { it.method == SlotInputMethod.T15 }
-        assertTrue("26 键应可用", qwerty.available)
-        assertTrue("15 键应借用 PinYin 方案", t15.available)
-        assertEquals("wanxiang", t15.schemaId)
-        assertEquals("T15", t15.keyboardName)
+        assertEquals(listOf("26键", "手写"), items.names())
+        assertTrue(items.none { it.method == SlotInputMethod.T15 })
     }
 
     @Test
-    fun `T9PinYin 方案不能让 26 键可用`() {
+    fun `方案声明了 15 键布局时 15 键才出现`() {
+        val t15 = schema("t15_a", "T15", "PinYin")
+        val items = plan(listOf(schema("wanxiang", "Qwerty", "PinYin"), t15))
+
+        val item = items.single { it.method == SlotInputMethod.T15 }
+        assertEquals("T15", item.keyboardName)
+        assertEquals("t15_a", item.schemaId)
+    }
+
+    @Test
+    fun `T9PinYin 方案不能让 26 键出现`() {
         // 九键发数字，26 键发字母，候选类型不通用。
         val items = plan(listOf(schema("t9_a", "T9", "T9PinYin")))
-        val qwerty = items.single { it.method == SlotInputMethod.Qwerty }
-        assertFalse(qwerty.available)
-        assertEquals(SlotUnavailableReason.MissingSchema, qwerty.unavailableReason)
+        assertTrue(items.none { it.method == SlotInputMethod.Qwerty })
     }
 
     // ---------------- 手写是唯一例外 ----------------
 
     @Test
     fun `手写不需要方案`() {
-        // 一个方案都没有时，手写依然可用。
-        val items = plan(emptyList())
+        // 有方案时手写照样在列表里，只是排在最后。
+        val items = plan(listOf(schema("qwerty_a", "Qwerty", "PinYin")))
         val handwriting = items.single { it.method == SlotInputMethod.Handwriting }
-        assertTrue(handwriting.available)
         assertNull(handwriting.schemaId)
         assertEquals(HANDWRITING_KEYBOARD_NAME, handwriting.keyboardName)
         assertEquals("手写", handwriting.displayName)
     }
 
     @Test
-    fun `两个都缺时不可用并给出合并原因`() {
-        // T15 方案没有、键盘也不在支持集合里 —— 设置页要写「缺键盘和方案」。
-        val items = plan(emptyList(), keyboards = allKeyboards - "T15")
-        val t15 = items.single { it.method == SlotInputMethod.T15 }
-        assertFalse(t15.available)
-        assertEquals(SlotUnavailableReason.MissingKeyboardAndSchema, t15.unavailableReason)
+    fun `方案一个都没读出来时列表为空`() {
+        // 引擎未就绪：返回空列表，调用方据此保持「先不落实键盘」。
+        // 若这里还留着「手写」一项，冷启动会把它当成回落目标，直接翻出手写面板。
+        assertTrue(plan(emptyList()).isEmpty())
     }
 
-    // ---------------- 缺键盘 / 缺方案 ----------------
+    // ---------------- 键盘支持集合 ----------------
 
     @Test
-    fun `键盘不支持时方案还在也算不可用`() {
+    fun `应用不支持某个键盘时这种输入方式不出现`() {
         val items = plan(
             schemas = listOf(schema("t9_a", "T9", "T9PinYin")),
             keyboards = allKeyboards - "T9",
         )
-        val t9 = items.single { it.method == SlotInputMethod.T9 }
-        assertFalse(t9.available)
-        assertEquals(SlotUnavailableReason.MissingKeyboard, t9.unavailableReason)
-        // 方案本身仍然挂在项上，UI 还能显示它匹配到了哪个方案
-        assertEquals("t9_a", t9.schemaId)
-    }
-
-    @Test
-    fun `键盘支持但没有匹配方案时给出缺方案`() {
-        val items = plan(emptyList())
-        val t9 = items.single { it.method == SlotInputMethod.T9 }
-        assertFalse(t9.available)
-        assertEquals(SlotUnavailableReason.MissingSchema, t9.unavailableReason)
-        assertNull(t9.schemaId)
+        assertTrue(items.none { it.method == SlotInputMethod.T9 })
+        // 手写仍然在（应用支持它）
+        assertTrue(items.any { it.method == SlotInputMethod.Handwriting })
     }
 
     // ---------------- 英文方案不进中文槽 ----------------
@@ -175,16 +168,14 @@ class KeyboardSlotPlanTest {
     }
 
     @Test
-    fun `偏好里的方案被删后回落到第一项可用`() {
+    fun `偏好里的方案被删后回落到第一项`() {
         val items = plan(listOf(schema("qwerty_a", "Qwerty", "PinYin")))
         val resolved = KeyboardSlotPlan.resolve(items, "T9", "t9_gone")
-        // 九键缺方案、26 键可用 → 应落到 26 键，而不是卡在一个用不了的输入方式上
         assertEquals(SlotInputMethod.Qwerty, resolved?.method)
     }
 
     @Test
-    fun `没有任何可用项时收敛结果为空`() {
-        val items = plan(emptyList(), keyboards = emptySet())
-        assertNull(KeyboardSlotPlan.resolve(items, "T9", "t9_a"))
+    fun `没有任何项时收敛结果为空`() {
+        assertNull(KeyboardSlotPlan.resolve(emptyList(), "T9", "t9_a"))
     }
 }

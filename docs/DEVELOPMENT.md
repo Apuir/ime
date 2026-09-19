@@ -65,8 +65,10 @@
   见 [9.6.1](#961-首字母整句translatormax_sentences)
 - 四种输入方式：全键盘（Qwerty）、九宫格（T9）、15 键（T15）、手写。
   同一输入方式有多个方案时在切换列表里平铺（`九键1 / 九键2`）。
-  **可用性 = 应用支持该键盘 ∩ 存在候选类型（`candidateKind`）匹配的方案**（手写不走引擎、不需要方案）；
-  键盘由「当前槽的输入方式偏好」决定，方案的 `layout` 字段只作兜底默认值
+  **可用性 = 应用支持该键盘 ∩ 存在 `layout` 与 `candidateKind` 都对得上的方案**（手写不走引擎、不需要方案）：
+  只按 `candidateKind` 匹配会让 26 键与 15 键互相借方案，冒出方案里根本没声明的布局；
+  方案里没有的输入方式整项不出现（而不是列出来灰掉）。
+  键盘由「当前槽的输入方式偏好」决定，方案的 `layout` 仍在找不到槽项时兜底
 - 符号键盘、Emoji 键盘；全角/半角标点切换
 - 简↔繁转换（自带 FMM 转换器，不依赖 OpenCC 运行时）
 - 英文/ASCII 模式、Emoji 参与候选
@@ -362,8 +364,9 @@ python3 scripts/build-rime-resource.py             # 重建（覆盖 assets/reso
 1. **白名单取数**：排除用户状态（`*.userdb` / `user.yaml` / `installation.yaml` /
    `build` / `sync` / `*.gram`）。
 2. **注入 app 桥接字段**（万象官方包里**没有**，缺了功能会瘸）：
-   - `schema/{layout,punctuation,kind,candidateKind}` —— `candidateKind` 决定该方案能驱动哪种输入方式（`PinYin` → 26 键/15 键、`T9PinYin` → 九键），`layout` 只作兜底、
-     方案列表标签、预编辑拼音条都靠它；
+   - `schema/{layout,punctuation,kind,candidateKind}` —— `layout` + `candidateKind` 一起决定该方案能驱动哪种输入方式
+     （`Qwerty`+`PinYin` → 26 键、`T15`+`PinYin` → 15 键、`T9`+`T9PinYin` → 九键），也是切换列表里
+     「这种输入方式能不能出现」的判据；`layout` 另外还供方案列表标签、预编辑拼音条使用；
    - 顶层 `options:` 块 —— `OptionsApplier` 据此把 app 的「繁体 / Emoji / 英文模式」
      三个设置映射成 Rime 运行时选项。
 3. **注入模糊音规则**（见 [9.4](#94-输入方案rime-schema)），`--fuzzy` 可选档位。

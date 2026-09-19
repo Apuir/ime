@@ -12,6 +12,7 @@ import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.key.returnKeyIcon
 import com.ninthsoft.ime.input.keyboard.slot.HANDWRITING_KEYBOARD_NAME
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
@@ -42,6 +43,14 @@ object KeyboardStateManager {
 
         /** 当前槽不再是手写：收起手写面板，把键盘让出来。 */
         fun onHandwritingDismissed()
+
+        /**
+         * 回车键该用的图标变了（输入框动作 / 是否为空 / 组合态变化）。
+         *
+         * 手写面板的回车键没有键盘实例可查，只能由这里下发；映射本身是两边共用的
+         * （见 `key/ReturnKeyIcon.kt`）。
+         */
+        fun onReturnKeyIconChanged(iconRes: Int)
     }
 
     var callback: Callback? = null
@@ -192,9 +201,7 @@ object KeyboardStateManager {
      * 中/英键切出去再切回来就到不了手写（用户要点两下）。
      */
     fun selectHandwriting() {
-        val item = slotItems.find {
-            it.available && it.method == SlotInputMethod.Handwriting
-        }
+        val item = slotItems.find { it.method == SlotInputMethod.Handwriting }
         if (item != null) {
             selectSlotItem(item)
             return
@@ -218,7 +225,7 @@ object KeyboardStateManager {
      * 不可用项直接忽略 —— UI 已经把它们画成不可点。
      */
     fun selectSlotItem(item: SlotSwitchItem) {
-        if (!item.available) return
+        if (slotItems.none { it === item }) return
         activeSlot = KeyboardSlot.Chinese
         KeyboardManager.Slot.setActiveSlot(appContext, KeyboardSlot.Chinese)
         KeyboardManager.Slot.setChineseSelection(appContext, item.keyboardName, item.schemaId)
@@ -237,8 +244,8 @@ object KeyboardStateManager {
         // 同一个方案可能同时挂在 26 键与 15 键下面（都发字母、都用 PinYin），
         // 优先选当前键位对应的那一项，避免「点一下方案键位却跳回 26 键」。
         val item = slotItems.find {
-            it.available && it.schemaId == schemaId && it.keyboardName == chineseKeyboardName
-        } ?: slotItems.find { it.available && it.schemaId == schemaId }
+            it.schemaId == schemaId && it.keyboardName == chineseKeyboardName
+        } ?: slotItems.find { it.schemaId == schemaId }
         if (item != null) {
             selectSlotItem(item)
             return schemaId
@@ -282,7 +289,7 @@ object KeyboardStateManager {
     private fun ensureChineseSelection() {
         if (schemas.isEmpty()) return
         if (resolveChineseItem() != null) return
-        val fallback = slotItems.firstOrNull { it.available } ?: return
+        val fallback = slotItems.firstOrNull() ?: return
         chineseKeyboardName = fallback.keyboardName
         chineseSchemaId = fallback.schemaId
         KeyboardManager.Slot.setChineseSelection(appContext, fallback.keyboardName, fallback.schemaId)
@@ -332,8 +339,8 @@ object KeyboardStateManager {
         if (currentSchema?.kind != KeyboardSlotPlan.SCHEMA_KIND_ENGLISH) return
         val keyboard = currentKeyboardName
         val item = slotItems.find {
-            it.available && it.schema != null && it.keyboardName == keyboard
-        } ?: slotItems.firstOrNull { it.available && it.schema != null } ?: return
+            it.schema != null && it.keyboardName == keyboard
+        } ?: slotItems.firstOrNull { it.schema != null } ?: return
         val schema = item.schema ?: return
         if (currentSchema?.id == schema.id) return
         currentSchema = schema
@@ -517,5 +524,13 @@ object KeyboardStateManager {
         lastAppliedEmpty = lastInputEmpty
         lastAppliedComposing = isComposing
         keyboard.updateEditorInfo(info, lastInputEmpty, isComposing)
+        // 手写面板的回车键用同一份映射，跟着一起换
+        callback?.onReturnKeyIconChanged(returnKeyIcon(info, lastInputEmpty, isComposing))
+    }
+
+    /** 当前输入框下回车键该用的图标；还没有 EditorInfo 时返回 0（用键面自带的默认图标）。 */
+    fun currentReturnKeyIcon(): Int {
+        val info = lastEditorInfo ?: return 0
+        return returnKeyIcon(info, lastInputEmpty, isComposing)
     }
 }

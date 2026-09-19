@@ -23,43 +23,35 @@ const val HANDWRITING_KEYBOARD_NAME = "Handwriting"
 enum class KeyboardSlot { Chinese, English }
 
 /**
- * 中文槽里可切换的「输入方式」：一种键盘 + 它要求的方案候选类型。
+ * 中文槽里可切换的「输入方式」：一种键盘 + 它在方案里要求的布局与候选类型。
  *
  * 声明顺序就是平铺切换列表与设置页的展示顺序。
  *
- * [requiredCandidateKind] 是输入方式与方案的唯一耦合点：
- * 九键发数字，必须配 `T9PinYin` 方案；26 键与 15 键发字母（T15 自己那套键位发 q/w/e/r…），
- * 配 `PinYin` 方案；手写不走引擎，为 null。
+ * [requiredCandidateKind] + [requiredLayout] 是输入方式与方案的耦合点：
+ * 九键发数字，必须配 `T9PinYin` + `layout: T9` 的方案；26 键与 15 键发字母（T15 自己那套键位
+ * 发 q/w/e/r…），配 `PinYin` + 各自的 layout；手写不走引擎，两项都为 null。
+ *
+ * **只看候选类型不够**：26 键与 15 键用同一种候选类型，只按它匹配会让方案里根本没有 15 键
+ * 布局的设备也冒出一个「15键」选项。
  */
 enum class SlotInputMethod(
     val keyboardName: String,
     val requiredCandidateKind: String?,
+    /** 方案里必须声明的 `schema/layout`；null 表示这种输入方式不需要方案（手写）。 */
+    val requiredLayout: String?,
 ) {
-    T9(T9Keyboard.NAME, PinYinUtil.CandidateKindT9),
-    Qwerty(QwertyKeyboard.NAME, PinYinUtil.CandidateKindFull),
-    T15(T15Keyboard.NAME, PinYinUtil.CandidateKindFull),
+    T9(T9Keyboard.NAME, PinYinUtil.CandidateKindT9, "T9"),
+    Qwerty(QwertyKeyboard.NAME, PinYinUtil.CandidateKindFull, "Qwerty"),
+    T15(T15Keyboard.NAME, PinYinUtil.CandidateKindFull, "T15"),
 
     /** 手写：唯一不需要方案的输入方式，面板直接识别上屏。 */
-    Handwriting(HANDWRITING_KEYBOARD_NAME, null),
-}
-
-/** 一个输入方式「用不了」的原因；设置页要把缺的是哪一半写清楚。 */
-enum class SlotUnavailableReason {
-    /** 应用不支持这个键盘（不在 [KeyboardSlotPlan.plan] 的 supportedKeyboards 里）。 */
-    MissingKeyboard,
-
-    /** 应用支持键盘，但没有 candidateKind 匹配的可用方案。 */
-    MissingSchema,
-
-    /** 键盘与方案都缺。 */
-    MissingKeyboardAndSchema,
+    Handwriting(HANDWRITING_KEYBOARD_NAME, null, null),
 }
 
 /**
  * 平铺切换列表里的一项：一个「输入方式 × 方案」组合。
  *
- * [schema] 为 null 有两种情况：[SlotInputMethod.Handwriting]（本来就不需要方案）
- * 与「缺方案 / 缺键盘」占位项；后者 [unavailableReason] 一定非空，UI 靠它区分。
+ * [schema] 为 null 只有一种情况：[SlotInputMethod.Handwriting]（它本来就不需要方案）。
  */
 data class SlotSwitchItem(
     val method: SlotInputMethod,
@@ -67,9 +59,7 @@ data class SlotSwitchItem(
     val schema: EngineMessage.Schema?,
     /** 平铺列表里的显示名，如「九键1」「手写」。 */
     val displayName: String,
-    val unavailableReason: SlotUnavailableReason? = null,
 ) {
-    val available: Boolean get() = unavailableReason == null
     val schemaId: String? get() = schema?.id
     val schemaName: String get() = schema?.name.orEmpty()
 }
@@ -98,10 +88,13 @@ object KeyboardSlotPlan {
     /**
      * 平铺：每个输入方式一项或多项。
      *
-     * 可用性规则（哈基箱原话）：*只要应用支持这个键盘、且你有对应方案，就能切换成它*。
-     * 「对应方案」按 candidateKind 匹配 —— 发同类按键的键盘共用同一种方案
-     * （`PinYin` 既能驱动 26 键也能驱动 15 键），所以同一个方案可能同时出现在两个输入方式下面：
-     * 那不是重复，而是「同一套方案、不同键位」。
+     * 可用性规则：*应用支持这个键盘、且方案里真的声明了这个布局与候选类型，才能切换成它*。
+     * 「对应方案」按 `schema/layout` + `candidateKind` 一起匹配 —— 只按候选类型匹配会让
+     * 26 键与 15 键互相借方案，冒出方案里并不存在的布局。
+     *
+     * **用不了的输入方式整项不列**（而不是列出来灰掉）：用户要的是「方案里没有就别显示」。
+     * 方案一个都没读出来时返回空列表，调用方据此保持「先不落实键盘」，否则唯一的手写项会被
+     * 当成回落目标，冷启动直接翻出手写面板。
      *
      * 同一输入方式匹配到多个方案时，按 [schemas] 里的顺序编号（九键1 / 九键2）；
      * 只有一个时不加编号 —— 否则会冒出「手写1」这种没意义的序号。
@@ -113,6 +106,7 @@ object KeyboardSlotPlan {
         supportedKeyboards: Set<String>,
         displayLabelOf: (SlotInputMethod) -> String,
     ): List<SlotSwitchItem> {
+        if (schemas.isEmpty()) return emptyList()
         // 英文方案属于英文槽。candidateKind 为空本来就不该被匹配到，但 kind 是显式标记，
         // 排除它比依赖「它恰好没有 candidateKind」更稳。
         val chineseSchemas = schemas.filterNot {
@@ -121,7 +115,8 @@ object KeyboardSlotPlan {
 
         val items = ArrayList<SlotSwitchItem>()
         for (method in SlotInputMethod.entries) {
-            val keyboardSupported = method.keyboardName in supportedKeyboards
+            // 应用不认识这个键盘：这种输入方式不存在，列它没有意义
+            if (method.keyboardName !in supportedKeyboards) continue
             val label = displayLabelOf(method)
 
             if (method.requiredCandidateKind == null) {
@@ -131,25 +126,16 @@ object KeyboardSlotPlan {
                     keyboardName = method.keyboardName,
                     schema = null,
                     displayName = label,
-                    unavailableReason = if (keyboardSupported) null
-                    else SlotUnavailableReason.MissingKeyboard,
                 )
                 continue
             }
 
-            val matched = chineseSchemas.filter { it.candidateKind == method.requiredCandidateKind }
-            if (matched.isEmpty()) {
-                // 一个方案都没有：也要占一项，设置页才能把「缺方案」写出来。
-                items += SlotSwitchItem(
-                    method = method,
-                    keyboardName = method.keyboardName,
-                    schema = null,
-                    displayName = label,
-                    unavailableReason = if (keyboardSupported) SlotUnavailableReason.MissingSchema
-                    else SlotUnavailableReason.MissingKeyboardAndSchema,
-                )
-                continue
+            val matched = chineseSchemas.filter {
+                it.candidateKind == method.requiredCandidateKind &&
+                    it.layout == method.requiredLayout
             }
+            // 布局或候选类型对不上：方案里没有这种输入方式，整项不列
+            if (matched.isEmpty()) continue
 
             val numbered = matched.size > 1
             matched.forEachIndexed { index, schema ->
@@ -158,8 +144,6 @@ object KeyboardSlotPlan {
                     keyboardName = method.keyboardName,
                     schema = schema,
                     displayName = if (numbered) "$label${index + 1}" else label,
-                    unavailableReason = if (keyboardSupported) null
-                    else SlotUnavailableReason.MissingKeyboard,
                 )
             }
         }
@@ -177,6 +161,6 @@ object KeyboardSlotPlan {
         keyboardName: String?,
         schemaId: String?,
     ): SlotSwitchItem? = items.find {
-        it.available && it.keyboardName == keyboardName && it.schemaId == schemaId
-    } ?: items.firstOrNull { it.available }
+        it.keyboardName == keyboardName && it.schemaId == schemaId
+    } ?: items.firstOrNull()
 }

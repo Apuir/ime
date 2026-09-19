@@ -52,6 +52,10 @@ class KeyboardWindow(
             override fun onHandwritingDismissed() {
                 view.onHandwritingDismissed()
             }
+
+            override fun onReturnKeyIconChanged(iconRes: Int) {
+                view.onReturnKeyIconChanged(iconRes)
+            }
         }
     }
 
