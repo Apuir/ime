@@ -54,6 +54,14 @@ sealed class KeyboardAction {
 
     data object RotateSchema : KeyboardAction()
 
+    /**
+     * 手写面板的「半/全」：切换手写范围（键盘区域内 ⇄ 整个屏幕）。
+     *
+     * 只由手写面板发出、只由宿主的面板监听器处理，不会走到 `KeyActionListener`；
+     * 放在这里是为了让面板的键也用 `KeyDef.Behavior.Press` 描述，动作表只有一份。
+     */
+    data object ToggleHandwritingFullScreen : KeyboardAction()
+
     data class SelectSchema(val schemaId: String) : KeyboardAction()
 
     data object ShowInputMethodPickerAction : KeyboardAction()

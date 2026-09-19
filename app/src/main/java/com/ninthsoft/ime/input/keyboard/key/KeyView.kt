@@ -17,6 +17,7 @@ import android.util.TypedValue
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.widget.TextView
+import androidx.annotation.DrawableRes
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.graphics.drawable.toDrawable
@@ -515,6 +516,11 @@ class ImageKeyView(
                 centerInParent()
             })
         }
+    }
+
+    /** 换图（回车键图标要跟着输入框动作走）。内容色挂在 ImageView 的 tint 上，换资源不会丢。 */
+    fun updateImage(@DrawableRes src: Int) {
+        img.imageResource = src
     }
 }
 

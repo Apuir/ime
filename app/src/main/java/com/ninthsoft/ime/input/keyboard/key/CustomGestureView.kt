@@ -71,6 +71,17 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
+    /**
+     * 停掉长按重复触发。
+     *
+     * 视图在没有收到 ACTION_UP 的情况下被收起或丢弃时必须调（面板隐藏、键盘重建都在此列）：
+     * 重复触发挂在普通 [Handler] 上，不会随视图生命周期一起停，一次没收干净就会一直退格下去。
+     */
+    fun cancelRepeat() {
+        repeatHandler.removeCallbacks(repeatRunnable)
+        repeatStarted = false
+    }
+
     var swipeEnabled = false
     var keyboardGestureEnabled = false
     var swipeRepeatEnabled = false
@@ -586,7 +597,14 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
     override fun onDetachedFromWindow() {
         lifecycleScope.cancel()
+        cancelRepeat()
         super.onDetachedFromWindow()
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        // 手指还按着的时候被收起（手写面板隐藏、键盘切走）就收不到 ACTION_UP 了
+        if (visibility != VISIBLE) cancelRepeat()
     }
 
     companion object {

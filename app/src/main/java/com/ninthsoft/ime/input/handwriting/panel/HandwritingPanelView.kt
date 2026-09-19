@@ -1,34 +1,30 @@
 package com.ninthsoft.ime.input.handwriting.panel
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.PorterDuff
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.StateListDrawable
-import android.os.Handler
-import android.os.Looper
-import android.util.TypedValue
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.Space
-import android.widget.TextView
+import androidx.annotation.DrawableRes
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
 import com.ninthsoft.ime.input.handwriting.HandwritingManager
 import com.ninthsoft.ime.input.handwriting.HwCandidate
-import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
+import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
+import com.ninthsoft.ime.input.keyboard.key.KeyDef
+import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Border
+import com.ninthsoft.ime.input.keyboard.key.KeyDef.Appearance.Variant
+import com.ninthsoft.ime.input.keyboard.key.KeyView
+import com.ninthsoft.ime.input.keyboard.key.KeyViewFactory
+import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
+import com.ninthsoft.ime.input.keyboard.key.SidePanelKeyView
 import splitties.dimensions.dp
 
 /**
@@ -56,8 +52,10 @@ const val HANDWRITING_FULL_SCREEN_STACK_DP = HANDWRITING_ROW_HEIGHT_DP * 3
  *   唯一的例外是「停手识别时长」：它是纯粹的**手写时序**参数，面板自己调度计时器，
  *   再让宿主多绕一层回灌反而是两处维护 —— 但读也只读一次（见 [refreshRecognizeDelay]），
  *   不在每次落笔时摸 SharedPreferences。
- * - **不自己画键**。全部用标准 View/Layout 搭：手绘 canvas 键盘那种实现，键位、命中区、
- *   按下态都要自己维护，是上一版「布局与交互不顺手」的根源。
+ * - **键用键盘那一套**。面板的按键是 [KeyDef] + [KeyViewFactory] 建出来的键盘同款键帽
+ *   （按下态、音效、振动、长按连删都在 `CustomGestureView` 里），不是自己搭的
+ *   TextView / ImageView：手绘 canvas 键盘那种实现，键位、命中区、按下态都要自己维护，
+ *   是上一版「布局与交互不顺手」的根源，而自己搭普通控件则是「同一个动作两套手感」的根源。
  *
  * 停手识别：抬笔后等偏好里的时长没有新笔画就送引擎，识别完自动清空笔迹
  * （不需要用户点「清除/撤销」）。识别出的**首候选先进入组合态**：跟拼音的 preedit 一样，
@@ -135,31 +133,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
 
     private val ink = HandwritingInkView(context)
 
-    /**
-     * 所有需要跟着主题换色的按键。
-     *
-     * 集中登记而不是在 [refreshColors] 里逐个字段去摸：加一个键只需要在建键时
-     * [registerKey] 一次，不会再出现「新键忘了刷新主题」这种漏色。
-     */
-    private val themedKeys = ArrayList<KeyRef>()
-
     /** 停手计时。用一个常驻 Runnable 反复 post/remove，避免每次抬笔都分配一个 lambda。 */
     private val recognizeRunnable = Runnable { recognizeNow() }
-
-    /**
-     * 退格长按连删。触发时序照抄键盘键的 [CustomGestureView]
-     * （[CustomGestureView.longPressDelay] 起、[CustomGestureView.RepeatInterval] 一次）：
-     * 同一个动作在键盘和手写面板上手感必须一致，所以引用它的常量而不是各写一份。
-     */
-    private var backspaceRepeating = false
-    private val backspaceRepeatHandler = Handler(Looper.getMainLooper())
-    private val backspaceRepeatRunnable = object : Runnable {
-        override fun run() {
-            backspaceRepeating = true
-            onBackspacePressed()
-            backspaceRepeatHandler.postDelayed(this, CustomGestureView.RepeatInterval)
-        }
-    }
 
     /**
      * 顶栏当前显示的手写候选（本轮还没落定的那一批）。
@@ -214,32 +189,51 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private var lastColors: KeyboardColors.ColorScheme? = null
 
     /** 回车键的图标参考；默认回车，输入框有搜索/发送等动作时由宿主下发替换。 */
-    private var returnKeyView: ImageView? = null
+    private var returnKeyView: ImageKeyView? = null
     private var returnKeyIconRes = 0
 
-    /** 底部功能行。写成数据表而不是六段重复代码：加键只需在这里添一行。 */
+    /**
+     * 底部功能行。键面（图标 / 文字 / 取色家族 / 描边）用键盘的 [KeyDef] 描述，
+     * 键视图由 [KeyViewFactory] 建 —— 与键盘是同一份，不再自己搭 TextView / ImageView。
+     * 动作由 [onPanelAction] 解释。
+     */
     private val functionKeys: List<FunctionKey> = listOf(
         // 键面用文字而不是图标：符号图标画出来是一堆「!?#」，在这个位置反而不如两个字清楚
-        FunctionKey("符号", label = "符号") {
-            it.onSwitchKeyboard(SymbolKeyboard.NAME)
-        },
+        FunctionKey(
+            def = functionTextKey("符号", KeyboardAction.LayoutSwitchAction(SymbolKeyboard.NAME)),
+            description = "符号",
+        ),
         // 键面用键盘上同一枚图标：中/英键在哪个键盘上都是这个地球标，
         // 只有手写这里曾经写成文字「中/英」，看着像另一个东西
-        FunctionKey("中英切换", iconRes = R.drawable.ic_keyboard_language) {
-            it.onSwitchLanguage()
-        },
+        FunctionKey(
+            def = functionIconKey(R.drawable.ic_keyboard_language, KeyboardAction.RotateSchema),
+            description = "中英切换",
+        ),
         // 空格 / 回车 / 标点都属于「下一个动作」：先收尾当前组合（保留这个字），再执行动作
-        FunctionKey("空格", iconRes = R.drawable.ic_keyboard_space) { onSpacePressed() },
+        FunctionKey(
+            def = functionIconKey(R.drawable.ic_keyboard_space, KeyboardAction.SpaceAction),
+            description = "空格",
+        ),
         // 半/全放在空格与 123 之间：左边是「输入」类键（符号/中英/空格），
         // 右边是「换键盘」类键（123/回车），范围切换贴着空格这一侧最顺手
-        FunctionKey("切换手写范围", label = "半/全") { it.onToggleFullScreen() },
-        FunctionKey("数字", label = "123") { it.onSwitchKeyboard(NumberKeyboard.NAME) },
         FunctionKey(
-            "回车",
-            iconRes = R.drawable.ic_keyboard_return,
-            accent = true,
+            def = functionTextKey("半/全", KeyboardAction.ToggleHandwritingFullScreen),
+            description = "切换手写范围",
+        ),
+        FunctionKey(
+            def = functionTextKey("123", KeyboardAction.LayoutSwitchAction(NumberKeyboard.NAME)),
+            description = "数字",
+        ),
+        FunctionKey(
+            def = functionIconKey(
+                iconRes = R.drawable.ic_keyboard_return,
+                action = KeyboardAction.ReturnAction(),
+                variant = Variant.Accent,
+                border = Border.Special,
+            ),
+            description = "回车",
             isReturn = true,
-        ) { onReturnPressed() },
+        ),
     )
 
     /**
@@ -326,19 +320,17 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     fun setReturnKeyIcon(iconRes: Int) {
         if (returnKeyIconRes == iconRes) return
         returnKeyIconRes = iconRes
-        applyReturnKeyIcon()
+        // 只换图：内容色挂在 ImageView 的 tint 上，换资源不会丢
+        returnKeyView?.updateImage(returnKeyIcon())
     }
 
-    private fun applyReturnKeyIcon() {
-        val icon = returnKeyIconRes.takeIf { it != 0 } ?: R.drawable.ic_keyboard_return
-        // 只换图：内容色（colorFilter）挂在 ImageView 上，换资源不会丢
-        returnKeyView?.setImageResource(icon)
-    }
+    /** 当前该用的回车键图标：宿主还没下发（0）时用默认回车。 */
+    private fun returnKeyIcon(): Int =
+        returnKeyIconRes.takeIf { it != 0 } ?: R.drawable.ic_keyboard_return
 
     /** 面板隐藏。已经发出去的识别也一并作废，免得结果回来时往一个收起来的界面里推候选。 */
     fun onHidden() {
         cancelScheduledRecognize()
-        stopBackspaceRepeat()
         HandwritingEngineHolder.cancelPending()
         // 轮次 +1：连「回调已经派到主线程、只是排在这次收起后面」的结果也一并作废，
         // 否则收键盘这一下会把它当作新候选推进一个已经换了场景的输入框里。
@@ -386,13 +378,18 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
 
     /** 按主题上色。宿主在主题变化时调用；不调也能用（退化成中性色）。 */
     fun refreshColors(colors: KeyboardColors.ColorScheme) {
+        if (lastColors == colors) return
         lastColors = colors
-        applyColors(colors)
+        // KeyView 的配色是构造期注入的，改色只能把键重建一遍（重建末尾会用 lastColors 重新上色）。
+        // 这也是半/全切换走的那条路 —— 键视图本来就要整块重来，不额外为配色开一条刷新通道。
+        rebuildContent()
+        requestLayout()
+        invalidate()
     }
 
     /**
-     * 真正上色。与 [refreshColors] 分开是因为切半/全要重建布局：新键帽建出来后
-     * 必须拿最近一次的配色再刷一遍，否则它们的底色/文字色是空的。
+     * 重新上色。键帽的颜色是建键时注入的，所以这里只处理「不是键」的那几块
+     * （面板底、底部三条的实体底、墨迹）；键跟着 [rebuildContent] 一起重建。
      */
     private fun applyColors(colors: KeyboardColors.ColorScheme) {
         // 全屏手写时面板底不是键盘底色，而是一层极淡的遮罩：全屏的意义就是让笔迹盖在
@@ -405,8 +402,6 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         fullScreenStack?.setBackgroundColor(colors.background)
         // 墨迹用 keyText：它在任何主题里都是对比度最高的内容色；提示语退一档用 altText
         ink.setColors(colors.keyText, colors.altText)
-        val radius = dp(colors.cornerRadius)
-        for (ref in themedKeys) styleKey(ref, colors, radius)
     }
 
     /**
@@ -492,15 +487,13 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private fun rebuildContent() {
         // 符号栏每次都重读偏好：它是「设置 → 侧栏符号」那份列表，改了要跟着变
         punctuationSymbols = KeyboardManager.Keyboard.SidePanelSymbols.getT9(context)
-        // 重建会把 themedKeys 里登记的旧视图一起丢掉，所以先清空登记表再重新登记，
-        // 否则会拿着一批已经脱离视图树的键去上色
-        themedKeys.clear()
-        // 底部三条的容器同样会被丢掉：留着旧引用会让 [applyColors] 给一个脱离视图树的
-        // 视图上色，看起来「换了主题底部还是旧底色」
+        // 键帽会跟着整块重来（它们的颜色是建键时注入的），所以这里只重置「不是键」的引用：
+        // 底部三条的容器若留着旧引用，[applyColors] 会给一个脱离视图树的视图上色，
+        // 看起来就是「换了主题底部还是旧底色」
         fullScreenStack = null
         returnKeyView = null
-        // 键都被丢掉了，长按连删也必须停：否则换形态后手指还没抬，退格会继续跑
-        stopBackspaceRepeat()
+        // 键都被丢掉了，长按连删也要停：否则换形态后手指还没抬，退格会继续跑。
+        // 键视图自己会处理（CustomGestureView 脱离窗口、或跟着面板一起变不可见时收掉重复触发）。
         // 先把书写区从旧父容器上摘下来；它可能挂在面板自己（全屏形态）或半屏的
         // LinearLayout 上，两种情况都要处理，所以对 parent 泛化地 remove
         (ink.parent as? ViewGroup)?.removeView(ink)
@@ -557,7 +550,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         for (key in buildPunctuationKeys()) {
             row.addView(
-                buildPunctuationKey(key),
+                buildKey(punctuationKeyDef(key), key.label),
                 lp(dp(PUNCTUATION_KEY_WIDTH_DP), MATCH_PARENT)
                     .apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
             )
@@ -595,6 +588,9 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      *
      * ⌫ 必须在滚动容器**之外**。这是上一版明确踩过的坑：⌫ 和标点放进同一个滚动列表后，
      * 标点一多、往下滚，⌫ 就被一起顶出屏幕 —— 而它是书写时唯一需要「永远在同一个位置」的键。
+     *
+     * 符号那半条直接用键盘九键的侧栏 [SidePanelKeyView]：滚动、惯性回弹、按压高亮、
+     * 主题取色都与九键同源，不再自己搭 ScrollView + 一堆 TextView。
      */
     private fun buildRail(): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -604,51 +600,50 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
             lp(MATCH_PARENT, dp(RAIL_KEY_HEIGHT_DP)).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
         )
 
-        val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        for (key in buildPunctuationKeys()) {
-            column.addView(
-                buildPunctuationKey(key),
-                lp(MATCH_PARENT, dp(RAIL_KEY_HEIGHT_DP)).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },
-            )
-        }
-
-        // 标点多的时候这里滚动；滚动条与边缘光晕在 IME 里视觉上很脏，都关掉
-        val scroll = ScrollView(context).apply {
-            isFillViewport = false
-            isVerticalScrollBarEnabled = false
-            overScrollMode = OVER_SCROLL_NEVER
-            addView(column, LayoutParams(MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        addView(scroll, lp(MATCH_PARENT, 0, weight = 1f))
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun buildBackspaceKey(): View = ImageView(context).apply {
-        setImageResource(R.drawable.ic_keyboard_backspace)
-        scaleType = ImageView.ScaleType.CENTER
-        contentDescription = context.getString(R.string.backspace)
-        setPadding(iconPadding, iconPadding, iconPadding, iconPadding)
-        // 长按连删：按住不放就按 [CustomGestureView] 的节奏一直退格。
-        // 长按已经触发过时不再补一次点击，否则抬手那一下会多删一个字。
-        setOnClickListener { if (!backspaceRepeating) onBackspacePressed() }
-        setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> startBackspaceRepeat()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopBackspaceRepeat()
+        val rail = SidePanelKeyView(
+            context,
+            keyColors,
+            KeyDef.Appearance.SidePannel(
+                visableRow = RAIL_FALLBACK_ITEMS,
+                variant = Variant.Alternative,
+                border = Border.Off,
+            ),
+        ).apply {
+            // 面板用 LayoutParams 摆位（栏宽 44dp 是定值），不要再叠一层键帽内缩
+            hMargin = 0
+            vMargin = 0
+            updateItems(symbolItems())
+            setOnItemActionListener { action -> onPanelAction(action) }
+            // 一屏放几个符号由栏高决定，一格 [RAIL_ITEM_HEIGHT_DP]（与旧的一格 44dp 键 + 2dp 边距
+            // 等高，符号疏密不变）；九键那边行数写死是因为它的栏高本来就是按行算出来的。
+            addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+                updateVisibleItemCount(
+                    ((bottom - top) / dp(RAIL_ITEM_HEIGHT_DP)).coerceAtLeast(1),
+                )
             }
-            false
         }
-    }.also { registerKey(it, KeyStyle.Normal) }
-
-    private fun startBackspaceRepeat() {
-        stopBackspaceRepeat()
-        backspaceRepeating = false
-        backspaceRepeatHandler.postDelayed(backspaceRepeatRunnable, CustomGestureView.longPressDelay)
+        addView(rail, lp(MATCH_PARENT, 0, weight = 1f))
     }
 
-    private fun stopBackspaceRepeat() {
-        backspaceRepeatHandler.removeCallbacks(backspaceRepeatRunnable)
-    }
+    /**
+     * ⌫。长按连删、按下态、点击音效全部交给键盘的键视图
+     * （[com.ninthsoft.ime.input.keyboard.key.CustomGestureView] 的 `repeatEnabled` +
+     * `onRepeatListener`），面板不再自己排一套时序 —— 那套时序本来就和键盘差一点点。
+     */
+    private fun buildBackspaceKey(): KeyView = buildKey(
+        def = KeyDef(
+            appearance = KeyDef.Appearance.Image(
+                src = R.drawable.ic_keyboard_backspace,
+                variant = Variant.Alternative,
+            ),
+            behaviors = setOf(
+                KeyDef.Behavior.Press(KeyboardAction.BackspaceAction),
+                // 重复触发挂在 Press 的同一个动作上：按住不放＝一直退格
+                KeyDef.Behavior.Repeat(KeyboardAction.BackspaceAction),
+            ),
+        ),
+        description = context.getString(R.string.backspace),
+    )
 
     /**
      * ⌫ 一键两用：**先撤销本次手写，没得撤才退格**。
@@ -691,107 +686,154 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         listener?.onReturn()
     }
 
-    private fun buildPunctuationKey(key: PunctuationKey): View = TextView(context).apply {
-        text = key.label
-        gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, PUNCTUATION_TEXT_SIZE_SP)
-        isSingleLine = true
-        setOnClickListener {
-            val target = listener ?: return@setOnClickListener
-            // 标点是「下一个动作」：先把手上这个字收尾，再上屏标点，用户看到的是
-            // 「字 + 标点」而不是「标点把组合文本替换掉」。
-            finalizeRound()
-            val close = key.close
-            if (close == null) target.onCommit(key.open) else target.onCommitPair(key.open, close)
-        }
-    }.also { registerKey(it, KeyStyle.Normal) }
+    /**
+     * 一个符号键。成对符号走 `CommitPairAction`（光标停在中间），单符号走 `CommitAction`；
+     * 两者都由 [onPanelAction] 先收尾本轮组合再上屏。
+     */
+    private fun punctuationKeyDef(key: PunctuationKey): KeyDef = KeyDef(
+        appearance = KeyDef.Appearance.Text(
+            displayText = key.label,
+            textSize = PUNCTUATION_TEXT_SIZE_DP,
+            variant = Variant.Alternative,
+            // 手写不做全角/半角转换：符号列表里存的是什么就显示什么
+            displayFollowsPunctuationMode = false,
+        ),
+        behaviors = setOf(
+            KeyDef.Behavior.Press(
+                key.close
+                    ?.let { KeyboardAction.CommitPairAction(key.open, it) }
+                    ?: KeyboardAction.CommitAction(key.open),
+            ),
+        ),
+    )
+
+    /** 符号栏的内容。半屏竖栏与全屏横排都从这一份来，两处不会走散。 */
+    private fun symbolItems(): List<KeyDef> = buildPunctuationKeys().map(::punctuationKeyDef)
 
     private fun buildFunctionBar(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         for (key in functionKeys) {
-            val button = if (key.iconRes != 0) buildIconKey(key) else buildTextKey(key)
+            val view = buildKey(key.def, key.description)
             if (key.isReturn) {
-                returnKeyView = button as? ImageView
-                applyReturnKeyIcon()
+                returnKeyView = view as? ImageKeyView
+                // 回车键的图标跟着输入框动作走：模板里是默认回车，建完按当前值补一次
+                returnKeyView?.updateImage(returnKeyIcon())
             }
-            button.setOnClickListener {
-                val target = listener ?: return@setOnClickListener
-                key.action(target)
-            }
-            registerKey(button, if (key.accent) KeyStyle.Accent else KeyStyle.Special)
-            addView(button, lp(0, MATCH_PARENT, weight = 1f).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) })
+            addView(view, lp(0, MATCH_PARENT, weight = 1f).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) })
         }
     }
 
-    private fun buildIconKey(key: FunctionKey): View = ImageView(context).apply {
-        setImageResource(key.iconRes)
-        scaleType = ImageView.ScaleType.CENTER
-        contentDescription = key.description
-        setPadding(iconPadding, iconPadding, iconPadding, iconPadding)
+    /**
+     * 建一个键盘同款键视图，并按 [KeyDef.behaviors] 接线。
+     *
+     * `viewId` 一个都不给：面板与键盘在**同一个窗口**里，键帽上那几个 id
+     * （`button_lang` / `button_return` / `button_space`）一旦撞上，宿主的 `findViewById`
+     * 会命中面板里的这个实例，键盘的空格键文案与回车键图标就被改坏了。
+     *
+     * 只接 `Press` 与 `Repeat`：手写面板没有按键气泡、也没有上滑次级输入，
+     * 那两条交互的接线留在 `BaseKeyboard`。
+     */
+    private fun buildKey(def: KeyDef, description: String): KeyView =
+        KeyViewFactory.create(context, keyColors, def).apply {
+            contentDescription = description
+            // 描边跟随键盘的同一条偏好，两边的键帽描边才不会各走各的
+            borderStroke = KeyboardManager.Keyboard.KeyBorderStroke.isEnabled(context)
+            // 面板用 LayoutParams 摆放键（行高、边距都是定值），不要再叠一层键帽内缩，
+            // 否则键帽比原来小一圈；键盘那边按行分宽，才需要这层内缩。
+            hMargin = 0
+            vMargin = 0
+            def.behaviors.forEach { behavior ->
+                when (behavior) {
+                    is KeyDef.Behavior.Press ->
+                        setOnClickListener { onPanelAction(behavior.action) }
+
+                    is KeyDef.Behavior.Repeat -> {
+                        repeatEnabled = true
+                        onRepeatListener = { onPanelAction(behavior.action) }
+                    }
+
+                    else -> Unit
+                }
+            }
+        }
+
+    /**
+     * 面板所有按键的统一出口：把 [KeyboardAction] 翻译成 [Listener] 调用。
+     *
+     * 功能行、⌫、符号栏都从这里走，「按什么键做什么」只有一处定义。面板自己的时序也落在这里：
+     * 标点 / 空格 / 回车属于「下一个动作」，先收尾本轮组合；⌫ 先撤销本轮、没得撤才真退格。
+     */
+    private fun onPanelAction(action: KeyboardAction) {
+        val target = listener
+        when (action) {
+            is KeyboardAction.LayoutSwitchAction -> target?.onSwitchKeyboard(action.target)
+
+            // 中/英键切的是键盘**槽**、不是直接换键盘，理由见 [Listener.onSwitchLanguage]
+            KeyboardAction.RotateSchema -> target?.onSwitchLanguage()
+
+            KeyboardAction.ToggleHandwritingFullScreen -> target?.onToggleFullScreen()
+
+            is KeyboardAction.CommitAction -> {
+                finalizeRound()
+                target?.onCommit(action.text)
+            }
+
+            is KeyboardAction.CommitPairAction -> {
+                finalizeRound()
+                target?.onCommitPair(action.open, action.close)
+            }
+
+            KeyboardAction.BackspaceAction -> onBackspacePressed()
+
+            KeyboardAction.SpaceAction -> onSpacePressed()
+
+            is KeyboardAction.ReturnAction -> onReturnPressed()
+
+            else -> Unit
+        }
     }
 
-    private fun buildTextKey(key: FunctionKey): View = TextView(context).apply {
-        text = key.label
-        gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, FUNCTION_TEXT_SIZE_SP)
-        isSingleLine = true
-    }
+    /** 功能行的文字键。取色家族照旧用「特殊键」那套（与键盘的 `Variant.Alternative` 同一个）。 */
+    private fun functionTextKey(
+        label: String,
+        action: KeyboardAction,
+        variant: Variant = Variant.Alternative,
+        border: Border = Border.Default,
+    ): KeyDef = KeyDef(
+        appearance = KeyDef.Appearance.Text(
+            displayText = label,
+            textSize = FUNCTION_TEXT_SIZE_DP,
+            variant = variant,
+            border = border,
+            // 手写不做全角/半角转换：符号列表里存的是什么就显示什么
+            displayFollowsPunctuationMode = false,
+        ),
+        behaviors = setOf(KeyDef.Behavior.Press(action)),
+    )
+
+    private fun functionIconKey(
+        @DrawableRes iconRes: Int,
+        action: KeyboardAction,
+        variant: Variant = Variant.Alternative,
+        border: Border = Border.Default,
+    ): KeyDef = KeyDef(
+        appearance = KeyDef.Appearance.Image(src = iconRes, variant = variant, border = border),
+        behaviors = setOf(KeyDef.Behavior.Press(action)),
+    )
 
     private fun lp(width: Int, height: Int, weight: Float = 0f): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(width, height, weight)
 
+    /**
+     * 建键用的配色。
+     *
+     * [KeyView] 的颜色是构造期注入的，所以主题一变就得重建键（见 [refreshColors]）；
+     * 还没收到过配色时按偏好现算一次，免得首帧建出一堆无色键。
+     */
+    private val keyColors: KeyboardColors.ColorScheme
+        get() = lastColors ?: KeyboardColors.resolve(context)
+
     private val keyMargin: Int get() = dp(KEY_MARGIN_DP)
-    private val iconPadding: Int get() = dp(ICON_PADDING_DP)
-
-    // ------------------------------------------------------------------
-    // 主题
-    // ------------------------------------------------------------------
-
-    private fun registerKey(view: View, style: KeyStyle) {
-        themedKeys += KeyRef(view, style)
-    }
-
-    /**
-     * 按「取色家族」上色。
-     *
-     * 底色 + 按下态 + 内容色三件套对文字键和图标键是一样的，只有「内容色怎么抹上去」不同
-     * （文字是 setTextColor，图标是 tint），所以在这里分一次就够。
-     */
-    private fun styleKey(ref: KeyRef, colors: KeyboardColors.ColorScheme, radius: Float) {
-        val palette = when (ref.style) {
-            KeyStyle.Normal -> KeyPalette(colors.keyBackground, colors.keyPressed, colors.keyText)
-            KeyStyle.Special -> KeyPalette(
-                colors.specialKeyBackground, colors.specialKeyPressed, colors.specialKeyText,
-            )
-            KeyStyle.Accent -> KeyPalette(
-                colors.accentKeyBackground, colors.accentKeyPressed, colors.accentKeyText,
-            )
-        }
-        ref.view.background = pressedAwareBackground(palette, radius)
-        when (val view = ref.view) {
-            is TextView -> view.setTextColor(palette.content)
-            is ImageView -> view.setColorFilter(palette.content, PorterDuff.Mode.SRC_IN)
-        }
-    }
-
-    /**
-     * 圆角底色 + 按下态。
-     *
-     * 用 [StateListDrawable] 挂 View 自己的 `pressed` 状态，而不是自己写 onTouch 切色：
-     * 点击、按住、手指滑出键外再抬起（ACTION_CANCEL）这几条路径，系统都已经维护好了
-     * pressed，手写 touch 逻辑最容易漏的正是最后那条，会把键卡在按下色上。
-     */
-    private fun pressedAwareBackground(palette: KeyPalette, radius: Float): Drawable =
-        StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_pressed), roundedRect(palette.pressed, radius))
-            addState(intArrayOf(), roundedRect(palette.background, radius))
-        }
-
-    private fun roundedRect(color: Int, radius: Float): Drawable = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = radius
-        setColor(color)
-    }
 
     // ------------------------------------------------------------------
     // 停手识别
@@ -854,16 +896,15 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     // ------------------------------------------------------------------
 
     /**
-     * 一个功能键。图标键与文字键共用一份数据，[iconRes] 为 0 时退化成文字键。
+     * 一个功能键。键面（图标 / 文字 / 取色家族 / 描边）全在 [def] 里，和键盘共用一套描述；
+     * [description] 只给无障碍用。动作不在这里 —— 它就在 [def] 的 `Press` 行为里，
+     * 由 [onPanelAction] 统一解释。
      */
     private class FunctionKey(
+        val def: KeyDef,
         val description: String,
-        val label: String = "",
-        val iconRes: Int = 0,
-        val accent: Boolean = false,
         /** 回车键的图标跟随输入框动作（见 [setReturnKeyIcon]），建键时要留个引用。 */
         val isReturn: Boolean = false,
-        val action: (Listener) -> Unit,
     )
 
     /** 一个标点键。[close] 为 null 表示单字符。 */
@@ -872,19 +913,23 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         val label: String get() = if (close == null) open else open + close
     }
 
-    /** 按键取色的三个家族，对应主题里的三套底色/文字色。 */
-    private enum class KeyStyle { Normal, Special, Accent }
-
-    private class KeyRef(val view: View, val style: KeyStyle)
-
-    private class KeyPalette(val background: Int, val pressed: Int, val content: Int)
-
     private companion object {
         /** 要几个候选。6 个大致是顶栏一行放得下、又不用翻页的数量。 */
         const val NBEST = 6
 
         const val RAIL_WIDTH_DP = 44
         const val RAIL_KEY_HEIGHT_DP = 44
+
+        /**
+         * 符号栏里一格的高度（dp）：旧的「44dp 键 + 上下各 2dp 边距」。
+         *
+         * 换成 [SidePanelKeyView] 后一格的疏密由「栏高 ÷ 可见格数」决定，这个值就是拿它
+         * 反算可见格数的尺子 —— 符号看起来和以前一样密，但滚动与按压高亮归键盘那边管。
+         */
+        const val RAIL_ITEM_HEIGHT_DP = 48
+
+        /** 符号栏可见格数的初值。真正的格数在第一次布局后按栏高算（见 [buildRail]）。 */
+        const val RAIL_FALLBACK_ITEMS = 5
 
         /**
          * 半屏形态下功能行的高度。
@@ -919,9 +964,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         const val DARK_LUMINANCE = 128f
 
         const val KEY_MARGIN_DP = 2
-        const val ICON_PADDING_DP = 10
-        const val FUNCTION_TEXT_SIZE_SP = 16f
-        const val PUNCTUATION_TEXT_SIZE_SP = 15f
+        const val FUNCTION_TEXT_SIZE_DP = 16f
+        const val PUNCTUATION_TEXT_SIZE_DP = 15f
 
         const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
     }
