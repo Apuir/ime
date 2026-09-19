@@ -1,12 +1,16 @@
 package com.ninthsoft.ime.input.handwriting.panel
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PorterDuff
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -21,6 +25,7 @@ import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
 import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
 import com.ninthsoft.ime.input.handwriting.HandwritingManager
 import com.ninthsoft.ime.input.handwriting.HwCandidate
+import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
@@ -133,6 +138,21 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private val recognizeRunnable = Runnable { recognizeNow() }
 
     /**
+     * 退格长按连删。触发时序照抄键盘键的 [CustomGestureView]
+     * （[CustomGestureView.longPressDelay] 起、[CustomGestureView.RepeatInterval] 一次）：
+     * 同一个动作在键盘和手写面板上手感必须一致，所以引用它的常量而不是各写一份。
+     */
+    private var backspaceRepeating = false
+    private val backspaceRepeatHandler = Handler(Looper.getMainLooper())
+    private val backspaceRepeatRunnable = object : Runnable {
+        override fun run() {
+            backspaceRepeating = true
+            onBackspacePressed()
+            backspaceRepeatHandler.postDelayed(this, CustomGestureView.RepeatInterval)
+        }
+    }
+
+    /**
      * 顶栏当前显示的手写候选（本轮还没落定的那一批）。
      *
      * 它同时是「本轮组合态还在不在手上」的唯一判据：非空 ⇔ 首候选正作为组合文本停在
@@ -158,6 +178,22 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
 
     /** 是否处于整屏手写形态（真·全屏；GROW 兜底模式下宿主不会打开它，因为形态不变）。 */
     private var fullScreenLayout = false
+
+    /**
+     * 整屏形态下底部三条（顶栏占位 / 标点行 / 功能行）的容器。
+     *
+     * 它需要一块**实体**底色：整屏时面板整体只是一层很淡的遮罩，而底部三条属于键盘区域，
+     * 键帽自身又是半透明的（暗色主题的 `specialKeyBackground` 只有 120 alpha），
+     * 只靠遮罩兜底会把应用内容透出来 —— 看起来整个键盘都变成了半透明。
+     */
+    private var fullScreenStack: View? = null
+
+    /**
+     * 整屏形态下留给系统导航栏的高度（px）。底部三条会给自己加一条同样高的内边距，
+     * 靠它那块实体底色把导航栏那一条也填上 —— 半屏键盘（与九键）在这一条上画的正是键盘底色，
+     * 整屏手写不填就会露出一条空档。
+     */
+    private var fullScreenBottomInsetPx = 0
 
     /**
      * 最近一次 [refreshColors] 给的配色。
@@ -264,6 +300,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     /** 面板隐藏。已经发出去的识别也一并作废，免得结果回来时往一个收起来的界面里推候选。 */
     fun onHidden() {
         cancelScheduledRecognize()
+        stopBackspaceRepeat()
         HandwritingEngineHolder.cancelPending()
         // 轮次 +1：连「回调已经派到主线程、只是排在这次收起后面」的结果也一并作废，
         // 否则收键盘这一下会把它当作新候选推进一个已经换了场景的输入框里。
@@ -294,6 +331,13 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      * 只改面板自己的排版（书写层铺满 + 底部三条），窗口与触摸区域是宿主的事
      * （真·全屏要 [com.ninthsoft.ime.input.keyboard.window.KeyboardWindowView] 把 IME 窗口铺满屏幕）。
      */
+    /** 整屏形态下系统导航栏的高度（px），由宿主在进入整屏与 insets 变化时灌进来。 */
+    fun setFullScreenBottomInset(px: Int) {
+        if (fullScreenBottomInsetPx == px) return
+        fullScreenBottomInsetPx = px
+        fullScreenStack?.setPadding(0, 0, 0, px)
+    }
+
     fun setFullScreenLayout(enabled: Boolean) {
         if (fullScreenLayout == enabled) return
         fullScreenLayout = enabled
@@ -318,6 +362,11 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         setBackgroundColor(
             if (fullScreenLayout) scrimColor(colors.background) else colors.background,
         )
+        // 墨迹用 keyText：它在任何主题里都是对比度最高的内容色；提示语退一档用 altText
+        ink.setColors(colors.keyText, colors.altText)
+        // 但底部三条（标点行 + 功能行 + 顶栏占位）是键盘区域，必须保持实体：
+        // 它们压在遮罩上，不补一块不透明底色的话，键帽自带的那点半透明会把应用内容透出来。
+        fullScreenStack?.setBackgroundColor(colors.background)
         // 墨迹用 keyText：它在任何主题里都是对比度最高的内容色；提示语退一档用 altText
         ink.setColors(colors.keyText, colors.altText)
         val radius = dp(colors.cornerRadius)
@@ -393,6 +442,11 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         // 重建会把 themedKeys 里登记的旧视图一起丢掉，所以先清空登记表再重新登记，
         // 否则会拿着一批已经脱离视图树的键去上色
         themedKeys.clear()
+        // 底部三条的容器同样会被丢掉：留着旧引用会让 [applyColors] 给一个脱离视图树的
+        // 视图上色，看起来「换了主题底部还是旧底色」
+        fullScreenStack = null
+        // 键都被丢掉了，长按连删也必须停：否则换形态后手指还没抬，退格会继续跑
+        stopBackspaceRepeat()
         // 先把书写区从旧父容器上摘下来；它可能挂在面板自己（全屏形态）或半屏的
         // LinearLayout 上，两种情况都要处理，所以对 parent 泛化地 remove
         (ink.parent as? ViewGroup)?.removeView(ink)
@@ -421,13 +475,19 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      *
      * 顶栏（候选/工具条）是 `KawaiiPanel.view`，由宿主按 [HANDWRITING_FULL_SCREEN_STACK_DP]
      * 摆在最上面那条的位置；这里只留一块空白占位，**不能画任何东西** —— 否则两边会抢同一块像素。
+     *
+     * 这三条整块是「键盘区域」，底色由 [applyColors] 刷成不透明的键盘底（见 [fullScreenStack]）。
      */
     private fun buildFullScreenBottomStack(): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
+        // 导航栏那一条的高度靠内边距留出来，底色由 [applyColors] 刷成键盘底色（见 [fullScreenBottomInsetPx]）。
+        // 吃掉这一条上的触摸：留空的话手指会落到下面的书写层上，在导航栏区域画出一条看不见的笔迹。
+        setPadding(0, 0, 0, fullScreenBottomInsetPx)
+        isClickable = true
         addView(Space(context), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
         addView(buildFullScreenPunctuationRow(), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
         addView(buildFunctionBar(), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
-    }
+    }.also { fullScreenStack = it }
 
     /**
      * 全屏标点行：常用标点横向排列、可以左右滑，⌫ 固定在最右、**不参与滚动**。
@@ -506,13 +566,33 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         addView(scroll, lp(MATCH_PARENT, 0, weight = 1f))
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun buildBackspaceKey(): View = ImageView(context).apply {
         setImageResource(R.drawable.ic_keyboard_backspace)
         scaleType = ImageView.ScaleType.CENTER
         contentDescription = context.getString(R.string.backspace)
         setPadding(iconPadding, iconPadding, iconPadding, iconPadding)
-        setOnClickListener { onBackspacePressed() }
+        // 长按连删：按住不放就按 [CustomGestureView] 的节奏一直退格。
+        // 长按已经触发过时不再补一次点击，否则抬手那一下会多删一个字。
+        setOnClickListener { if (!backspaceRepeating) onBackspacePressed() }
+        setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> startBackspaceRepeat()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopBackspaceRepeat()
+            }
+            false
+        }
     }.also { registerKey(it, KeyStyle.Normal) }
+
+    private fun startBackspaceRepeat() {
+        stopBackspaceRepeat()
+        backspaceRepeating = false
+        backspaceRepeatHandler.postDelayed(backspaceRepeatRunnable, CustomGestureView.longPressDelay)
+    }
+
+    private fun stopBackspaceRepeat() {
+        backspaceRepeatHandler.removeCallbacks(backspaceRepeatRunnable)
+    }
 
     /**
      * ⌫ 一键两用：**先撤销本次手写，没得撤才退格**。
@@ -693,6 +773,9 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
             if (pendingCandidates.isNotEmpty()) listener?.onFinalizeComposing()
             pendingCandidates = candidates
             if (candidates.isNotEmpty()) {
+                // 能识别出东西就说明引擎此刻是可用的：把开面板时留下的「引擎不可用」提示擦掉，
+                // 否则引擎后来恢复可用（例如在设置页点过重新检测）也还是一直挂着那句话
+                ink.setHint(null)
                 // 首候选先进入**组合态**（未上屏，和拼音 preedit 一样显示在输入框里），
                 // 顶栏候选留着供用户换字；收尾时机见 [finalizeRound]。
                 // 顺序是先写组合文本、再推候选：反过来的话用户会先看到顶栏亮出候选、

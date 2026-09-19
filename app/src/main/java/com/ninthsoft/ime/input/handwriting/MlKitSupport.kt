@@ -10,6 +10,7 @@ import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognitionModel
 import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognitionModelIdentifier
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * ML Kit 数字墨水识别的「可用性探测 + 模型管理」。
@@ -52,6 +53,28 @@ object MlKitSupport {
     private var cachedModel: DigitalInkRecognitionModel? = null
 
     /**
+     * 最近一次模型操作的失败原因，分三类记。
+     *
+     * 混成一个字段会让设置页显示到别的操作的结论（例如刚下载失败、接着读状态就把原因冲掉）；
+     * 分开之后，「查询失败」与「下载失败」在页面上是两句话，不会互相盖。
+     * 调用方在发起操作前清掉自己那一类，成功时不写。
+     */
+    @Volatile
+    var lastQueryError: String? = null
+        private set
+
+    @Volatile
+    var lastDownloadError: String? = null
+        private set
+
+    @Volatile
+    var lastDeleteError: String? = null
+        private set
+
+    private fun describe(error: Throwable): String =
+        error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+
+    /**
      * 简体中文对应的模型。
      *
      * 直接用官方常量 [DigitalInkRecognitionModelIdentifier.ZH_HANI_CN]，
@@ -89,19 +112,36 @@ object MlKitSupport {
      */
     fun providesScores(): Boolean = simplifiedChineseModel()?.providesScores() ?: false
 
-    /** 第 2 态：模型是否已在本地。阻塞调用。 */
-    fun isModelDownloaded(): Boolean {
-        val model = simplifiedChineseModel() ?: return false
+    /**
+     * 第 2 态：模型是否已在本地。阻塞调用。
+     *
+     * 返回 `null` 表示**查询本身失败**（GMS 异常 / 任务超时），与「查询成功但没下载」不是一回事：
+     * 前者不能当作「未下载」去触发下载，否则会在设备状态未知时反复发起下载。
+     */
+    fun queryModelDownloaded(): Boolean? {
+        lastQueryError = null
+        val model = simplifiedChineseModel() ?: run {
+            lastQueryError = "构造简体中文模型失败"
+            return null
+        }
         return runCatching {
             Tasks.await(RemoteModelManager.getInstance().isModelDownloaded(model))
         }.getOrElse { error ->
+            lastQueryError = "查询模型下载状态失败：${describe(error)}"
             Timber.w(error, "查询手写模型下载状态失败")
-            false
+            null
         }
     }
 
+    /** 第 2 态（布尔视图）：查询失败一律按「没有」处理。 */
+    fun isModelDownloaded(): Boolean = queryModelDownloaded() == true
+
     /**
-     * 触发下载并等待，带超时。返回是否成功。
+     * 触发下载并等待，带超时。返回**下载任务**是否完成。
+     *
+     * 这个返回值描述的是**这一次下载任务**，不是「模型现在能不能用」：模型已经下过、
+     * 或文件组只缺一部分时，任务都可能是这个结果，而模型本身完全可用。
+     * 要下结论，请用调用方的自检（见 `HandwritingEngineHolder.verifyNow`）。
      *
      * **超时不会取消下载**（ML Kit 在后台继续），只是本次回显为失败。
      * 因此调用方提示文案要写成「本次未完成」，而不是「下载失败」。
@@ -113,25 +153,41 @@ object MlKitSupport {
     fun downloadModel(
         timeoutSeconds: Long = MANUAL_DOWNLOAD_TIMEOUT_SECONDS,
     ): Boolean {
-        val model = simplifiedChineseModel() ?: return false
+        lastDownloadError = null
+        val model = simplifiedChineseModel() ?: run {
+            lastDownloadError = "构造简体中文模型失败"
+            return false
+        }
         return runCatching {
             val task = RemoteModelManager.getInstance()
                 .download(model, DownloadConditions.Builder().build())
             Tasks.await(task, timeoutSeconds, TimeUnit.SECONDS)
             true
         }.getOrElse { error ->
+            // 超时与「任务直接失败」要分开说：前者下载可能还在后台跑，后者是 Play 服务
+            // 直接给了失败回执，混成一句会误导重试。
+            lastDownloadError = if (error is TimeoutException) {
+                "等待超过 ${timeoutSeconds}s（下载可能仍在后台继续）"
+            } else {
+                "Play 服务返回：${describe(error)}"
+            }
             Timber.w(error, "手写模型下载等待超时或失败（${timeoutSeconds}s）")
             false
         }
     }
 
-    /** 删除已下载的模型（设置页「删除」用）。 */
+    /** 删除已下载的模型（设置页「删除模型」用）；残缺模型与失效标记都靠它清掉。 */
     fun deleteModel(): Boolean {
-        val model = simplifiedChineseModel() ?: return false
+        lastDeleteError = null
+        val model = simplifiedChineseModel() ?: run {
+            lastDeleteError = "构造简体中文模型失败"
+            return false
+        }
         return runCatching {
             Tasks.await(RemoteModelManager.getInstance().deleteDownloadedModel(model))
             true
         }.getOrElse { error ->
+            lastDeleteError = describe(error)
             Timber.w(error, "删除手写模型失败")
             false
         }

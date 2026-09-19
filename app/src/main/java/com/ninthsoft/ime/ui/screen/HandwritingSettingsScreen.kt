@@ -2,6 +2,7 @@ package com.ninthsoft.ime.ui.screen
 
 import android.content.Context
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -61,19 +63,25 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SliderRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
- * Google 手写模型的**四态**。这四个状态刻意分开，因为它们对用户的含义完全不同：
+ * Google 手写模型的**五态**。这几个状态刻意分开，因为它们对用户的含义完全不同：
  *
- * - [UNPROBED]：什么都没查过，别的信息一概不能推断；
- * - [DOWNLOADED_UNVERIFIED]：`RemoteModelManager` 说「已下载」，但**只是标记** ——
+ * - [QUERY_FAILED]：连「下载没下载」都读不到（Play 服务异常）；
+ * - [NOT_DOWNLOADED]：确认没下载过；
+ * - [DOWNLOADED_UNVERIFIED]：Play 服务说「已下载」（模型文件在本应用内），但还没跑过自检 ——
  *   实测踩过：下载中断留下的残缺模型，标记照样是已下载，每次识别都失败；
  * - [VERIFIED]：跑过一次真实的自检识别并通过，这才是「真的能用」；
  * - [INCOMPLETE]：标记说已下载、GMS 也在，但自检没过 —— 只能解释为模型残缺，
@@ -83,7 +91,8 @@ import timber.log.Timber
  * 页面自己不落任何盘（写缓存是 [HandwritingEngineHolder] 的职责）。
  */
 private enum class GoogleModelState {
-    UNPROBED,
+    QUERY_FAILED,
+    NOT_DOWNLOADED,
     DOWNLOADED_UNVERIFIED,
     VERIFIED,
     INCOMPLETE,
@@ -100,10 +109,11 @@ private sealed interface HwDownloadState {
 private class GoogleSnapshot(
     val gmsAvailable: Boolean,
     val state: GoogleModelState,
+    val queryError: String?,
 )
 
 /**
- * 采集 Google 模型相关的只读事实。**必须在后台线程调用**（[MlKitSupport.isModelDownloaded] 阻塞）。
+ * 采集 Google 模型相关的只读事实。**必须在后台线程调用**（[MlKitSupport.queryModelDownloaded] 阻塞）。
  *
  * [holderHint] 是 [HandwritingEngineHolder.googleHint]，也就是上一次解析时记下的失败原因。
  * 它在这里的作用是当「自检没过」的判据：GMS 在、标记已下载、解析跑完却没有通过 ——
@@ -111,16 +121,18 @@ private class GoogleSnapshot(
  */
 private fun readGoogleSnapshot(context: Context, holderHint: String?): GoogleSnapshot {
     val gms = MlKitSupport.isPlayServicesAvailable(context)
-    val downloaded = MlKitSupport.isModelDownloaded()
+    val downloaded = MlKitSupport.queryModelDownloaded()
     val cachedUsable = HandwritingManager.googleUsable(context)
     val state = when {
         // 三态缓存为 true 的含义就是「标记已下载且自检通过」
         cachedUsable == true -> GoogleModelState.VERIFIED
-        downloaded && gms && holderHint != null -> GoogleModelState.INCOMPLETE
-        downloaded -> GoogleModelState.DOWNLOADED_UNVERIFIED
-        else -> GoogleModelState.UNPROBED
+        downloaded == true && gms && holderHint != null -> GoogleModelState.INCOMPLETE
+        downloaded == true -> GoogleModelState.DOWNLOADED_UNVERIFIED
+        // 查询失败不能当成「没下载」：那会让页面去引导一次注定失败的下载
+        downloaded == null -> GoogleModelState.QUERY_FAILED
+        else -> GoogleModelState.NOT_DOWNLOADED
     }
-    return GoogleSnapshot(gms, state)
+    return GoogleSnapshot(gms, state, MlKitSupport.lastQueryError)
 }
 
 /**
@@ -144,11 +156,17 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
     // Holder 没有公开 lastError（只有 googleHint），所以这里保存 ensureReady 回调里那一个。
     var lastError by remember { mutableStateOf<String?>(null) }
     var probing by remember { mutableStateOf(false) }
-    var modelState by remember { mutableStateOf(GoogleModelState.UNPROBED) }
+    var modelState by remember { mutableStateOf(GoogleModelState.NOT_DOWNLOADED) }
     var gmsAvailable by remember { mutableStateOf<Boolean?>(null) }
+    var queryError by remember { mutableStateOf<String?>(null) }
     var downloadState by remember { mutableStateOf<HwDownloadState>(HwDownloadState.Idle) }
     var downloadProgress by remember { mutableStateOf(0f) }
     var downloadBtnWidth by remember { mutableStateOf(0.dp) }
+    var deleting by remember { mutableStateOf(false) }
+    var deleteConfirming by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    /** 上一次「立即检测」的结论与时刻：结果与上次一样时，靠时刻也能看出这一按生效了。 */
+    var lastCheck by remember { mutableStateOf<String?>(null) }
 
     /**
      * 停手识别时长，滑杆用「秒」表示。
@@ -167,8 +185,8 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
      * 走 [HandwritingEngineHolder.ensureReady] 而不是自己调 MlKitSupport：
      * AUTO 的静默降级、GOOGLE 的不降级都发生在解析阶段，只有 Holder 知道「真正生效的是哪个」。
      * 代价是这一步可能触发下载（AUTO/GOOGLE 且模型没下载时，上限
-     * [MlKitSupport.PROBE_TIMEOUT_SECONDS] 秒），所以只在用户点「立即检测」或刚改完模式时调用，
-     * 进页面时不自动跑。
+     * [MlKitSupport.PROBE_TIMEOUT_SECONDS] 秒），所以只在用户点「立即检测」、刚改完模式，
+     * 或进页面时「标记说已下载」（那一条不可能触发下载）时才调用。
      */
     val refreshStatus: () -> Unit = {
         if (!probing) {
@@ -179,6 +197,18 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                 googleHint = HandwritingEngineHolder.googleHint
                 lastError = error
                 probing = false
+                lastCheck = buildString {
+                    append(
+                        SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                    ).append(" · ")
+                    if (name != null) {
+                        append("引擎 ").append(name)
+                        if (error != null) append("（").append(error).append("）")
+                    } else {
+                        append("不可用")
+                        if (error != null) append("：").append(error)
+                    }
+                }
                 // 解析刚跑完，此刻的 hint 才是「这一次」的结论，再取快照。
                 scope.launch {
                     val snapshot = withContext(Dispatchers.IO) {
@@ -186,9 +216,25 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                     }
                     gmsAvailable = snapshot.gmsAvailable
                     modelState = snapshot.state
+                    queryError = snapshot.queryError
+                    // 模型最终可用时，之前那次下载失败就不再是结论：下载任务失败不等于
+                    // 模型不能用（已经下过、或只缺一小块被补回，都是这个结果）。
+                    if (snapshot.state == GoogleModelState.VERIFIED) {
+                        downloadState = HwDownloadState.Idle
+                    }
                 }
             }
         }
+    }
+
+    /** 取一次快照（不触发解析 / 下载）：进页面、删除模型、下载结束后的只读刷新。 */
+    val refreshSnapshot: suspend () -> Unit = {
+        val snapshot = withContext(Dispatchers.IO) {
+            readGoogleSnapshot(context, HandwritingEngineHolder.googleHint)
+        }
+        gmsAvailable = snapshot.gmsAvailable
+        modelState = snapshot.state
+        queryError = snapshot.queryError
     }
 
     /** 清掉三态缓存与进程内的「下载已失败」标志后重跑，等价于「忘掉上次结论再来一次」。 */
@@ -218,6 +264,7 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
         if (downloadState is HwDownloadState.Downloading) return@download
         downloadState = HwDownloadState.Downloading
         downloadProgress = 0f
+        queryError = null
         scope.launch {
             val limitSeconds = MlKitSupport.MANUAL_DOWNLOAD_TIMEOUT_SECONDS.toFloat()
             val startedAt = SystemClock.elapsedRealtime()
@@ -231,33 +278,78 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                     delay(200)
                 }
             }
-            val ok = runCatching { MlKitSupport.downloadModel() }.getOrElse { error ->
-                Timber.e(error, "手写模型下载异常")
-                false
+            withContext(Dispatchers.IO) {
+                runCatching { MlKitSupport.downloadModel() }.getOrElse { error ->
+                    Timber.e(error, "手写模型下载异常")
+                }
             }
+            // 判据不是下载任务的返回值，而是「模型现在到底能不能用」：下载任务会因为
+            // 「已经下载过」或服务端拒绝而直接失败，模型却完全可用。
+            // 这里走 verifyNow（只判定、不再下载），拿到的是本机现状的结论；
+            // 进度条在这期间继续走，别让用户以为卡住了。
+            val (name, error) = awaitVerifyNow(context)
+            engineName = name
+            isReady = HandwritingEngineHolder.isReady
+            googleHint = HandwritingEngineHolder.googleHint
+            lastError = error
+            refreshSnapshot()
             ticker.cancel()
-            if (ok) {
+            if (modelState == GoogleModelState.VERIFIED) {
                 downloadProgress = 1f
-                // 下载成功 ≠ 模型完整：清掉探测缓存让 Holder 重跑一遍自检，
-                // 由它决定要不要把「确认可用」写进三态缓存（页面自己不写缓存）。
-                HandwritingEngineHolder.resetGoogleProbe(context)
-                refreshStatus()
                 downloadState = HwDownloadState.Idle
             } else {
-                // 超时/失败**不写三态缓存**：Tasks.await 超时并不会取消后台下载，
-                // 网络恢复后重试本该能成功；写死失败会让用户永远用不上 Google。
                 downloadState = HwDownloadState.Failed
             }
         }
     }
 
-    // 进页面只取「不需要联网就能确定」的事实（标记、GMS、缓存），不触发探测/下载。
-    LaunchedEffect(Unit) {
-        val snapshot = withContext(Dispatchers.IO) {
-            readGoogleSnapshot(context, HandwritingEngineHolder.googleHint)
+    /**
+     * 删除已下载的模型。
+     *
+     * 删的是模型文件本身（`files/mlkit_digital_ink_recognition/…`，ML Kit 按需下载下来的），
+     * 不是「标记」；删完必须重新下载才能再用 Google 引擎，本地引擎不受影响。
+     */
+    val deleteModel: () -> Unit = delete@{
+        if (deleting) return@delete
+        deleting = true
+        deleteError = null
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { MlKitSupport.deleteModel() }.getOrElse { error ->
+                    Timber.e(error, "删除手写模型异常")
+                    false
+                }
+            }
+            deleting = false
+            if (ok) {
+                // 探测缓存必须一起清：留着「确认可用」会让 Holder 继续用已经不存在的模型。
+                HandwritingManager.setGoogleUsable(context, null)
+                HandwritingEngineHolder.reset()
+                downloadState = HwDownloadState.Idle
+                // 立刻按本机现状重新判定一次：这时引擎**必须**从 Google 掉到本地，
+                // 否则页面上那个「引擎 Google」和实际删光了的模型对不上。
+                val (name, error) = awaitVerifyNow(context)
+                engineName = name
+                isReady = HandwritingEngineHolder.isReady
+                googleHint = HandwritingEngineHolder.googleHint
+                lastError = error
+                Toast.makeText(context, R.string.handwriting_delete_done, Toast.LENGTH_SHORT).show()
+            } else {
+                deleteError = MlKitSupport.lastDeleteError
+            }
+            refreshSnapshot()
         }
-        gmsAvailable = snapshot.gmsAvailable
-        modelState = snapshot.state
+    }
+
+    // 进页面只取「不需要联网就能确定」的事实（标记、GMS、缓存），不触发下载。
+    LaunchedEffect(Unit) {
+        refreshSnapshot()
+        // 标记说「已下载」但还没跑过自检时，顺手解析一次：不解析就永远停在
+        // 「已下载但未确认」这个对用户没有结论的状态上，而这时解析不可能触发下载
+        // （标记为已下载时解析路径不会走下载分支），代价只有一次自检识别。
+        if (modelState == GoogleModelState.DOWNLOADED_UNVERIFIED && mode != HwEngineMode.LOCAL) {
+            refreshStatus()
+        }
     }
 
     Scaffold(
@@ -397,6 +489,16 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(4.dp))
                 }
+                // 检测结论与上次一样时界面本来不会有任何变化，看起来就像「点了没反应」；
+                // 带上时刻，这一按到底有没有生效一眼可辨。
+                lastCheck?.let { check ->
+                    Text(
+                        text = stringResource(R.string.handwriting_last_check, check),
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
                 // 显式选了 Google 但它起不来：AUTO 会自己降级，GOOGLE 不会 —— 这里给出唯一出口。
                 if (mode == HwEngineMode.GOOGLE && !isReady && !probing) {
                     ActionRow(
@@ -419,7 +521,8 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
             // ----------------------------------------------------------
             val stateLabel = stringResource(
                 when (modelState) {
-                    GoogleModelState.UNPROBED -> R.string.handwriting_google_state_unknown
+                    GoogleModelState.QUERY_FAILED -> R.string.handwriting_google_state_query_failed
+                    GoogleModelState.NOT_DOWNLOADED -> R.string.handwriting_google_state_not_downloaded
                     GoogleModelState.DOWNLOADED_UNVERIFIED -> R.string.handwriting_google_state_unverified
                     GoogleModelState.VERIFIED -> R.string.handwriting_google_state_verified
                     GoogleModelState.INCOMPLETE -> R.string.handwriting_google_state_incomplete
@@ -427,12 +530,18 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
             )
             val stateDesc = stringResource(
                 when (modelState) {
-                    GoogleModelState.UNPROBED -> R.string.handwriting_google_state_unknown_desc
+                    GoogleModelState.QUERY_FAILED -> R.string.handwriting_google_state_query_failed_desc
+                    GoogleModelState.NOT_DOWNLOADED -> R.string.handwriting_google_state_not_downloaded_desc
                     GoogleModelState.DOWNLOADED_UNVERIFIED -> R.string.handwriting_google_state_unverified_desc
                     GoogleModelState.VERIFIED -> R.string.handwriting_google_state_verified_desc
                     GoogleModelState.INCOMPLETE -> R.string.handwriting_google_state_incomplete_desc
                 }
             )
+            // 只在「GMS 那边的标记说已下载」时才提供删除：没下载过就没什么可删的。
+            val hasModelMarker = modelState == GoogleModelState.DOWNLOADED_UNVERIFIED ||
+                modelState == GoogleModelState.VERIFIED ||
+                modelState == GoogleModelState.INCOMPLETE
+            val busy = deleting || downloadState is HwDownloadState.Downloading
 
             SettingsGroup(title = stringResource(R.string.handwriting_google_group)) {
                 ActionRow(
@@ -466,18 +575,34 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                 ) {
                     TextButton(
                         onClick = redetect,
-                        enabled = !probing && downloadState !is HwDownloadState.Downloading,
+                        enabled = !probing && !busy,
                     ) {
                         Text(
                             text = stringResource(R.string.handwriting_redetect),
                             fontSize = 13.sp,
                         )
                     }
+                    if (hasModelMarker) {
+                        TextButton(
+                            onClick = { deleteConfirming = true },
+                            enabled = !busy,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.handwriting_delete_model),
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
                     // 下载中由上面的 ProgressButton 表示进度，这里收起来，避免两个进度指示并存。
-                    if (downloadState !is HwDownloadState.Downloading) {
+                    // 已确认可用时也不显示：模型已经能用，再点一次下载没有意义
+                    // （Play 服务多半只会回一张「已经下过」的失败回执）。
+                    if (modelState != GoogleModelState.VERIFIED &&
+                        downloadState !is HwDownloadState.Downloading
+                    ) {
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = startDownload,
+                            enabled = !deleting,
                             modifier = Modifier
                                 .height(32.dp)
                                 .onSizeChanged { size ->
@@ -500,9 +625,35 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
                     }
                 }
 
-                if (downloadState is HwDownloadState.Failed) {
+                // 失败一定要带上 Play 服务给的原话：只说「未完成」用户没法判断是网络、
+                // 是标记失效，还是模型残缺，「重试」也就变成了盲点。
+                // 判据是「这一次下载的结论 + 模型当前能不能用」两条：模型最终可用时不报失败，
+                // 否则「失败」与「确认可用」会并排出现，互相打架。
+                if (downloadState is HwDownloadState.Failed &&
+                    modelState != GoogleModelState.VERIFIED
+                ) {
+                    MlKitSupport.lastDownloadError?.let { reason ->
+                        Text(
+                            text = reason,
+                            fontSize = rowSubFontSize,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                queryError?.let { reason ->
                     Text(
-                        text = stringResource(R.string.handwriting_download_failed),
+                        text = reason,
+                        fontSize = rowSubFontSize,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+
+                deleteError?.let { reason ->
+                    Text(
+                        text = stringResource(R.string.handwriting_delete_failed, reason),
                         fontSize = rowSubFontSize,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -539,7 +690,40 @@ fun HandwritingSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(32.dp))
         }
     }
+
+    if (deleteConfirming) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirming = false },
+            title = { Text(stringResource(R.string.handwriting_delete_model)) },
+            text = { Text(stringResource(R.string.handwriting_delete_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteConfirming = false
+                    deleteModel()
+                }) {
+                    Text(stringResource(R.string.handwriting_delete_model))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirming = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
+
+/**
+ * 把 [HandwritingEngineHolder.verifyNow] 的回调包成挂起。
+ *
+ * Holder 保证一定回调（解析里的异常也被兜成失败），所以这里不会永久挂起。
+ */
+private suspend fun awaitVerifyNow(context: Context): Pair<String?, String?> =
+    suspendCancellableCoroutine { continuation ->
+        HandwritingEngineHolder.verifyNow(context) { name, error ->
+            if (continuation.isActive) continuation.resume(name to error)
+        }
+    }
 
 /** 单选一行：标题 + 一句「为什么选它」。选中时整行提色，和候选弹窗里的单选样式一致。 */
 @Composable

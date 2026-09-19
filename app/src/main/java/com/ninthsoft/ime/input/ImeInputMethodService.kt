@@ -255,7 +255,13 @@ class ImeInputMethodService : InputMethodService() {
             super.onComputeInsets(outInsets)
             return
         }
-        val contentBottom = view.contentBottomInWindowPx()
+        // 整屏手写要把应用顶到底部三条之上（输入框贴在键盘上沿）；
+        // 悬浮卡片报窗口底，等于告诉框架「键盘没占地方」，应用不被顶起。
+        val contentBottom = if (view.isFullScreenHandwriting) {
+            view.fullScreenHandwritingContentBottomPx()
+        } else {
+            view.contentBottomInWindowPx()
+        }
         view.floatingTouchableRegion(insetsRegion)
         outInsets.contentTopInsets = contentBottom
         outInsets.visibleTopInsets = contentBottom

@@ -394,6 +394,7 @@ class KeyboardWindowView(
         // 正常路径上进不来（编辑模式会屏蔽工具栏），这里兜底并顺带把尺寸落盘。
         // 悬浮卡片同理：下面的测量分支会直接走整屏、不再画卡片，退出整屏后按原设置恢复。
         if (overlay && isResizing) exitResizeMode()
+        handwritingPanel.setFullScreenBottomInset(if (overlay) resolveBottomInset() else 0)
         handwritingPanel.setFullScreenLayout(overlay)
         applyHandwritingFullScreenZOrder(overlay)
         applyBackgroundTint()
@@ -725,6 +726,8 @@ class KeyboardWindowView(
             )
             if (bottom != cachedBottomInset) {
                 cachedBottomInset = bottom
+                // 整屏手写的底部三条靠这个值留出导航栏的高度，形态没变也要跟着更新
+                if (handwritingOverlayActive) handwritingPanel.setFullScreenBottomInset(bottom)
                 view.requestLayout()
             }
             insets
@@ -955,13 +958,14 @@ class KeyboardWindowView(
     private fun measureFullScreenHandwriting(
         totalWidth: Int, availHeight: Int, bottomInset: Int, barH: Int,
     ) {
-        // 底部三条要落在导航栏之上；手写层则一直铺到导航栏（不可触摸、也不影响绘制主体）
-        val panelH = (availHeight - bottomInset).coerceAtLeast(1)
+        // 底部三条要落在导航栏之上；手写层与底部三条的底色则一直铺到窗口底
+        // （面板自己用内边距给导航栏留位，值在进入整屏与 insets 变化时灌进去，
+        //  见 HandwritingPanelView.setFullScreenBottomInset）。
         val stackH = dpToPx(HANDWRITING_FULL_SCREEN_STACK_DP)
-        val barTop = (panelH - stackH).coerceAtLeast(0)
+        val barTop = (availHeight - bottomInset - stackH).coerceAtLeast(0)
 
         fsPanelW = totalWidth
-        fsPanelH = panelH
+        fsPanelH = availHeight
         measureContentChildren(
             barW = totalWidth, barH = barH,
             // 内容区（候选网格 / 编辑 / 剪贴板 / 菜单）留在三条之上，不压在顶栏与标点行上
@@ -1666,6 +1670,19 @@ class KeyboardWindowView(
         val loc = locationInWindow()
         val h = if (height > 0) height else fullScreenHeight()
         return loc[1] + h
+    }
+
+    /**
+     * 整屏手写时「内容底边」在窗口坐标系中的位置：**底部三条的上沿**。
+     *
+     * 应用需要被顶到这条线之上，输入框才贴在键盘上沿、能看见 ——
+     * 报到窗口底（[contentBottomInWindowPx]）等于告诉框架「键盘什么都没占」，
+     * 应用不被顶起，输入框就被铺满整屏的书写层压在下面了。
+     * 书写层本身仍覆盖这条线以上的整块应用区域（那层很淡的膜），所以照旧可以盖着应用写。
+     */
+    fun fullScreenHandwritingContentBottomPx(): Int {
+        val loc = locationInWindow()
+        return loc[1] + geomBarTop
     }
 
     private fun locationInWindow(): IntArray {

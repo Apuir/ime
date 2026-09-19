@@ -1340,3 +1340,27 @@ DAO：`CandidateSortingDao`、`ClipboardDao`、`CandidatePreferDao`、`PhraseDao
 >    而异常发生在点击回调里没人接 —— **整个输入法进程会当场崩溃**，表现为「键盘整块消失、乱点才回来」。
 > 2. 只靠 `WRAP_CONTENT` 撑高窗口要经过「测量 → relayout → 改窗口 → 再测」一圈才收敛，
 >    中间掉一步底部三条就排到窗口外；所以整屏时显式设 `MATCH_PARENT` 更稳。
+
+### 9.3.8 Google 手写模型（探测 / 下载 / 删除）
+
+ML Kit 数字墨水**只有「按需下载」一种安装路径**（不能随包、也不是 Play 服务预置），模型落在
+应用私有目录 `files/mlkit_digital_ink_recognition/shared/datadownload/public/datadownloadfile_<毫秒>/`，
+清单（下载地址 + size + md5）在 AAR 的 `assets/manifest.json` 里；官方说明见
+[ML Kit 模型安装路径](https://developers.google.com/ml-kit/tips/installation-paths)。
+
+- **`isModelDownloaded()` 有三态**：`MlKitSupport.queryModelDownloaded()` 返回 `null` 表示**查询失败**，
+  与「查到了、没下载」不是一回事 —— 前者不能拿去引导下载，见 `queryModelDownloaded` 的注释。
+- **下载任务的返回值 ≠ 模型可用**。模型已经下过时 `download()` 会直接给失败回执，而模型完全可用；
+  能下结论的只有自检（`HandwritingEngineHolder.verifyNow`）。设置页的「下载模型」因此总是
+  「先请求下载 → 再按本机现状自检」，成败由自检定。
+- **删除只删文件组的一部分**（2026-09-19 实测）：三件套（`chinese_lstm_4x192.tflite` 7.8 MB、
+  `zh_cn.compact.fst.local` 18.3 MB、`qrnn.zh_cn…recospec.local` 174 KB）点一次「删除模型」后
+  只剩 tflite，标记变成未下载；再点「下载模型」只补缺失的两个（压缩包约 1.4 MB 下行），
+  没被删的那个文件 mtime 与目录 id 都不变。所以「删完瞬间又能用」时先看还剩下什么，别急着下结论。
+- ⚠️ **`MlKitEngine` 的 recognizer 是内存缓存**：模型文件被删掉之后 `isAvailable()` 仍然为真。
+  因此 `verifyGoogleLocked()` **必须先 `close()` 再 `load()`** —— 只查 `isAvailable()` 会把一份
+  已经不存在的模型报成「确认可用」，设置页的「重新检测」「删除模型」正好都踩在这条上。
+- 探测结果缓存在 `handwriting.google_usable`（-1 未探测 / 0 硬不可用 / 1 确认可用）；
+  **自检没过不写 0**（残缺模型可以靠删除后重下修好），而是退回 -1，下次解析如实再查。
+- AUTO 模式在模型未下载时会**自动下载**（`HandwritingEngineResolver` 的 `DOWNLOAD_GOOGLE`），
+  也就是「第一次用手写」会静默拉一次模型；这是 ML Kit 的默认行为，但 App 不提示。

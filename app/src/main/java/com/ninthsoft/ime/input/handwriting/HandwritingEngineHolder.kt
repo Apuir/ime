@@ -82,9 +82,61 @@ object HandwritingEngineHolder {
     fun ensureReady(context: Context, onReady: (String?, String?) -> Unit) {
         val app = context.applicationContext
         executor.execute {
+            // 解析/加载里的意外异常必须在这里兜住：回调是调用方唯一的状态出口
+            // （设置页按钮停在「检测中…」、面板显示失败原因都等它），漏一次就永久卡住。
+            val ok = runCatching {
+                val mode = HandwritingManager.engineMode(app)
+                val alreadyReady = active?.isAvailable() == true && loadedMode == mode
+                alreadyReady || resolveAndLoadLocked(app, mode)
+            }.getOrElse { error ->
+                lastError = "手写引擎初始化异常：${error.message ?: error.javaClass.simpleName}"
+                Timber.e(error, "手写引擎初始化异常")
+                false
+            }
+            val name = active?.displayName
+            val error = lastError
+            mainHandler.post { onReady(if (ok) name else null, error) }
+        }
+    }
+
+    /**
+     * 只判定、不下载：查一次模型标记，标记说已下载才跑真自检。
+     *
+     * 用在「用户点了下载但它报失败」与「刚删掉模型」之后。这时再走 [ensureReady]，
+     * AUTO/GOOGLE 会因为「未下载」**又**触发一次自动下载，白白再等一轮超时；
+     * 而这里要的只是「以本机现状，Google 到底能不能用」这个结论。
+     */
+    fun verifyNow(context: Context, onReady: (String?, String?) -> Unit) {
+        val app = context.applicationContext
+        executor.execute {
             val mode = HandwritingManager.engineMode(app)
-            val alreadyReady = active?.isAvailable() == true && loadedMode == mode
-            val ok = if (alreadyReady) true else resolveAndLoadLocked(app, mode)
+            lastError = null
+            googleUnavailableReason = null
+            val ok = runCatching {
+                when {
+                    mode == HwEngineMode.LOCAL -> loadLocalLocked(app)
+
+                    !MlKitSupport.isModelDownloaded() -> {
+                        // 自检没过不算硬结论，缓存退回「未探测」：下次解析还要如实再查一遍
+                        HandwritingManager.setGoogleUsable(app, null)
+                        fallbackOrFailLocked(app, mode, "Google 手写模型不在本机（未下载或已删除）")
+                    }
+
+                    verifyGoogleLocked(app) -> useGoogleLocked(app) ||
+                        failGoogleLocked(app, mode, "Google 手写引擎在本进程内加载失败")
+
+                    else -> {
+                        HandwritingManager.setGoogleUsable(app, null)
+                        fallbackOrFailLocked(
+                            app, mode, googleUnavailableReason ?: "Google 手写模型自检未通过",
+                        )
+                    }
+                }
+            }.getOrElse { error ->
+                lastError = "手写引擎自检异常：${error.message ?: error.javaClass.simpleName}"
+                Timber.e(error, "手写引擎自检异常")
+                false
+            }
             val name = active?.displayName
             val error = lastError
             mainHandler.post { onReady(if (ok) name else null, error) }
@@ -112,8 +164,17 @@ object HandwritingEngineHolder {
                 return@execute
             }
 
-            val candidates = engine.recognize(strokes, writingAreaWidth, writingAreaHeight, nbest)
-            val error = engine.lastError
+            // 识别里的意外异常同样必须回一次：面板的「识别中」状态与候选清空都挂在回调上。
+            val outcome = runCatching {
+                engine.recognize(strokes, writingAreaWidth, writingAreaHeight, nbest) to
+                    engine.lastError
+            }.getOrElse { error ->
+                Timber.e(error, "手写识别异常")
+                emptyList<HwCandidate>() to
+                    "识别异常：${error.message ?: error.javaClass.simpleName}"
+            }
+            val candidates = outcome.first
+            val error = outcome.second
 
             // 过期请求直接丢弃：它的结果对应的是已经被清掉或改写的笔迹
             if (token != sequence.get()) {
@@ -213,7 +274,8 @@ object HandwritingEngineHolder {
         }
 
         return when (HandwritingEngineResolver.decide(mode, true, downloaded, verified)) {
-            HwEngineChoice.USE_GOOGLE -> useGoogleLocked()
+            HwEngineChoice.USE_GOOGLE -> useGoogleLocked(context) ||
+                failGoogleLocked(context, mode, "Google 手写引擎在本进程内加载失败")
 
             HwEngineChoice.USE_LOCAL -> loadLocalLocked(context)
 
@@ -233,7 +295,9 @@ object HandwritingEngineHolder {
                 val ok = downloadAndVerifyLocked(context)
                 if (!ok) downloadAttemptedAndFailed = true
                 when (HandwritingEngineResolver.afterDownload(mode, ok)) {
-                    HwEngineChoice.USE_GOOGLE -> useGoogleLocked()
+                    HwEngineChoice.USE_GOOGLE -> useGoogleLocked(context) ||
+                        failGoogleLocked(context, mode, "Google 手写引擎下载后加载失败")
+
                     HwEngineChoice.USE_LOCAL -> loadLocalLocked(context)
                     else -> fallbackOrFailLocked(
                         context, mode,
@@ -247,7 +311,11 @@ object HandwritingEngineHolder {
     /** 跑一次真实自检识别，确认「标记为已下载」的模型真的能用。 */
     private fun verifyGoogleLocked(context: Context): Boolean {
         val engine = googleEngine ?: MlKitEngine().also { googleEngine = it }
-        if (engine.isAvailable()) return true
+        // 必须先 close 再 load：recognizer 只是**内存缓存**，模型文件被删掉之后它照样
+        // `isAvailable()`；只看它，就会把一份已经不存在的模型报成「确认可用」——
+        // 设置页的「重新检测」「删除模型」正好都踩在这上面。
+        // 所以这里永远走一次真加载：查 GMS + 查标记 + 建 client + 跑自检识别。
+        runCatching { engine.close() }
         val ok = engine.load(context)
         if (ok) {
             HandwritingManager.setGoogleUsable(context, true)
@@ -281,13 +349,35 @@ object HandwritingEngineHolder {
         }
     }
 
-    private fun useGoogleLocked(): Boolean {
-        val engine = googleEngine ?: return false
+    /**
+     * 切到 Google 引擎。
+     *
+     * **必须在这一步真加载**：`handwriting.google_usable == true` 只是「上次自检通过」的持久化结论，
+     * 它不能说明本进程里有引擎对象 —— 只信它直接切过去，会把「引擎还没建」当成可用，
+     * 表现为面板显示「手写引擎不可用」、设置页「未就绪」，而点了「重新检测」又立刻能用。
+     * [MlKitEngine.load] 自己会跳过「本进程已加载」的情况，所以每个进程最多自检一次。
+     */
+    private fun useGoogleLocked(context: Context): Boolean {
+        val engine = googleEngine ?: MlKitEngine().also { googleEngine = it }
+        if (!engine.isAvailable() && !engine.load(context)) {
+            googleUnavailableReason = engine.lastError
+            runCatching { engine.close() }
+            return false
+        }
         active = engine
         engineName = engine.displayName
         lastError = null
         Timber.i("手写引擎：%s", engineName)
         return true
+    }
+
+    /**
+     * 决策说「用 Google」但引擎实际起不来：清掉「确认可用」的旧缓存（它是这次失败的根源），
+     * 再按 AUTO / GOOGLE 各自的语义处置 —— AUTO 落本地，GOOGLE 如实报不可用。
+     */
+    private fun failGoogleLocked(context: Context, mode: HwEngineMode, reason: String): Boolean {
+        HandwritingManager.setGoogleUsable(context, null)
+        return fallbackOrFailLocked(context, mode, googleUnavailableReason ?: reason)
     }
 
     private fun loadLocalLocked(context: Context): Boolean {
