@@ -17,7 +17,7 @@ import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.key.HasKeyBubble
 import com.ninthsoft.ime.input.keyboard.key.KeyBubbleItem
 import com.ninthsoft.ime.input.keyboard.key.ImageKeyView
-import com.ninthsoft.ime.input.keyboard.key.ImageTextKeyView
+import com.ninthsoft.ime.input.keyboard.key.KeyViewFactory
 import com.ninthsoft.ime.input.keyboard.key.KeyboardAction
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
 import com.ninthsoft.ime.input.keyboard.key.KeyDef
@@ -232,13 +232,8 @@ abstract class BaseKeyboard(
 
     @SuppressLint("ClickableViewAccessibility")
     protected fun createKeyView(def: KeyDef): KeyView {
-        return when (def.appearance) {
-            is KeyDef.Appearance.AltText -> AltTextKeyView(context, colors, def.appearance)
-            is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, colors, def.appearance)
-            is KeyDef.Appearance.Text -> TextKeyView(context, colors, def.appearance)
-            is KeyDef.Appearance.Image -> ImageKeyView(context, colors, def.appearance)
-            is KeyDef.Appearance.SidePannel -> SidePanelKeyView(context, colors, def.appearance)
-        }.apply {
+        // 「外观 → 键视图」在 KeyViewFactory 里，手写面板用的是同一份；这里只管键盘专属的副作用
+        return KeyViewFactory.create(context, colors, def).apply {
             // 上滑触发距离对每个键统一下发。放在最前面是因为两条上滑路径都要用，
             // 而键高要到运行期（onTouchEvent）才拿得到，所以这里只给系数、不算距离。
             swipeUpRatio = this@BaseKeyboard.swipeUpRatio

@@ -2,6 +2,7 @@ package com.ninthsoft.ime.input.keyboard.key
 
 import android.animation.Animator
 import android.animation.AnimatorSet
+import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -13,6 +14,8 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.widget.TextView
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -191,19 +194,26 @@ abstract class KeyView(
         bgAnimator?.cancel()
 
         val pressedDrawable = bg.getDrawable(1) ?: return
-        fun anim(from: Int, to: Int, durationMs: Long) = ValueAnimator.ofInt(from, to).apply {
-            duration = durationMs
-            addUpdateListener {
-                val alpha = animatedValue as Int
-                pressedLayerAlpha = alpha
-                pressedDrawable.alpha = alpha
+        fun anim(from: Int, to: Int, durationMs: Long, interpolator: TimeInterpolator) =
+            ValueAnimator.ofInt(from, to).apply {
+                duration = durationMs
+                this.interpolator = interpolator
+                addUpdateListener {
+                    val alpha = animatedValue as Int
+                    pressedLayerAlpha = alpha
+                    pressedDrawable.alpha = alpha
+                }
             }
-        }
         bgAnimator = if (pressed) {
-            anim(pressedLayerAlpha, 255, 220).also { it.start() }
+            anim(pressedLayerAlpha, 255, PRESS_FADE_IN_MS, LinearInterpolator()).also { it.start() }
         } else {
+            // 抬手先补到满再褪色：极短的一按也要看得见按下态，否则打字快了几乎没反馈。
+            // 两段都必须短 —— 一次按键也就一百毫秒上下，动画比它长的话键帽会一直停在半按上。
             AnimatorSet().apply {
-                playSequentially(anim(pressedLayerAlpha, 255, 70), anim(255, 0, 180))
+                playSequentially(
+                    anim(pressedLayerAlpha, 255, PRESS_RELEASE_SNAP_MS, LinearInterpolator()),
+                    anim(255, 0, PRESS_FADE_OUT_MS, DecelerateInterpolator()),
+                )
                 start()
             }
         }
@@ -256,6 +266,20 @@ abstract class KeyView(
     }
 
     companion object {
+        /**
+         * 按下：按压色层的淡入时长。
+         *
+         * 必须短到几乎跟手。以前是 220ms —— 一次按键才一百毫秒上下，色层永远走到一半就被抬手
+         * 打断，键帽看起来一直停在半按状态，打字时就是「拖沓、没手感」。
+         */
+        private const val PRESS_FADE_IN_MS = 40L
+
+        /** 抬手：先把色层补满的时长，保证极短的一按也有可见的按下态。 */
+        private const val PRESS_RELEASE_SNAP_MS = 25L
+
+        /** 抬手：色层褪去的时长。留一点尾巴让它像「褪色」而不是硬切。 */
+        private const val PRESS_FADE_OUT_MS = 105L
+
         var button_space = R.id.button_space
         var button_return = R.id.button_return
         var button_backspace = R.id.button_backspace

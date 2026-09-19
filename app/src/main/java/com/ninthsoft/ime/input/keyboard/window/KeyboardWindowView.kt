@@ -471,6 +471,9 @@ class KeyboardWindowView(
     fun transformed(action: KeyboardAction): KeyboardAction? {
         val transformed: KeyboardAction? = when (action) {
             is KeyboardAction.RotateSchema -> {
+                // 换槽会重置引擎组合，和切换弹窗走同一条规则：先按设置决定已上屏的预览
+                // 内容留还是丢。漏掉这一步，引擎随后发来的空组合会把预览当成「该清除的旧内容」删掉。
+                (context as? ImeInputMethodService)?.livePreview?.finalizeForKeyboardSwitch()
                 // 键盘槽只有两个：中 / 英键直接来回切。
                 keyboardStateManager.toggleSlot()
                 null
