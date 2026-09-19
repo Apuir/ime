@@ -22,12 +22,12 @@ import android.widget.Space
 import android.widget.TextView
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.data.keyboard.theme.KeyboardColors
+import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.input.handwriting.HandwritingEngineHolder
 import com.ninthsoft.ime.input.handwriting.HandwritingManager
 import com.ninthsoft.ime.input.handwriting.HwCandidate
 import com.ninthsoft.ime.input.keyboard.key.CustomGestureView
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
-import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.SymbolKeyboard
 import splitties.dimensions.dp
 
@@ -107,8 +107,17 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
 
         fun onReturn()
 
-        /** 切到别的键盘。参数取 `SymbolKeyboard.NAME` / `NumberKeyboard.NAME` / `QwertyKeyboard.NAME`。 */
+        /** 切到别的键盘。参数取 `SymbolKeyboard.NAME` / `NumberKeyboard.NAME`。 */
         fun onSwitchKeyboard(name: String)
+
+        /**
+         * 「中/英」键：交给宿主的**键盘槽**机制切到英文，而不是直接换一个键盘。
+         *
+         * 手写是中文槽里的一种输入方式，直接 `switchKeyboard` 去 26 键会让「显示的键盘」
+         * 与「槽里选的中文输入方式」对不上：这时再按中/英键会先把槽切到英文（画面没变化，
+         * 因为两个槽都是 26 键），要按第二下才回得到手写。
+         */
+        fun onSwitchLanguage()
 
         /**
          * 「半/全」键：切换手写范围（键盘区域内 ⇄ 整个屏幕）。
@@ -189,11 +198,12 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     private var fullScreenStack: View? = null
 
     /**
-     * 整屏形态下留给系统导航栏的高度（px）。底部三条会给自己加一条同样高的内边距，
-     * 靠它那块实体底色把导航栏那一条也填上 —— 半屏键盘（与九键）在这一条上画的正是键盘底色，
-     * 整屏手写不填就会露出一条空档。
+     * 整屏形态下底部三条要留出的总空间（px）：系统导航栏高度 + 键盘自己的底部内边距。
+     *
+     * 两条都必须留，少了哪一条都会和其他键盘对不齐 —— 前者会露出一条空档（半屏键盘在那一条上
+     * 画的正是键盘底色），后者会让底部三条比九键 / 26 键矮一截、整体更靠下。
      */
-    private var fullScreenBottomInsetPx = 0
+    private var fullScreenBottomSpacePx = 0
 
     /**
      * 最近一次 [refreshColors] 给的配色。
@@ -209,8 +219,10 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         FunctionKey("符号", label = "符号") {
             it.onSwitchKeyboard(SymbolKeyboard.NAME)
         },
-        FunctionKey("中英切换", label = "中/英") {
-            it.onSwitchKeyboard(QwertyKeyboard.NAME)
+        // 键面用键盘上同一枚图标：中/英键在哪个键盘上都是这个地球标，
+        // 只有手写这里曾经写成文字「中/英」，看着像另一个东西
+        FunctionKey("中英切换", iconRes = R.drawable.ic_keyboard_language) {
+            it.onSwitchLanguage()
         },
         // 空格 / 回车 / 标点都属于「下一个动作」：先收尾当前组合（保留这个字），再执行动作
         FunctionKey("空格", iconRes = R.drawable.ic_keyboard_space) { onSpacePressed() },
@@ -221,36 +233,24 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         FunctionKey("回车", iconRes = R.drawable.ic_keyboard_search, accent = true) { onReturnPressed() },
     )
 
-    /** 标点栏。单字符直接上屏，成对符号走 [Listener.onCommitPair]。 */
-    private val punctuationKeys: List<PunctuationKey> = listOf(
-        PunctuationKey("，"),
-        PunctuationKey("。"),
-        PunctuationKey("？"),
-        PunctuationKey("！"),
-        PunctuationKey("、"),
-        PunctuationKey("；"),
-        PunctuationKey("："),
-        PunctuationKey("“", "”"),
-        PunctuationKey("‘", "’"),
-        PunctuationKey("（", "）"),
-        PunctuationKey("《", "》"),
-        PunctuationKey("【", "】"),
-    )
+    /**
+     * 符号栏内容：与九键左侧栏**同一份偏好**（设置 → 侧栏符号），顺序也照抄。
+     *
+     * 不在这里另立一份默认表：用户在九键里排的符号、顺序，进手写必须原样出现；
+     * 手写这边改了（改的还是同一份偏好）回九键也一致。
+     */
+    private var punctuationSymbols: List<String> = emptyList()
 
     /**
-     * 全屏标点行：横向只放最常用的六个。
-     *
-     * 与半屏的竖排栏刻意分开列：竖排能一屏放下十二个，横排一屏只放得下六个左右，
-     * 与其把十二个塞进滚动（常用标点要滑一下才够得着），不如只留最常用的这批。
+     * 成对符号的闭符号。表是写死的，因为它描述的是「符号本身成不成对」这个事实，
+     * 与用户在偏好里放哪些符号无关；只有偏好里真出现开符号时才用得上。
      */
-    private val fullScreenPunctuationKeys: List<PunctuationKey> = listOf(
-        PunctuationKey("，"),
-        PunctuationKey("。"),
-        PunctuationKey("？"),
-        PunctuationKey("！"),
-        PunctuationKey("、"),
-        PunctuationKey("；"),
+    private val symbolPairs: Map<String, String> = mapOf(
+        "“" to "”", "‘" to "’", "（" to "）", "《" to "》", "【" to "】", "「" to "」",
     )
+
+    private fun buildPunctuationKeys(): List<PunctuationKey> =
+        punctuationSymbols.map { PunctuationKey(it, symbolPairs[it]) }
 
     init {
         rebuildContent()
@@ -297,6 +297,19 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         }
     }
 
+    /**
+     * 符号栏偏好变了（设置页改的，或从九键那边改的）：重读列表并整块重建。
+     *
+     * 由宿主在 `keyboard.side_panel_symbols.t9` 变化时转发 —— 面板自己不监听偏好，
+     * 与「识别时长」同一个做法。
+     */
+    fun refreshPunctuationSymbols() {
+        if (punctuationSymbols == KeyboardManager.Keyboard.SidePanelSymbols.getT9(context)) return
+        rebuildContent()
+        requestLayout()
+        invalidate()
+    }
+
     /** 面板隐藏。已经发出去的识别也一并作废，免得结果回来时往一个收起来的界面里推候选。 */
     fun onHidden() {
         cancelScheduledRecognize()
@@ -331,10 +344,10 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      * 只改面板自己的排版（书写层铺满 + 底部三条），窗口与触摸区域是宿主的事
      * （真·全屏要 [com.ninthsoft.ime.input.keyboard.window.KeyboardWindowView] 把 IME 窗口铺满屏幕）。
      */
-    /** 整屏形态下系统导航栏的高度（px），由宿主在进入整屏与 insets 变化时灌进来。 */
-    fun setFullScreenBottomInset(px: Int) {
-        if (fullScreenBottomInsetPx == px) return
-        fullScreenBottomInsetPx = px
+    /** 整屏形态下底部要留出的总空间（px），由宿主在进入整屏与 insets / 内边距变化时灌进来。 */
+    fun setFullScreenBottomSpace(px: Int) {
+        if (fullScreenBottomSpacePx == px) return
+        fullScreenBottomSpacePx = px
         fullScreenStack?.setPadding(0, 0, 0, px)
     }
 
@@ -362,8 +375,6 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         setBackgroundColor(
             if (fullScreenLayout) scrimColor(colors.background) else colors.background,
         )
-        // 墨迹用 keyText：它在任何主题里都是对比度最高的内容色；提示语退一档用 altText
-        ink.setColors(colors.keyText, colors.altText)
         // 但底部三条（标点行 + 功能行 + 顶栏占位）是键盘区域，必须保持实体：
         // 它们压在遮罩上，不补一块不透明底色的话，键帽自带的那点半透明会把应用内容透出来。
         fullScreenStack?.setBackgroundColor(colors.background)
@@ -439,6 +450,8 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      * 键盘才又回来、而且不是手写形态。
      */
     private fun rebuildContent() {
+        // 符号栏每次都重读偏好：它是「设置 → 侧栏符号」那份列表，改了要跟着变
+        punctuationSymbols = KeyboardManager.Keyboard.SidePanelSymbols.getT9(context)
         // 重建会把 themedKeys 里登记的旧视图一起丢掉，所以先清空登记表再重新登记，
         // 否则会拿着一批已经脱离视图树的键去上色
         themedKeys.clear()
@@ -476,13 +489,15 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
      * 顶栏（候选/工具条）是 `KawaiiPanel.view`，由宿主按 [HANDWRITING_FULL_SCREEN_STACK_DP]
      * 摆在最上面那条的位置；这里只留一块空白占位，**不能画任何东西** —— 否则两边会抢同一块像素。
      *
-     * 这三条整块是「键盘区域」，底色由 [applyColors] 刷成不透明的键盘底（见 [fullScreenStack]）。
+     * 这三条整块是「键盘区域」，底色由 [applyColors] 刷成不透明的键盘底（见 [fullScreenStack]），
+     * 底部还留出导航栏 + 键盘底部内边距（见 [fullScreenBottomSpacePx]）。
      */
     private fun buildFullScreenBottomStack(): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        // 导航栏那一条的高度靠内边距留出来，底色由 [applyColors] 刷成键盘底色（见 [fullScreenBottomInsetPx]）。
-        // 吃掉这一条上的触摸：留空的话手指会落到下面的书写层上，在导航栏区域画出一条看不见的笔迹。
-        setPadding(0, 0, 0, fullScreenBottomInsetPx)
+        // 导航栏 + 键盘底部内边距靠内边距留出来，底色由 [applyColors] 刷成键盘底色
+        // （见 [fullScreenBottomSpacePx]）。吃掉这一条上的触摸：留空的话手指会落到下面的书写层上，
+        // 在导航栏区域画出一条看不见的笔迹。
+        setPadding(0, 0, 0, fullScreenBottomSpacePx)
         isClickable = true
         addView(Space(context), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
         addView(buildFullScreenPunctuationRow(), lp(MATCH_PARENT, dp(HANDWRITING_ROW_HEIGHT_DP)))
@@ -490,16 +505,16 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
     }.also { fullScreenStack = it }
 
     /**
-     * 全屏标点行：常用标点横向排列、可以左右滑，⌫ 固定在最右、**不参与滚动**。
+     * 全屏符号行：与半屏同一份符号列表，只是横过来排、可以左右滑；⌫ 固定在最右、**不参与滚动**。
      *
-     * 半屏时标点竖排在右边、⌫ 也永远钉在同一个位置（见 [buildRail]）；全屏把标点横过来，
+     * 半屏时符号竖排在右边、⌫ 也永远钉在同一个位置（见 [buildRail]）；全屏把符号横过来，
      * 但「⌫ 必须永远在同一个位置」这条不能变，所以它同样必须放在滚动容器之外。
      */
     private fun buildFullScreenPunctuationRow(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
 
         val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        for (key in fullScreenPunctuationKeys) {
+        for (key in buildPunctuationKeys()) {
             row.addView(
                 buildPunctuationKey(key),
                 lp(dp(PUNCTUATION_KEY_WIDTH_DP), MATCH_PARENT)
@@ -549,7 +564,7 @@ class HandwritingPanelView(context: Context) : FrameLayout(context) {
         )
 
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        for (key in punctuationKeys) {
+        for (key in buildPunctuationKeys()) {
             column.addView(
                 buildPunctuationKey(key),
                 lp(MATCH_PARENT, dp(RAIL_KEY_HEIGHT_DP)).apply { setMargins(keyMargin, keyMargin, keyMargin, keyMargin) },

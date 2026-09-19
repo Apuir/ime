@@ -192,6 +192,11 @@ class KeyboardWindowView(
             SherpaSpeechClient.stopHoldSession(discard = true)
             voiceOverlay.hide()
         }
+        // 菜单收起时把为它让位的手写面板放回来（展开菜单那一下是本类收起的）：
+        // 否则「在手写里点开工具栏再关掉」就变成了退出手写，还会落到别的槽的键盘上。
+        panel.onMenuClosed = {
+            if (keyboardStateManager.isHandwritingSelected()) showHandwritingPanel()
+        }
     }
 
     private val preeditPinner = PreeditPinner(context)
@@ -295,6 +300,12 @@ class KeyboardWindowView(
                 switchKeyboard(name)
             }
 
+            override fun onSwitchLanguage() {
+                // 手写属于中文槽：中/英键切的是**槽**，不是绕开槽去换键盘。
+                // 否则显示的键盘与槽里的选择会分叉，回到手写要按两下（见 Listener 注释）。
+                keyboardStateManager.selectSlot(KeyboardSlot.English)
+            }
+
             override fun onToggleFullScreen() {
                 toggleHandwritingFullScreen()
             }
@@ -309,7 +320,13 @@ class KeyboardWindowView(
         get() = handwritingPanel.visibility == View.VISIBLE
 
     fun toggleHandwritingPanel() {
-        if (isHandwritingPanelVisible) hideHandwritingPanel() else showHandwritingPanel()
+        if (isHandwritingPanelVisible) {
+            hideHandwritingPanel()
+        } else {
+            // 走槽的选择而不是直接翻开面板：工具栏的手写入口也要让「槽里的中文输入方式」
+            // 落到手写上，否则中/英切出去再切回来到不了手写（要点两下）。
+            keyboardStateManager.selectHandwriting()
+        }
     }
 
     fun showHandwritingPanel() {
@@ -394,7 +411,9 @@ class KeyboardWindowView(
         // 正常路径上进不来（编辑模式会屏蔽工具栏），这里兜底并顺带把尺寸落盘。
         // 悬浮卡片同理：下面的测量分支会直接走整屏、不再画卡片，退出整屏后按原设置恢复。
         if (overlay && isResizing) exitResizeMode()
-        handwritingPanel.setFullScreenBottomInset(if (overlay) resolveBottomInset() else 0)
+        handwritingPanel.setFullScreenBottomSpace(
+            if (overlay) resolveBottomInset() + bottomPaddingPx() else 0
+        )
         handwritingPanel.setFullScreenLayout(overlay)
         applyHandwritingFullScreenZOrder(overlay)
         applyBackgroundTint()
@@ -616,9 +635,14 @@ class KeyboardWindowView(
             KeyboardKeyMapping.KEY_BUBBLE_ENABLED,
             KeyboardManager.Keyboard.SwipeUp.KEY,
             KeyboardManager.Keyboard.SwipeUp.KEY_DIRECTION_TAN,
-            KeyboardManager.Keyboard.SidePanelSymbols.KEY_T9,
             KeyboardManager.Keyboard.SidePanelSymbols.KEY_NUMBER,
             -> post { keyboardStateManager.rebuild() }
+
+            // 九键侧栏符号列表同时也供手写面板用，改完两边都要跟着变
+            KeyboardManager.Keyboard.SidePanelSymbols.KEY_T9 -> post {
+                keyboardStateManager.rebuild()
+                handwritingPanel.refreshPunctuationSymbols()
+            }
 
             KeyboardManager.Keyboard.RippleEffect.KEY -> post {
                 keyboardStateManager.setRippleEnabled(
@@ -727,7 +751,9 @@ class KeyboardWindowView(
             if (bottom != cachedBottomInset) {
                 cachedBottomInset = bottom
                 // 整屏手写的底部三条靠这个值留出导航栏的高度，形态没变也要跟着更新
-                if (handwritingOverlayActive) handwritingPanel.setFullScreenBottomInset(bottom)
+                if (handwritingOverlayActive) {
+                    handwritingPanel.setFullScreenBottomSpace(bottom + bottomPaddingPx())
+                }
                 view.requestLayout()
             }
             insets
@@ -962,7 +988,8 @@ class KeyboardWindowView(
         // （面板自己用内边距给导航栏留位，值在进入整屏与 insets 变化时灌进去，
         //  见 HandwritingPanelView.setFullScreenBottomInset）。
         val stackH = dpToPx(HANDWRITING_FULL_SCREEN_STACK_DP)
-        val barTop = (availHeight - bottomInset - stackH).coerceAtLeast(0)
+        // 底部要留的是「导航栏 + 键盘底部内边距」，与九键 / 26 键的排布一致
+        val barTop = (availHeight - bottomInset - bottomPaddingPx() - stackH).coerceAtLeast(0)
 
         fsPanelW = totalWidth
         fsPanelH = availHeight
@@ -1684,6 +1711,10 @@ class KeyboardWindowView(
         val loc = locationInWindow()
         return loc[1] + geomBarTop
     }
+
+    /** 键盘内容区与窗口底之间的内边距（设置里可调），整屏手写的底部三条也要留出它。 */
+    private fun bottomPaddingPx(): Int =
+        dpToPx(KeyboardManager.Keyboard.Padding.getBottomDp(context))
 
     private fun locationInWindow(): IntArray {
         val loc = IntArray(2)

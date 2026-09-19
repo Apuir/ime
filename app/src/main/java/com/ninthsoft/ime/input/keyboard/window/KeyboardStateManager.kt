@@ -12,6 +12,7 @@ import com.ninthsoft.ime.input.keyboard.impl.IKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.NumberKeyboard
 import com.ninthsoft.ime.input.keyboard.impl.QwertyKeyboard
 import com.ninthsoft.ime.input.keyboard.key.KeyActionListener
+import com.ninthsoft.ime.input.keyboard.slot.HANDWRITING_KEYBOARD_NAME
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlot
 import com.ninthsoft.ime.input.keyboard.slot.KeyboardSlotPlan
 import com.ninthsoft.ime.input.keyboard.slot.SlotInputMethod
@@ -110,6 +111,11 @@ object KeyboardStateManager {
      */
     fun getSelectedChineseItem(): SlotSwitchItem? = resolveChineseItem()
 
+    /** 当前中文槽选中的是不是「手写」（宿主据此决定菜单收起后要不要把手写面板放回来）。 */
+    fun isHandwritingSelected(): Boolean =
+        activeSlot == KeyboardSlot.Chinese &&
+            resolveChineseItem()?.method == SlotInputMethod.Handwriting
+
     fun get(name: String): IKeyboard? = keyboards[name]
 
 
@@ -159,12 +165,51 @@ object KeyboardStateManager {
 
     /** 中 / 英键（地球键）：在两个键盘槽之间来回切；返回切换后的槽。 */
     fun toggleSlot(): KeyboardSlot {
-        activeSlot =
-            if (activeSlot == KeyboardSlot.English) KeyboardSlot.Chinese else KeyboardSlot.English
+        val next = if (activeSlot == KeyboardSlot.English) KeyboardSlot.Chinese
+        else KeyboardSlot.English
+        return selectSlot(next)
+    }
+
+    /**
+     * 直接切到指定槽；返回切换后的槽。
+     *
+     * 手写面板的「中/英」键走这里（见 `HandwritingPanelView.Listener.onSwitchLanguage`）：
+     * 它要的是「切到英文槽」，而不是绕开槽去换一个键盘 —— 绕开会留下
+     * 「显示的键盘」与「槽里选的中文输入方式」不一致，回到手写就得按两下。
+     */
+    fun selectSlot(slot: KeyboardSlot): KeyboardSlot {
+        activeSlot = slot
         KeyboardManager.Slot.setActiveSlot(appContext, activeSlot)
         backStack.clear()
         applyActiveSlot()
         return activeSlot
+    }
+
+    /**
+     * 把中文槽的选择落到「手写」上（工具栏的手写入口走这里）。
+     *
+     * 不能直接翻开面板了事：那样「显示的键盘」和「槽里的中文输入方式」会分叉，
+     * 中/英键切出去再切回来就到不了手写（用户要点两下）。
+     */
+    fun selectHandwriting() {
+        val item = slotItems.find {
+            it.available && it.method == SlotInputMethod.Handwriting
+        }
+        if (item != null) {
+            selectSlotItem(item)
+            return
+        }
+        // 方案还没加载出来时平铺列表里可能没有手写项（它还不需要方案）：仍然要能进手写，
+        // 只把槽的选择写上，等方案到位后 resolve 会收敛到它
+        activeSlot = KeyboardSlot.Chinese
+        KeyboardManager.Slot.setActiveSlot(appContext, KeyboardSlot.Chinese)
+        KeyboardManager.Slot.setChineseSelection(
+            appContext, HANDWRITING_KEYBOARD_NAME, null
+        )
+        chineseKeyboardName = HANDWRITING_KEYBOARD_NAME
+        chineseSchemaId = null
+        backStack.clear()
+        callback?.onHandwritingRequested()
     }
 
     /**
@@ -267,10 +312,32 @@ object KeyboardStateManager {
             // 手写面板盖在键盘上：它自己不是键盘实例，但底下的键位得在
             // （窗口测量与「返回」路径都依赖它）。没有键盘时兜一个默认键位。
             if (currentKeyboardName == null) switchToKeyboard(defaultKeyboardName)
+            ensureChineseBackdrop()
             callback?.onHandwritingRequested()
         } else {
             switchToKeyboard(item.keyboardName)
         }
+    }
+
+    /**
+     * 手写没有方案，但**底下那套键盘 + 方案必须是中文槽的**。
+     *
+     * 面板是盖在键盘上的，收起面板（开菜单 / 调大小 / 切符号页）时露出来的就是这套东西；
+     * 从英文键盘进手写时不把它换成中文方案，露出来的就还是英文键盘 —— 用户看到的是
+     * 「点开工具栏再关掉，回到了英文键盘」，中/英也要按两下才回得来。
+     *
+     * 键盘保持不变，只选它对应的那个中文方案；找不到匹配时退回第一个带方案的中文项。
+     */
+    private fun ensureChineseBackdrop() {
+        if (currentSchema?.kind != KeyboardSlotPlan.SCHEMA_KIND_ENGLISH) return
+        val keyboard = currentKeyboardName
+        val item = slotItems.find {
+            it.available && it.schema != null && it.keyboardName == keyboard
+        } ?: slotItems.firstOrNull { it.available && it.schema != null } ?: return
+        val schema = item.schema ?: return
+        if (currentSchema?.id == schema.id) return
+        currentSchema = schema
+        EngineFactory.current()?.selectSchema(schema.id)
     }
 
     /** 英文槽固定：`wanxiang_english` + Qwerty，ascii 输入留在英文方案内部。 */

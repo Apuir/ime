@@ -227,10 +227,10 @@
 
     <!-- Side panel symbols -->
     <string name="side_panel_symbols">侧栏符号</string>
-    <string name="side_panel_symbols_desc">九键 / 数字键左侧符号栏</string>
-    <string name="side_panel_symbols_t9">九键侧栏符号</string>
+    <string name="side_panel_symbols_desc">九键与手写 / 数字键左侧符号栏</string>
+    <string name="side_panel_symbols_t9">九键 / 手写侧栏符号</string>
     <string name="side_panel_symbols_number">数字键侧栏符号</string>
-    <string name="side_panel_symbols_hint">用上下箭头调整顺序，点右侧 × 删除；上滑侧栏即可输入这些符号。</string>
+    <string name="side_panel_symbols_hint">用上下箭头调整顺序，点右侧 × 删除；九键与手写的符号栏共用这一份，顺序也一致。</string>
     <string name="side_panel_symbols_available">点击添加</string>
     <string name="side_panel_symbols_empty">还没有符号，从下方添加</string>
     <string name="side_panel_symbols_reset">恢复默认符号</string>

@@ -441,11 +441,13 @@ class KawaiiPanel(
                             PanelAction.ClearPhrases -> showClearPhrasesConfirm()
 
                             PanelAction.SwitchKeyboard -> {
+                                val wasMenu = state == State.Menu
                                 when (state) {
                                     State.Menu, State.Clipboard, State.TextEditing, State.Copy -> state = State.Idle
 
                                     else -> listener?.onToolbarAction(result.action)
                                 }
+                                if (wasMenu) onMenuClosed?.invoke()
                             }
 
                             else -> {
@@ -512,6 +514,14 @@ class KawaiiPanel(
         currentStateRender = createStateRender(State.Idle)
         v.currentRenderer = currentStateRender!!.createToolbarRenderer()
     }
+
+    /**
+     * 工具栏（工具网格）**收起**时回调（展开时不回调）。
+     *
+     * 展开菜单要让出书写区，宿主会在那时把手写面板收起来；收起菜单时得让它把面板放回来，
+     * 否则用户点一下菜单再关掉就变成了「退出手写」，底下露出哪套键盘全看运气。
+     */
+    var onMenuClosed: (() -> Unit)? = null
 
     fun toggleMenu() {
         if (state == State.Menu) {
