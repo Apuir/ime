@@ -59,8 +59,11 @@
   底层仍是 Rime 方案（`wanxiang_t9` / `wanxiang` / `wanxiang_english`），但用户不再直接管理「启用哪些方案」
 - **模糊音默认开启**（6 组：平翘舌 / 前后鼻音 / n-l），`zongguo` → 中国；
   开关位置与取舍见 [9.4](#模糊音本项目默认全开)
-- **首字母简拼**：`qryt` → 杞人忧天、`zjh` → 这句话；候选数量与耗时可用
-  [`scripts/rime-probe/`](../scripts/rime-probe/README.md) 在开发机上实测
+- **首字母简拼**：`qryt` → 杞人忧天、`zjh` → 这句话；**九键同样能用**
+  （`954` → 自己 / 这句话、`7'7'9'8` → 杞人忧天），并且有一个总开关
+  「输入方案 → 拼音 → 简拼」（关掉后所有中文键盘都不再出简拼候选）。
+  实现与取舍见 [9.6.2](#962-首字母简拼含九键与-app-开关)；
+  候选数量与耗时可用 [`scripts/rime-probe/`](../scripts/rime-probe/README.md) 在开发机上实测
 - **首字母整句**：整句候选 8 条（`translator/max_sentences`，引擎默认只有 1 条），
   见 [9.6.1](#961-首字母整句translatormax_sentences)
 - 四种输入方式：全键盘（Qwerty）、九宫格（T9）、15 键（T15）、手写。
@@ -824,7 +827,9 @@ speller:
   设计要放到**用户目录**才生效，而 app 从不把 `shared/custom/` 拷到 `user/`，
   放那里等于不生效（见 10.13）。
 - **只注入 `wanxiang`**。九宫格（`wanxiang_t9` / `_t9i`）的拼写运算是把字母即时转成
-  数字键，全拼模糊音规则不适用；它的简拼走 `lua/data/t9_abbrev.txt` 那套简码。
+  数字键，全拼模糊音规则不适用；它的简拼是另一套注入（打开被注释掉的
+  `abbrev` 规则 + `speller/abbrev_max_length`），见
+  [9.6.2](#962-首字母简拼含九键与-app-开关)。
 - **改档位**：`--fuzzy safe`（平翘舌 + 前后鼻音 + n/l 共 6 组，**默认**）/
   `all`（10 组）/ `none`。默认不用 `all` 的依据是实测：`all` 多开 r/l、r/y、h/f、k/g
   之后，`qryt` 的候选数从 2546 涨到 4011、首选从「杞人忧天」变成「去了一趟」
@@ -842,7 +847,7 @@ speller:
 | 新增输入行为 | `engine/behavior/` 定义抽象 → `engine/rime/behavior/` 实现（委托 `RimeBehavior.Impl()`）→ 在 `engine/rime/host/BehaviorHost.kt#flowed` 分派 |
 | 特殊按键处理（空格/回车/退格/分号） | `engine/RimeEngine.kt#processKeyInternal` |
 | Android KeyCode ↔ Rime 键值 | `engine/rime/core/KeyMapping.kt`、`KeyValue.kt` |
-| 应用设置 → Rime 开关（简繁/Emoji/ASCII） | `engine/rime/util/OptionsApplier.kt` |
+| 应用设置 → Rime 开关（简繁/Emoji/ASCII/简拼） | `engine/rime/util/OptionsApplier.kt` |
 | 预编辑拼音拆分（全拼/双拼） | `engine/rime/core/RimeMessageConverter.kt`（`PinYinSpellingSplitter` / `ShuangPinSpellingSplitter`） |
 | 分词符号 | `engine/data/constant.kt` + `BehaviorHost` |
 
@@ -901,7 +906,9 @@ speller:
 > `kMaxAbbreviationExpand = 2` 被写成了**整个 BFS 共用一个计数器**。BFS 是广度优先，
 > 于是只有最先展开的两三条简拼路径能活下来 —— 每个音节都是简拼的全简拼输入因此被砍废。
 > 已修：改成**逐路径**计数（`TableQueryState.abbreviation_count`），上限 32；
-> 总迭代护栏 5120 → 65536。
+> 总迭代护栏 5120 → 65536。九键的短输入简拼会置
+> `SyllableGraph::unlimited_abbreviation_search` 绕过这条护栏（规模由
+> `speller/abbrev_max_length` 限住），理由见 [9.6.2](#962-首字母简拼含九键与-app-开关)。
 >
 > **自查方法（发现整句/简拼「不像桌面」时按这个顺序走）**：
 > 1. `adb pull <files>/user/build/wanxiang.{prism,table}.bin` + 部署副本 schema，
@@ -1073,6 +1080,49 @@ zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
 
 **验证方法**：`scripts/rime-probe/`，改完先在那里跑（几秒钟），
 别靠刷机试。回归基线是「`qryt` 首选仍是杞人忧天、`nihao`/`zhongguo` 不变」。
+
+### 9.6.2 首字母简拼（含九键）与 app 开关
+
+设置页「输入方案 → 拼音 → 简拼（首字母）」一个开关管**所有中文键盘**：
+
+| | 26 键 | 九键 |
+|---|---|---|
+| 开（默认） | `zjh` → 这句话、`qryt` → 杞人忧天 | `954` → 自己/这句话、`7'7'9'8` → 杞人忧天 |
+| 关 | 简拼候选整批消失，`zhejuhua` 这类全拼不受影响 | 同上；九键的简码表也一起停用 |
+
+链路：`CandidateManager.KEY_ABBREVIATION_ENABLED` → `OptionsApplier` 取反写运行时选项
+`abbrev_disabled`（选项名取反：没声明它的方案 `get_option` 返回 false，也就是「简拼照旧」）
+→ librime 的 `Syllabifier` 丢弃 `kAbbreviation` 拼写。选项由
+`scripts/build-rime-resource.py` 注入到每个中文方案的 `options:` 块里。
+
+九键与 26 键的差别在**输入是数字串**，两件事必须一起处理（都在 librime 侧，
+`install-deps.sh` 的第三个补丁）：
+
+1. **整串数字常常刚好是一个完整拼音**（`64`=ni、`94`=yi/zhi），librime 的
+   syllabifier 会把简拼边当「比全拼差的拼写」剪掉，`64` 于是出不来「你好」。
+   方案里声明 `speller/abbrev_max_length: 4` 后，**短输入**下把剪枝下限抬到
+   `kAbbreviation`。
+2. **简拼只对短输入生效**：同一个上限也用来卡住长串（非分隔符字符数 > 4 就不放
+   简拼边）。理由是代价：简拼边让每个位置从 ~5 个音节涨到 ~70 个，8 位全拼输入
+   实测 3.9ms → 235ms；而 8 个数字的纯简拼读法本来也不像用户本意。
+   上限内（≤4）的查询同时置上 `SyllableGraph::unlimited_abbreviation_search`，
+   否则 `table.cc` 那条「简拼迭代护栏」会把三音节以上的简拼结果截掉
+   （实测 `954` 的「这句话」就是这么丢的）。
+
+**九键的 lua 简码表已停用**：`lua/data/t9_abbrev.txt`（3.5 万条精确简码，
+如 `zj` → 自己）那条 `mode: abbrev` 规则与通用简拼互斥 —— 实测同时开时 `95`
+出不来「自己」、`64` 出不来「你好」（简码规则会把命中的候选从候选流里吃掉）。
+`build-rime-resource.py` 把它改成 `option: false` 并撤掉「简码」开关，九键统一走
+通用简拼。**开关关闭时两者都没有**，与设置项语义一致。
+
+回归验证（探针，需用本仓库补丁编译的 librime，系统 librime 看不到上面两点）：
+
+```
+九键 简拼开：95→自己#1、64→你好、94→中国、954→这句话、7'7'9'8→杞人忧天
+九键 简拼关：上述简拼词全不在候选里；94358482→这句话 仍 #1
+26 键：zjh→这句话#1、qryt→杞人忧天#1（开关两种状态下行为与改动前一致）
+按键耗时：九键 ≤4 位输入 ≤50ms、>4 位退回全拼后与原行为持平（开发机实测）
+```
 
 ### 9.7 在线能力（不再依赖任何中间服务器）
 

@@ -36,8 +36,8 @@ signing.properties
 # git filter-repo 分析/备份产物
 .git/filter-repo/
 
-# 协作工具的工作目录（项目档案 / 探针源码等，不入库）
 /.workbuddy/
 
-# 参考实现（第三方输入法的浅克隆，只用于对照阅读，不入库）
 /.refs/
+
+/.research/

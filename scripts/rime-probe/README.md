@@ -112,3 +112,26 @@ mkdir -p user
   - 探针结果 = 手机结果 → 问题在方案数据 / 用户数据；
   - 探针结果 ≠ 手机结果 → 问题在**引擎二进制（fork 补丁）**，去读
     `deps/librime` 的 `git log`，重点看 `dict/`、`gear/`、`algo/`。
+
+## 要验证 fork 的补丁：本机编一份 librime
+
+`install-deps.sh` 给 `deps/librime` 打的补丁（schema `kind`、简拼逐路径限流、
+简拼总开关 + 九键的 `abbrev_max_length`）只影响 app 那份引擎；要在开发机上验证它们，
+把同一份源码编成本机动态库，再让探针链接它：
+
+```bash
+cmake -S app/src/main/cpp/deps/librime -B /tmp/rime-build \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TEST=OFF
+cmake --build /tmp/rime-build -j"$(nproc)"
+
+gcc -O2 -o /tmp/rime-schema-probe scripts/rime-probe/rime-schema-probe.c \
+  -Iapp/src/main/cpp/deps/librime/src -Iapp/src/main/cpp/deps/librime/include \
+  -L/tmp/rime-build/lib -lrime -Wl,-rpath,/tmp/rime-build/lib
+
+/tmp/rime-schema-probe "$PWD/shared" "$PWD/user" --schema wanxiang_t9 95
+```
+
+`BUILD_MERGED_PLUGINS` 默认为开，lua / octagram / predict 会一起编进来（插件目录
+`deps/librime/plugins/*` 是指向 `deps/librime-*` 的软链，Android 构建首次配置时创建；
+缺了也能编，但万象那套 lua 过滤器加载不了，只能跑不带 lua 的最小方案）。
+运行时选项（如简拼开关 `abbrev_disabled`）用 `rime_api.h` 的 `set_option` 在输入前设置。

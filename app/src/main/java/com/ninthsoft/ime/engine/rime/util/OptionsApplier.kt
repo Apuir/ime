@@ -17,6 +17,10 @@ object OptionsApplier {
         CandidateManager.KEY_ASCII_MODE_ENABLED to {
             !CandidateManager.isAsciiModeEnabled(appContext)
         },
+        // 简拼在 Rime 侧取反语义（abbrev_disabled）：没声明这个选项的方案保持原行为。
+        CandidateManager.KEY_ABBREVIATION_ENABLED to {
+            !CandidateManager.isAbbreviationEnabled(appContext)
+        },
     )
 
     suspend fun apply(api: RimeApi, block: RimeSchema) {

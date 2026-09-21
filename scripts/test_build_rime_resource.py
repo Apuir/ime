@@ -148,10 +148,147 @@ class InjectOptionsBlockTest(unittest.TestCase):
         english_lock = b.inject_options_block(MINIMAL_SCHEMA, "wanxiang_english")
         self.assertIn("    keys: [s2s, s2t, s2hk, s2tw]\n    lock: true", english_lock)
 
+    def test_abbreviationSwitchBridgesAllChineseSchemas(self):
+        for schema_id in ("wanxiang", "wanxiang_t9", "wanxiang_t9i",
+                          "wanxiang_mixedcode", "wanxiang_reverse"):
+            out = b.inject_options_block(MINIMAL_SCHEMA, schema_id)
+            self.assertIn("name: abbreviation_enabled", out, schema_id)
+            self.assertIn("key: abbrev_disabled", out, schema_id)
+        # 英文方案不注入：简拼是拼音方案的事
+        self.assertNotIn("abbreviation_enabled", b.inject_options_block(
+            MINIMAL_SCHEMA, "wanxiang_english"))
+
     def test_isIdempotent(self):
         once = b.inject_options_block(MINIMAL_SCHEMA, "wanxiang")
         twice = b.inject_options_block(once, "wanxiang")
         self.assertEqual(once, twice)
+
+
+#: 九键方案的最小骨架：注释掉的简拼规则 + lua 简码表规则 + 简码开关。
+MINIMAL_T9_SCHEMA = """# Rime schema
+schema:
+  schema_id: wanxiang_t9
+  name: 万象九键
+  version: "LTS"
+
+switches:
+  - name: ascii_mode
+    states: [中文, 英文]
+  - name: abbrev
+    states: [简码关, 简码开]
+    reset: 1
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba9876543210
+  algebra:
+    - xform/^n$/en/
+    #- abbrev/^([a-z]).*/$1/
+    - derive/^(.*)$/\\U$1/
+    #- abbrev/^([A-Z]).*/$1/
+    - xlit/ABCDEFGHIJKLMNOPQRSTUVWXYZ/22233344455566677778889999/
+
+super_replacer:
+  rules:
+    - option: emoji
+      mode: append
+    - option: abbrev
+      mode: abbrev
+      abbrev_rule: "2,3"
+      t9_optimization: true
+      files:
+        - lua/data/t9_abbrev.txt
+
+translator:
+  dictionary: wanxiang
+  prism: wanxiang_t9
+"""
+
+
+class T9ShorthandTest(unittest.TestCase):
+    def test_enablesBothAbbrevRulesAroundTheUppercaseDerive(self):
+        out = b.inject_t9_abbrev(MINIMAL_T9_SCHEMA)
+        lower = out.index("- abbrev/^([a-z]).*/$1/")
+        upper_derive = out.index("- derive/^(.*)$/\\U$1/")
+        upper = out.index("- abbrev/^([A-Z]).*/$1/")
+        # 小写那条要在「派生大写」之前，大写那条要在之后（缩过的大写首字母再由
+        # xlit 映射成数字键），顺序反了简拼就出不来数字码
+        self.assertLess(lower, upper_derive)
+        self.assertLess(upper_derive, upper)
+        self.assertNotIn("#- abbrev/", out)
+        self.assertIn(b.MARK_T9_ABBREV_BEGIN, out)
+        self.assertIn(b.MARK_T9_ABBREV_UPPER_BEGIN, out)
+
+    def test_insertsWhenSourceHasNoCommentedRule(self):
+        # wanxiang_t9i 上游压根没写这两行注释，要按锚点插进去
+        text = MINIMAL_T9_SCHEMA.replace("    #- abbrev/^([a-z]).*/$1/\n", "")
+        text = text.replace("    #- abbrev/^([A-Z]).*/$1/\n", "")
+        out = b.inject_t9_abbrev(text)
+        self.assertIn("- abbrev/^([a-z]).*/$1/", out)
+        self.assertIn("- abbrev/^([A-Z]).*/$1/", out)
+        self.assertLess(out.index("- abbrev/^([a-z]).*/$1/"),
+                        out.index("- derive/^(.*)$/\\U$1/"))
+
+    def test_isIdempotent(self):
+        once = b.inject_t9_abbrev(MINIMAL_T9_SCHEMA)
+        twice = b.inject_t9_abbrev(once)
+        self.assertEqual(once, twice)
+        self.assertEqual(1, twice.count("- abbrev/^([a-z]).*/$1/"))
+
+    def test_missingAnchorRaises(self):
+        with self.assertRaises(ValueError):
+            b.inject_t9_abbrev("schema:\n  schema_id: wanxiang_t9\n")
+
+    def test_maxLengthSitsInSpellerBlock(self):
+        out = b.inject_abbrev_max_length(MINIMAL_T9_SCHEMA, "wanxiang_t9")
+        self.assertIn(f"  abbrev_max_length: {b.ABBREV_MAX_LENGTH}\n", out)
+        lines = out.splitlines()
+        start = lines.index("speller:")
+        end = next(i for i in range(start + 1, len(lines))
+                   if lines[i].strip() and not lines[i][0].isspace())
+        self.assertIn("abbrev_max_length", "\n".join(lines[start:end]))
+
+    def test_maxLengthIsIdempotent(self):
+        once = b.inject_abbrev_max_length(MINIMAL_T9_SCHEMA, "wanxiang_t9")
+        twice = b.inject_abbrev_max_length(once, "wanxiang_t9")
+        self.assertEqual(once, twice)
+        self.assertEqual(1, twice.count("abbrev_max_length:"))
+
+    def test_retireAbbrevTableDisablesRuleAndDropsSwitch(self):
+        out, retired = b.retire_t9_abbrev_table(MINIMAL_T9_SCHEMA, "wanxiang_t9")
+        self.assertTrue(retired)
+        # 规则改成永不开火：只删开关不够，switcher/save_options 会把旧的
+        # abbrev: true 再读回来
+        self.assertIn("- option: false", out)
+        self.assertIn(b.MARK_T9_ABBREV_TABLE_OFF, out)
+        # 其他规则不能跟着遭殃
+        self.assertIn("- option: emoji", out)
+        # 开关也要撤掉，否则面板上留一个不生效的「简码」
+        self.assertNotIn("- name: abbrev", out)
+        self.assertIn("- name: ascii_mode", out)
+
+    def test_retireAbbrevTableIsIdempotent(self):
+        once, _ = b.retire_t9_abbrev_table(MINIMAL_T9_SCHEMA, "wanxiang_t9")
+        twice, retired = b.retire_t9_abbrev_table(once, "wanxiang_t9")
+        self.assertFalse(retired)
+        self.assertEqual(once, twice)
+
+    def test_fullTransformOfT9SchemaIsStable(self):
+        first, notes, warns = b.transform(
+            "wanxiang_t9.schema.yaml", MINIMAL_T9_SCHEMA.encode(), b.FUZZY_SAFE
+        )
+        self.assertEqual([], warns)
+        self.assertIn("abbrev_max_length", first.decode())
+        self.assertIn("- abbrev/^([a-z]).*/$1/", first.decode())
+        second, _, _ = b.transform(
+            "wanxiang_t9.schema.yaml", first, b.FUZZY_SAFE
+        )
+        self.assertEqual(first, second)
+        # 26 键方案不注入这两样：它的简拼是全量的，靠自己的 algebra 支撑
+        plain, _, _ = b.transform(
+            "wanxiang.schema.yaml", MINIMAL_SCHEMA.encode(), b.FUZZY_SAFE
+        )
+        self.assertNotIn("abbrev_max_length", plain.decode())
+        self.assertNotIn("t9-abbrev", plain.decode())
 
 
 class InjectSentenceOptionsTest(unittest.TestCase):
@@ -263,6 +400,15 @@ class MiscTransformTest(unittest.TestCase):
         out, notes, _ = b.transform("lua/wanxiang/wanxiang.lua", payload, b.FUZZY_ALL)
         self.assertEqual(payload, out)
         self.assertEqual([], notes)
+
+    def test_markPairsCoverEveryInjection(self):
+        # 少一对标记，重复跑脚本就会把注入块叠两层
+        for pair in (
+            (b.MARK_T9_ABBREV_BEGIN, b.MARK_T9_ABBREV_END),
+            (b.MARK_T9_ABBREV_UPPER_BEGIN, b.MARK_T9_ABBREV_UPPER_END),
+            (b.MARK_ABBREV_MAX_LENGTH_BEGIN, b.MARK_ABBREV_MAX_LENGTH_END),
+        ):
+            self.assertIn(pair, b.MARK_PAIRS)
 
     def test_topLevelBlockBounds(self):
         lines = MINIMAL_SCHEMA.splitlines(keepends=True)

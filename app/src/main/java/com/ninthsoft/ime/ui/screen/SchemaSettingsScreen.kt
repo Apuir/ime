@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ninthsoft.ime.R
 import com.ninthsoft.ime.base.ngram.GramModelDownloader
+import com.ninthsoft.ime.data.manager.CandidateManager
 import com.ninthsoft.ime.data.manager.KeyboardManager
 import com.ninthsoft.ime.data.schemaLayoutTag
 import com.ninthsoft.ime.engine.EngineFactory
@@ -66,6 +67,7 @@ import com.ninthsoft.ime.ui.screen.ScreenComponent.ActionRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.ProgressButton
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SectionHeader
 import com.ninthsoft.ime.ui.screen.ScreenComponent.SettingsGroup
+import com.ninthsoft.ime.ui.screen.ScreenComponent.SwitchRow
 import com.ninthsoft.ime.ui.screen.ScreenComponent.barFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowFontSize
 import com.ninthsoft.ime.ui.screen.ScreenComponent.rowSubFontSize
@@ -119,6 +121,9 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
     // 偏好为空或已失效时，高亮的应该是键盘真正会用的那一项（回落结果）。
     val selectedItem = remember(chineseItems, chineseKeyboard, chineseSchemaId) {
         KeyboardSlotPlan.resolve(chineseItems, chineseKeyboard, chineseSchemaId)
+    }
+    var abbreviationEnabled by remember {
+        mutableStateOf(CandidateManager.isAbbreviationEnabled(context))
     }
 
     var grammarLanguage by remember { mutableStateOf<String?>(null) }
@@ -271,6 +276,17 @@ fun SchemaSettingsScreen(onBack: () -> Unit) {
                         )
                     }
                 }
+            }
+
+            SettingsGroup(title = stringResource(R.string.schema_abbrev_group)) {
+                SwitchRow(
+                    title = stringResource(R.string.schema_abbrev_enabled),
+                    checked = abbreviationEnabled,
+                    onCheckedChange = {
+                        abbreviationEnabled = it
+                        CandidateManager.setAbbreviationEnabled(context, it)
+                    },
+                )
             }
 
             SectionHeader(stringResource(R.string.slot_section_english))

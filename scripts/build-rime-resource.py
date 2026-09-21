@@ -8,7 +8,7 @@ app 把 librime 当纯内核，方案数据（万象拼音）打包在 ``assets/
 运行时解压到 ``files/shared``。这个 zip **不入库**（65 MB+），所以必须有一个
 可复现的脚本，否则换机器 / 换版本就没法重建。
 
-本脚本做五件事：
+本脚本做这些事：
 
 1. 从「干净来源」（默认本机 fcitx5 的 rime 用户目录）按**白名单**取方案数据；
 2. **注入 app 专属字段** —— ``schema/{layout,punctuation,kind,candidateKind}``
@@ -20,11 +20,24 @@ app 把 librime 当纯内核，方案数据（万象拼音）打包在 ``assets/
    到拼音方案。librime 的 ``max_sentences`` 默认是 **1**，也就是「首字母整句」
    只给一条猜测；调到 8 之后 ``mtzj`` 能翻到「明天再讲」、``nzmy`` 能翻到
    「你怎么样」，这才是主流输入法的手感（`--max-sentences 1` 可关掉）；
-5. 保留上一版 zip 里的 ``model/predict.marisa``（app 专用，来自上游），
-   按 librime 要求的结构打包（根目录直接是 ``shared/`` 和 ``model/``）。
+5. **给九键打开简拼** —— 九键（``wanxiang_t9`` / ``wanxiang_t9i``）的
+   ``speller/algebra`` 默认把简拼规则注释掉了，这里打开；同时注入
+   ``speller/abbrev_max_length``：九键发的是数字串，简拼只对短输入生效 ——
+   一是长串的简拼读法不像用户本意、简拼边还会让候选图暴涨（同一份数据实测
+   8 位全拼输入 3.9ms → 235ms），二是短输入下必须抬掉 librime 的剪枝，
+   否则整串刚好是一个完整拼音时（``64``=ni、``94``=yi/zhi）简拼边会被丢掉。
+   **简拼总开关**（app 设置 → Rime 运行时选项 ``abbrev_disabled``）对所有中文
+   方案统一生效，闸门也在 librime 里；
+6. **停用九键的 lua 简码表**（``lua/data/t9_abbrev.txt`` 那条 ``mode: abbrev``
+   规则）并撤掉对应的「简码」开关：通用简拼与它互斥，实测同时开时 ``95``
+   出不来「自己」、``64`` 出不来「你好」——简码规则会把命中的候选吃掉。
+   九键统一走通用简拼；
+7. 保留上一版 zip 里的 ``model/predict.marisa``（app 专用，来自上游），
+   按 librime 要求的结构打包（``shared/`` 和 ``model/``；以 ``shared/`` 开头，
+   app 侧的解压器也能剥掉多出来的一层 ``resource/``）。
 
-四类注入都用 ``# >>> ime:xxx`` / ``# <<< ime:xxx`` 注释成对包裹，
-所以脚本**幂等**：重复执行、或把输出目录当来源再跑一次，结果都一致。
+注入都用 ``# >>> ime:xxx`` / ``# <<< ime:xxx`` 注释成对包裹（简码那条是
+行尾标记），所以脚本**幂等**：重复执行、或把输出目录当来源再跑一次，结果都一致。
 
 另外会做一次**引用校验**：扫描 yaml 的 ``import_tables`` / ``__include`` /
 ``files`` 与 lua 里的 ``lua/data/...`` 字面量，报告「被引用但没打包」的文件。
@@ -147,6 +160,16 @@ DEFAULT_FUZZY = "safe"
 #: 英文 / 反查 / 混合码方案不合成中文句子，注入没有意义。
 SENTENCE_SCHEMAS = ["wanxiang", "wanxiang_t9", "wanxiang_t9i"]
 
+#: 九键方案：输入是数字串。上游把它们的简拼规则注释掉了，这里打开。
+T9_SCHEMAS = ["wanxiang_t9", "wanxiang_t9i"]
+
+#: 九键简拼生效的输入码长度上限（分隔符不计）。4 个数字 ≈ 2~4 个音节的简拼，
+#: 覆盖词语与成语；再长的手感会明显变慢，也不像用户本意。
+ABBREV_MAX_LENGTH = 4
+
+#: 九键 lua 简码表的数据文件 —— 它那条规则要停用（见 retire_t9_abbrev_table）。
+T9_ABBREV_TABLE_FILE = "lua/data/t9_abbrev.txt"
+
 #: 整句候选数。librime 的 ``translator/max_sentences`` 默认是 1 —— 首字母整句
 #: 只给一条猜测，用户没有备选；``<=1`` 即沿用引擎默认（脚本不注入）。
 #:
@@ -192,12 +215,24 @@ MARK_FUZZY_BEGIN = "# >>> ime:fuzzy (由 build-rime-resource.py 注入，勿手�
 MARK_FUZZY_END = "# <<< ime:fuzzy"
 MARK_SENTENCE_BEGIN = "  # >>> ime:sentence (由 build-rime-resource.py 注入，勿手改)"
 MARK_SENTENCE_END = "  # <<< ime:sentence"
+MARK_T9_ABBREV_BEGIN = "    # >>> ime:t9-abbrev (由 build-rime-resource.py 注入，勿手改)"
+MARK_T9_ABBREV_END = "    # <<< ime:t9-abbrev"
+MARK_T9_ABBREV_UPPER_BEGIN = "    # >>> ime:t9-abbrev-upper (由 build-rime-resource.py 注入，勿手改)"
+MARK_T9_ABBREV_UPPER_END = "    # <<< ime:t9-abbrev-upper"
+MARK_ABBREV_MAX_LENGTH_BEGIN = "  # >>> ime:abbrev-max-length (由 build-rime-resource.py 注入，勿手改)"
+MARK_ABBREV_MAX_LENGTH_END = "  # <<< ime:abbrev-max-length"
+
+#: 简码表那条规则被改成 ``option: false`` 的行尾标记（单行改动，不用块标记）。
+MARK_T9_ABBREV_TABLE_OFF = "ime:t9-abbrev-table-off"
 
 MARK_PAIRS = [
     (MARK_SCHEMA_BEGIN, MARK_SCHEMA_END),
     (MARK_OPTIONS_BEGIN, MARK_OPTIONS_END),
     (MARK_FUZZY_BEGIN, MARK_FUZZY_END),
     (MARK_SENTENCE_BEGIN, MARK_SENTENCE_END),
+    (MARK_T9_ABBREV_BEGIN, MARK_T9_ABBREV_END),
+    (MARK_T9_ABBREV_UPPER_BEGIN, MARK_T9_ABBREV_UPPER_END),
+    (MARK_ABBREV_MAX_LENGTH_BEGIN, MARK_ABBREV_MAX_LENGTH_END),
 ]
 
 #: 允许解析不到的引用 —— 这些是「可选 / 用户自己提供」的文件，缺失时方案有默认行为。
@@ -393,6 +428,16 @@ def inject_options_block(text: str, schema_id: str) -> str:
     text = strip_injection(text, MARK_OPTIONS_BEGIN, MARK_OPTIONS_END)
     s2t_lock = "true" if spec["s2t_lock"] else "false"
     ascii_lock = "true" if spec["ascii_lock"] else "false"
+    # 简拼是拼音方案的事，英文方案不注入。选项名取反（abbrev_disabled）：没声明
+    # 这个选项的方案 get_option 返回 false，也就是保持「简拼照旧」的老行为。
+    abbrev_entry = ""
+    if spec["kind"] != "English":
+        abbrev_entry = """  - name: abbreviation_enabled
+    key: abbrev_disabled
+    keys: [abbrev_disabled]
+    lock: false
+    value: false
+"""
     block = f"""{MARK_OPTIONS_BEGIN}
 # app 设置 → Rime 运行时选项的桥接。OptionsApplier.kt 按 name 查这张表；
 # key 是要 set_option 的开关名，keys 里除 key 之外的名字会被显式置 false。
@@ -412,7 +457,7 @@ options:
     keys: [ascii_mode]
     lock: {ascii_lock}
     value: false
-{MARK_OPTIONS_END}
+{abbrev_entry}{MARK_OPTIONS_END}
 """
 
     lines = text.splitlines(keepends=True)
@@ -422,6 +467,127 @@ options:
         return text.rstrip("\n") + "\n\n" + block
     lines.insert(bounds[0], block)
     return "".join(lines)
+
+
+def _inject_algebra_rule(
+    text: str,
+    begin: str,
+    end: str,
+    rule: str,
+    commented: str,
+    anchor: str,
+    label: str,
+) -> str:
+    """把一条简拼规则改成启用状态，并用标记块包住。
+
+    来源里它是注释掉的（``#- abbrev/...``）就替换那一行，否则插到 ``anchor`` 那行之后。
+    先剥离自己的标记块，所以两种写法都幂等。
+    """
+    text = strip_injection(text, begin, end)
+    block = f"{begin}\n{rule}\n{end}"
+    commented_line = re.compile(r"^[ \t]*" + re.escape(commented) + r"[ \t]*$", re.M)
+    if commented_line.search(text):
+        return commented_line.sub(block, text, count=1)
+    match = re.search(re.escape(anchor) + r".*$", text, re.M)
+    if match is None:
+        raise ValueError(f"{label}: 找不到注入锚点 `{anchor}`")
+    return text[: match.end() + 1] + block + "\n" + text[match.end() + 1 :]
+
+
+def inject_t9_abbrev(text: str) -> str:
+    """打开九键 algebra 里的两条简拼规则。
+
+    小写那条要在 ``derive/^(.*)$/\\U$1/`` **之前**（先把音节缩成首字母），
+    大写那条要在**之后**（缩过的大写首字母再由 ``xlit`` 映射成数字键）。
+    """
+    text = _inject_algebra_rule(
+        text,
+        MARK_T9_ABBREV_BEGIN,
+        MARK_T9_ABBREV_END,
+        "    - abbrev/^([a-z]).*/$1/",
+        "#- abbrev/^([a-z]).*/$1/",
+        "- xform/^n$/en/",
+        "九键简拼",
+    )
+    return _inject_algebra_rule(
+        text,
+        MARK_T9_ABBREV_UPPER_BEGIN,
+        MARK_T9_ABBREV_UPPER_END,
+        "    - abbrev/^([A-Z]).*/$1/",
+        "#- abbrev/^([A-Z]).*/$1/",
+        "- derive/^(.*)$/\\U$1/",
+        "九键简拼（大写）",
+    )
+
+
+def inject_abbrev_max_length(text: str, schema_id: str) -> str:
+    """往 ``speller:`` 块注入九键的「简拼生效长度上限」。
+
+    librime 侧读 ``speller/abbrev_max_length``：输入码（分隔符不计）不超过这个长度
+    才让简拼边参与，并且在这种短输入下抬掉 syllabifier 的剪枝（九键数字串整串
+    常常刚好是一个完整拼音，64=ni、94=yi/zhi，不抬剪枝就出不来「你好」）。
+    """
+    text = strip_injection(text, MARK_ABBREV_MAX_LENGTH_BEGIN, MARK_ABBREV_MAX_LENGTH_END)
+    lines = text.splitlines(keepends=True)
+    bounds = _top_level_block_bounds(lines, "speller")
+    if bounds is None:
+        raise ValueError(f"{schema_id}: 找不到顶层 speller: 块")
+    block = [
+        MARK_ABBREV_MAX_LENGTH_BEGIN + "\n",
+        "  # 九键发的是数字串：简拼（每个音节一个数字）只在短输入下启用。\n",
+        "  # 长串的简拼读法不像用户本意，而且简拼边会让候选图暴涨\n",
+        "  # （同一份数据实测：8 位全拼输入 3.9ms → 235ms）。\n",
+        "  # 值 = 参与简拼的输入码长度上限（分隔符不计），超过就退回全拼。\n",
+        f"  abbrev_max_length: {ABBREV_MAX_LENGTH}\n",
+        MARK_ABBREV_MAX_LENGTH_END + "\n",
+    ]
+    lines[bounds[0] + 1 : bounds[0] + 1] = block
+    return "".join(lines)
+
+
+def drop_switch(text: str, name: str) -> tuple[str, bool]:
+    """删掉 ``switches:`` 里名为 ``name`` 的开关（含它的续行）。"""
+    lines = text.splitlines(keepends=True)
+    bounds = _top_level_block_bounds(lines, "switches")
+    if bounds is None:
+        return text, False
+    start, end = bounds
+    for idx in range(start + 1, end):
+        if re.match(rf"^[ \t]*-[ \t]*name:[ \t]*{re.escape(name)}[ \t]*$", lines[idx]):
+            stop = idx + 1
+            while stop < end and (not lines[stop].strip() or lines[stop][:1].isspace()):
+                stop += 1
+            del lines[idx:stop]
+            return "".join(lines), True
+    return text, False
+
+
+def retire_t9_abbrev_table(text: str, schema_id: str) -> tuple[str, bool]:
+    """停用九键的 lua 简码表规则，并撤掉对应的切换开关。
+
+    通用简拼和这张表互斥：简码规则会把「命中的候选」从候选流里吃掉。九键统一走
+    通用简拼，所以这条规则改成 ``option: false`` 永不开火（只删开关不够 ——
+    ``switcher/save_options`` 会把用户之前存下的 ``abbrev: true`` 再读回来）。
+    """
+    if MARK_T9_ABBREV_TABLE_OFF in text:
+        return text, False
+    lines = text.splitlines(keepends=True)
+    target = next(
+        (i for i, line in enumerate(lines) if T9_ABBREV_TABLE_FILE in line), None
+    )
+    if target is None:
+        raise ValueError(f"{schema_id}: 找不到 {T9_ABBREV_TABLE_FILE} 的引用")
+    for idx in range(target, -1, -1):
+        match = re.match(r"^([ \t]*)-[ \t]*option:[ \t]*(\S+)(.*)$", lines[idx])
+        if match:
+            lines[idx] = (
+                f"{match.group(1)}- option: false{match.group(3)}"
+                f"  # {MARK_T9_ABBREV_TABLE_OFF}（由 build-rime-resource.py 注入，勿手改）\n"
+            )
+            break
+    else:
+        raise ValueError(f"{schema_id}: 简码表规则里找不到 option: 行")
+    return drop_switch("".join(lines), "abbrev")
 
 
 def inject_sentence_options(
@@ -531,6 +697,15 @@ def transform(
     if schema_id in FUZZY_SCHEMAS:
         text, count = inject_fuzzy_rules(text, schema_id, fuzzy_rules)
         notes.append(f"追加模糊音 {count} 组")
+    if schema_id in T9_SCHEMAS:
+        text = inject_t9_abbrev(text)
+        text = inject_abbrev_max_length(text, schema_id)
+        text, retired = retire_t9_abbrev_table(text, schema_id)
+        notes.append(f"打开九键简拼（abbrev_max_length={ABBREV_MAX_LENGTH}）")
+        if retired:
+            notes.append("停用九键 lua 简码表与「简码」开关")
+        else:
+            notes.append("九键 lua 简码表已是停用状态")
     text = inject_options_block(text, schema_id)
     notes.append("注入 options 块")
     text, changed = enable_fallback_reorder(text, schema_id)
@@ -634,9 +809,11 @@ def build_plan(
     if previous and previous.exists():
         with zipfile.ZipFile(previous) as zf:
             for name in sorted(zf.namelist()):
-                if name.startswith("model/") and not name.endswith("/"):
-                    plan.files[name] = zf.read(name)
-                    plan.from_previous.append(name)
+                # 上一版可能是 `zip -r resource.zip resource` 打的，多一层 resource/ 壳
+                rel = name.removeprefix("resource/")
+                if rel.startswith("model/") and not rel.endswith("/"):
+                    plan.files[rel] = zf.read(name)
+                    plan.from_previous.append(rel)
     else:
         plan.warnings.append(
             "没有上一版 resource.zip，model/predict.marisa 缺失："
@@ -682,6 +859,9 @@ def write_manifest(plan: BuildPlan, source: Path, manifest: Path,
             "sentence_schemas": SENTENCE_SCHEMAS,
             "max_sentences": max_sentences,
             "sentence_cutoff_threshold": sentence_cutoff,
+            "abbrev_schemas": T9_SCHEMAS,
+            "abbrev_runtime_option": "abbrev_disabled",
+            "retired_abbrev_table": T9_ABBREV_TABLE_FILE,
         },
         "file_count": len(plan.files),
         "uncompressed_bytes": sum(len(v) for v in plan.files.values()),

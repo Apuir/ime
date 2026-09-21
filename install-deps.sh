@@ -310,4 +310,209 @@ else
     echo ">>> librime 简拼限制已是逐路径（或上游已修），跳过补丁"
 fi
 
+# --- 简拼总开关 + 九键的简拼生效范围 ---
+# 1) 简拼总开关：app 的「简拼」设置通过运行时选项 abbrev_disabled 传进来，关闭时
+#    不把 kAbbreviation 拼写放进音节图 —— 26 键与九键共用这一条闸门。
+# 2) 九键发的是数字串，整串常常刚好是一个完整拼音（64=ni、94=yi/zhi），librime
+#    默认会把简拼边当「更差的拼写」剪掉，于是 64 出不来「你好」；方案里声明
+#    speller/abbrev_max_length 后，短输入下把剪枝下限抬掉，同时简拼只对短输入
+#    生效（长串的简拼读法不像本意，简拼边还会让候选图暴涨：8 位全拼输入
+#    实测 3.9ms → 235ms）。
+# 上游哪天自己支持了，这里会自动跳过。
+if [ -f "$LIBRIME_SRC/rime/gear/script_translator.cc" ] && ! grep -q "abbrev_disabled" "$LIBRIME_SRC/rime/gear/script_translator.cc"; then
+    echo ">>> 给 librime 打补丁：简拼总开关 + 九键简拼生效范围"
+    git -C "$DEPS_DIR/librime" apply --whitespace=nowarn - <<'LIBRIME_JIANPIN_PATCH'
+diff --git a/src/rime/algo/syllabifier.cc b/src/rime/algo/syllabifier.cc
+index 11d0efc5..6d311a39 100644
+--- a/src/rime/algo/syllabifier.cc
++++ b/src/rime/algo/syllabifier.cc
+@@ -34,6 +34,29 @@ int Syllabifier::BuildSyllableGraph(const string& input,
+   if (input.empty())
+     return 0;
+ 
++  // 输入码里除分隔符以外的长度：九键用户可能打 "7'9'9'8"，分隔符不该算进上限。
++  size_t code_length = 0;
++  for (char ch : input) {
++    if (delimiters_.find(ch) == string::npos)
++      ++code_length;
++  }
++  // 九键（声明了 abbrev_max_length 的方案）的简拼只对短输入生效：
++  // 数字串越长，简拼读法越不像用户本意；而且简拼边会让候选图暴涨
++  // （实测同一份数据、8 位全拼输入：3.9ms → 235ms）。超过上限就整条不放简拼边，
++  // 退回全拼，输入框里的手感与原行为一致。
++  const bool schema_bounds_abbreviation = abbrev_max_length_ > 0;
++  const bool allow_abbreviation =
++      !suppress_abbreviation_ &&
++      (!schema_bounds_abbreviation || code_length <= abbrev_max_length_);
++  // 短输入下简拼边要保留：整串数字常常刚好是一个完整拼音（64=ni、94=yi/zhi），
++  // librime 默认会把简拼边当「更差的拼写」剪掉，剪掉了 64 就出不来「你好」。
++  const bool keep_abbreviation_on_full_parse =
++      schema_bounds_abbreviation && allow_abbreviation;
++  if (keep_abbreviation_on_full_parse) {
++    // 规模已经由输入长度限住，迭代上限反而会截断三音节以上的简拼结果。
++    graph->unlimited_abbreviation_search = true;
++  }
++
+   size_t farthest = 0;
+   VertexQueue queue;
+   queue.push(Vertex{0, kNormalSpelling});  // start
+@@ -110,8 +133,10 @@ int Syllabifier::BuildSyllableGraph(const string& input,
+         while (!accessor.exhausted()) {
+           SyllableId syllable_id = accessor.syllable_id();
+           EdgeProperties props(accessor.properties());
+-          if (strict_spelling_ && matches_input &&
+-              props.type != kNormalSpelling) {
++          if (!allow_abbreviation && props.type == kAbbreviation) {
++            // 简拼总开关关闭 / 超出简拼生效长度：简拼拼写整条不入图
++          } else if (strict_spelling_ && matches_input &&
++                     props.type != kNormalSpelling) {
+             // disqualify fuzzy spelling or abbreviation as single word
+           } else {
+             props.end_pos = end_pos;
+@@ -158,8 +183,11 @@ int Syllabifier::BuildSyllableGraph(const string& input,
+   set<int> good;
+   good.insert(farthest);
+   // fuzzy spellings are immune to invalidation by normal spellings
+-  SpellingType last_type =
+-      (std::max)(graph->vertices[farthest], kFuzzySpelling);
++  // 简拼边默认只比模糊音好一点，整串能全拼时会被这里剪掉；九键需要在短输入下
++  // 保留它们（64=ni 时也要能出「你好」），所以那种方案把下限抬到 kAbbreviation。
++  SpellingType last_type = (std::max)(
++      graph->vertices[farthest],
++      keep_abbreviation_on_full_parse ? kAbbreviation : kFuzzySpelling);
+   for (int i = farthest - 1; i >= 0; --i) {
+     if (graph->vertices.find(i) == graph->vertices.end())
+       continue;
+diff --git a/src/rime/algo/syllabifier.h b/src/rime/algo/syllabifier.h
+index 1167e296..8219b1fb 100644
+--- a/src/rime/algo/syllabifier.h
++++ b/src/rime/algo/syllabifier.h
+@@ -39,6 +39,8 @@ using SpellingIndices = map<size_t, SpellingIndex>;
+ struct SyllableGraph {
+   size_t input_length = 0;
+   size_t interpreted_length = 0;
++  // 简拼边不做迭代上限（方案声明了 abbrev_max_length 时由 [Syllabifier] 置位）。
++  bool unlimited_abbreviation_search = false;
+   VertexMap vertices;
+   EdgeMap edges;
+   SpellingIndices indices;
+@@ -58,6 +60,15 @@ class Syllabifier {
+                                   Prism& prism,
+                                   SyllableGraph* graph);
+   RIME_DLL void EnableCorrection(Corrector* corrector);
++  // 简拼总开关：关闭时不把简拼（kAbbreviation）拼写放进音节图。
++  void SuppressAbbreviation(bool suppress) {
++    suppress_abbreviation_ = suppress;
++  }
++  // 简拼边只在**非分隔符**输入码长度不超过 max_length 时参与；0 表示不限
++  // （librime 默认行为）。九键发数字串，见 syllabifier.cc 里的说明。
++  void RestrictAbbreviationToInputLength(size_t max_length) {
++    abbrev_max_length_ = max_length;
++  }
+ 
+  protected:
+   void CheckOverlappedSpellings(SyllableGraph* graph, size_t start, size_t end);
+@@ -66,6 +77,8 @@ class Syllabifier {
+   string delimiters_;
+   bool enable_completion_ = false;
+   bool strict_spelling_ = false;
++  bool suppress_abbreviation_ = false;
++  size_t abbrev_max_length_ = 0;
+   Corrector* corrector_ = nullptr;
+ };
+ 
+diff --git a/src/rime/gear/script_translator.cc b/src/rime/gear/script_translator.cc
+index aef62178..40301fb6 100644
+--- a/src/rime/gear/script_translator.cc
++++ b/src/rime/gear/script_translator.cc
+@@ -87,6 +87,11 @@ class ScriptSyllabifier : public PhraseSyllabifier {
+         syllabifier_(translator->delimiters(),
+                      translator->enable_completion(),
+                      translator->strict_spelling()) {
++    // 这两个开关都作用于音节图：前者是简拼总开关（每次查询现读运行时选项），
++    // 后者把简拼限定在短输入上（九键的数字输入需要，见 syllabifier.cc）。
++    syllabifier_.SuppressAbbreviation(translator->abbreviation_disabled());
++    syllabifier_.RestrictAbbreviationToInputLength(
++        translator->abbrev_max_length());
+     if (corrector) {
+       syllabifier_.EnableCorrection(corrector);
+     }
+@@ -195,6 +200,11 @@ ScriptTranslator::ScriptTranslator(const Ticket& ticket)
+       enable_word_completion_ = enable_completion_;
+     }
+     config->GetInt(name_space_ + "/max_homophones", &max_homophones_);
++    int abbrev_max_length = 0;
++    if (config->GetInt("speller/abbrev_max_length", &abbrev_max_length) &&
++        abbrev_max_length > 0) {
++      abbrev_max_length_ = static_cast<size_t>(abbrev_max_length);
++    }
+     poet_.reset(new Poet(language(), config));
+   }
+   if (enable_correction_) {
+@@ -204,6 +214,12 @@ ScriptTranslator::ScriptTranslator(const Ticket& ticket)
+   }
+ }
+ 
++bool ScriptTranslator::abbreviation_disabled() const {
++  // 不存在这个选项的方案（例如英文方案）保持原行为：简拼照旧由方案数据决定。
++  return engine_ && engine_->context() &&
++         engine_->context()->get_option("abbrev_disabled");
++}
++
+ an<Translation> ScriptTranslator::Query(const string& input,
+                                         const Segment& segment) {
+   if (!dict_ || !dict_->loaded())
+diff --git a/src/rime/gear/script_translator.h b/src/rime/gear/script_translator.h
+index e5b60a7a..5ee2dc3a 100644
+--- a/src/rime/gear/script_translator.h
++++ b/src/rime/gear/script_translator.h
+@@ -52,6 +52,10 @@ class ScriptTranslator : public Translator,
+   bool enable_word_completion() const { return enable_word_completion_; }
+   int max_word_length() const { return max_word_length_; }
+   int core_word_length() const;
++  // 简拼总开关（运行时选项），每次查询现读。
++  bool abbreviation_disabled() const;
++  // 简拼生效的输入码长度上限（0 = 不限）。
++  size_t abbrev_max_length() const { return abbrev_max_length_; }
+ 
+  protected:
+   int max_homophones_ = 1;
+@@ -61,6 +65,7 @@ class ScriptTranslator : public Translator,
+   bool always_show_comments_ = false;
+   bool enable_correction_ = false;
+   bool enable_word_completion_ = false;
++  size_t abbrev_max_length_ = 0;
+   the<Corrector> corrector_;
+   the<Poet> poet_;
+   vector<an<Phrase>> queue_;
+LIBRIME_JIANPIN_PATCH
+    # 这条依赖上面的「简拼限流改成逐路径」补丁留下的常量：逐路径补丁没打上
+    # （上游自己修好了）就跳过，宁可少一层优化也不要让构建挂掉。
+    if grep -q "kMaxAbbreviationPerPath" "$LIBRIME_SRC/rime/dict/table.cc"; then
+        git -C "$DEPS_DIR/librime" apply --whitespace=nowarn - <<'LIBRIME_JIANPIN_TABLE_PATCH'
+diff --git a/src/rime/dict/table.cc b/src/rime/dict/table.cc
+index ad61ebcf..d1e452e6 100644
+--- a/src/rime/dict/table.cc
++++ b/src/rime/dict/table.cc
+@@ -621,7 +621,11 @@ bool Table::Query(const SyllableGraph& syll_graph,
+       SyllableId syll_id = spellings.first;
+       for (auto props : spellings.second) {
+         if (props->type == kAbbreviation) {
+-          if (++abbreviation_iteration_count > kAbbreviationIterationLimit) {
++          // 方案声明「简拼只对短输入生效」时（九键），音节图会带上这个标记：
++          // 那条迭代闸门会把三音节以上的简拼结果截掉，短输入又已经由输入长度
++          // 限定住了规模，所以这里不设上限。
++          if (!syll_graph.unlimited_abbreviation_search &&
++              ++abbreviation_iteration_count > kAbbreviationIterationLimit) {
+             continue;
+           }
+         }
+LIBRIME_JIANPIN_TABLE_PATCH
+    else
+        echo ">>> table.cc 没有逐路径限流（上游已改），跳过简拼迭代上限那一段"
+    fi
+else
+    echo ">>> librime 简拼总开关已是新版（或上游已支持），跳过补丁"
+fi
+
 echo ">>> 所有依赖已同步完成。"

@@ -93,6 +93,7 @@ object SettingsBackupSpec {
             SettingKey(CandidateManager.KEY_TRADITIONAL_ENABLED, B),
             SettingKey(CandidateManager.KEY_EMOJI_ENABLED, B),
             SettingKey(CandidateManager.KEY_ASCII_MODE_ENABLED, B),
+            SettingKey(CandidateManager.KEY_ABBREVIATION_ENABLED, B),
             SettingKey(CandidateManager.KEY_RERANK_ENABLED, B),
             SettingKey(CandidateManager.KEY_SHOW_INDEX, B),
             SettingKey(CandidateManager.KEY_SHOW_COMMENT, B),

@@ -8,6 +8,7 @@ object CandidateManager {
     const val KEY_TRADITIONAL_ENABLED = "traditional_chinese_enabled"
     const val KEY_EMOJI_ENABLED = "emoji_enabled"
     const val KEY_ASCII_MODE_ENABLED = "ascii_mode_enabled"
+    const val KEY_ABBREVIATION_ENABLED = "abbreviation_enabled"
     const val KEY_PREDICTION_ENABLED = "prediction_enabled"
     const val KEY_RERANK_ENABLED = "rerank_enabled"
     const val KEY_SHOW_INDEX = "show_index"
@@ -64,6 +65,17 @@ object CandidateManager {
     fun setAsciiModeEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
             putBoolean(KEY_ASCII_MODE_ENABLED, enabled)
+        }
+    }
+
+    /** 首字母简拼（九键 / 26 键等所有中文键盘共用）。 */
+    fun isAbbreviationEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ABBREVIATION_ENABLED, true)
+
+    fun setAbbreviationEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putBoolean(KEY_ABBREVIATION_ENABLED, enabled)
         }
     }
 
