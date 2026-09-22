@@ -1,7 +1,7 @@
 {
   "generated_by": "scripts/build-rime-resource.py",
   "note": "resource.zip 不入库；本 manifest 用于追溯与复现",
-  "source_dir": "/home/ambearbox/.local/share/fcitx5/rime",
+  "source_dir": "<rime user directory>",
   "wanxiang_version": "17.9.9",
   "app_schema_list": [
     "wanxiang_t9",

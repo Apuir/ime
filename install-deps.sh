@@ -243,7 +243,7 @@ index 866f458a..ad61ebcf 100644
 +const size_t kAbbreviationIterationLimit = 65536;
 +// 限制**单条路径**上 kAbbreviation 类型边的个数。
 +//
-+// ⚠️ 这里原来是「单次 Query 的全局计数、上限 2」（见上游 danjian/librime 的
++// 注意：这里原来是「单次 Query 的全局计数、上限 2」（见上游 danjian/librime 的
 +// `feat: kAbbreviation rate limit when table search`），那是个 bug：BFS 是广度优先、
 +// 计数跨所有路径共享，于是**只有最先被展开的两三条简拼路径能活下来**，其余全被丢掉。
 +// 表现就是「全简拼输入（如 zjhjszydcld）在本机给出的是随便几个词，而同一个词库在

@@ -1,14 +1,19 @@
 # scripts
 
-构建与验证用的脚本。都是**独立可跑**的，不参与 Gradle 构建。
+构建与验证用的脚本。都是独立可跑的，不参与 Gradle 构建。
+
+神经联想（NWP）的训练/导出管线在 `nwp/`，短语索引构建在 `phrase-index/`，两者都在本仓库内，
+不参与 Gradle 构建；语料、词表与权重放在工作目录（`.nwp-work/`，不入库）。
 
 | 脚本 | 作用 | 什么时候用 |
 |------|------|-----------|
-| [`build-rime-resource.py`](build-rime-resource.py) | 重建 `app/src/main/assets/resource.zip`（万象拼音方案数据）：白名单取数、注入 app 桥接字段 / 模糊音规则 / 整句候选配置、保留 `model/predict.marisa`、做引用校验、输出 manifest | **改动方案数据时**；换机器要重建时 |
+| [`build-rime-resource.py`](build-rime-resource.py) | 重建 `app/src/main/assets/resource.zip`（万象拼音方案数据）：白名单取数、注入 app 桥接字段 / 模糊音规则 / 整句候选配置、保留 `model/predict.marisa`、做引用校验、输出 manifest | 改动方案数据时；换机器要重建时 |
 | [`test_build_rime_resource.py`](test_build_rime_resource.py) | 上面那个脚本的单元测试（注入正确性 + 幂等性 + 引用校验） | 改那个脚本之后 |
-| [`rime-probe/`](rime-probe/) | 在开发机上直接加载方案数据跑 librime，验证输入行为 | **改 `speller/algebra` 之前先验**，别靠刷机试 |
-| [`gram-tools/`](gram-tools/) | 造 `/` 改 Rime 语法模型（`.gram`）：`mini_gram_builder` 从 `键 词频` 两列生成模型，附逆向出来的格式说明 | 想验证「定向语法模型能不能影响整句解码」时 |
-| [`rime-resource-manifest.json`](rime-resource-manifest.json) | 上一次 `resource.zip` 的文件清单 + sha256 + 万象版本（由脚本生成，**建议入库**用于追溯） | 查「这一版包里到底是什么」 |
+| [`rime-probe/`](rime-probe/) | 在开发机上直接加载方案数据跑 librime，验证输入行为 | 改 `speller/algebra` 之前先验，别靠刷机试 |
+| [`gram-tools/`](gram-tools/) | 造 / 改 Rime 语法模型（`.gram`）：`mini_gram_builder` 从 `键 词频` 两列生成模型，附逆向出来的格式说明 | 想验证「定向语法模型能不能影响整句解码」时 |
+| [`nwp/`](nwp/) | 神经下一词预测的训练 / 导出 / 量化管线：抓语料、建词表、导出 ONNX、评测与量化对拍 | 要重训或换模型时 |
+| [`phrase-index/`](phrase-index/) | 从语料构建短语索引（成语、诗句这类固定长短语的精确后缀匹配） | 要重建 `assets/phrase` 数据时 |
+| [`rime-resource-manifest.json`](rime-resource-manifest.json) | 上一次 `resource.zip` 的文件清单 + sha256 + 万象版本（由脚本生成，建议入库用于追溯） | 查「这一版包里到底是什么」 |
 
 ## 常用命令
 
@@ -33,7 +38,7 @@ cd scripts/rime-probe && gcc -O2 -o /tmp/rime-schema-probe rime-schema-probe.c -
 
 ## 为什么 `resource.zip` 要脚本化重建
 
-`app/src/main/assets/resource.zip` 约 65 MB，被 `.gitignore` 排除、**不入库**。
+`app/src/main/assets/resource.zip` 约 65 MB，被 `.gitignore` 排除、不入库。
 没有脚本的话，「这一版包里的方案数据是从哪来的、改过什么」就完全不可追溯，
 换台机器也没法复现。所以约定：
 

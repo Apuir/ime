@@ -1,6 +1,6 @@
 # rime-schema-probe
 
-在**开发机上**直接加载方案数据跑 librime，验证输入行为的小工具。
+在开发机上直接加载方案数据跑 librime，验证输入行为的小工具。
 
 ## 为什么要有它
 
@@ -9,10 +9,10 @@
 这类问题，如果只能刷 APK 到手机上试：
 
 - 一轮十几分钟（构建 + 安装 + 首次部署）；
-- 看不到**候选总数**和某个词的真实位次，只能靠肉眼翻候选面板；
+- 看不到候选总数和某个词的真实位次，只能靠肉眼翻候选面板；
 - 出问题时说不清是「方案配置不对」还是「app 加载的数据不对」。
 
-这个探针用系统的 librime 加载同一份 `shared/` 数据，**几秒钟**给出确定答案。
+这个探针用系统的 librime 加载同一份 `shared/` 数据，几秒钟给出确定答案。
 改 `speller/algebra`（比如开关模糊音）之前先在这里验证，再谈打包。
 
 ## 编译
@@ -75,42 +75,40 @@ mkdir -p user
 
 ## 坑与前提
 
-- **`--deploy` 之后的 `user/` 目录不要删**：词库编译产物在里面，删了要重编。
-- **`shared_dir` / `user_dir` 一定要传绝对路径**。传 `./shared` 会看到
+- `--deploy` 之后的 `user/` 目录不要删：词库编译产物在里面，删了要重编。
+- `shared_dir` / `user_dir` 一定要传绝对路径。传 `./shared` 会看到
   `[super_symbols] cannot open data: lua/data/codex_sym.txt` 之类的报错 ——
-  那是**假警报**：万象 lua 的 `get_filename_with_fallback()` 要求
+  那是假警报：万象 lua 的 `get_filename_with_fallback()` 要求
   `rime_api.get_shared_data_dir()` 是绝对路径，否则直接退回相对路径去 `io.open`。
-  app 里 `sharedDataDir` 本来就是绝对路径，所以这个报错**不出现在真机上**。
+  app 里 `sharedDataDir` 本来就是绝对路径，所以这个报错不出现在真机上。
   跑之前先 `cd` 到数据目录再用 `$PWD/...`，或者一开始就用绝对路径。
-- **改了 `shared/` 下的方案文件，不重新部署是不生效的**：librime 部署时会把方案
-  副本写进 `user/build/<schema_id>.schema.yaml`，**之后从那里读**。所以在探针里
+- 改了 `shared/` 下的方案文件，不重新部署是不生效的：librime 部署时会把方案
+  副本写进 `user/build/<schema_id>.schema.yaml`，之后从那里读。所以在探针里
   改 `shared/wanxiang.schema.yaml` 看不到任何变化 —— 要么改 `user/build/` 里的副本
   （秒级，适合试参数），要么 `--deploy` 重建（分钟级）。试 `translator/*` 这类
   翻译器配置用前者最省时间。
-- **别把真实的 rime 用户目录当 `user/`**：探针会在里面建 `*.userdb`、写 `user.yaml`。
-- **`/tmp` 在有些沙箱里每次命令都会重置**，中间产物放 `~/.cache/<名字>/` 之类的持久目录。
-- **librime 版本**：探针用系统 librime（本次是 1.17.0），而 app 用的是
-  `danjian/librime` fork。核心的拼写运算 / 翻译器行为一致，但**不覆盖 app 侧
-  JNI 与 Kotlin 逻辑**，所以探针通过 ≠ 实机通过，最终仍要真机验证。
+- 别把真实的 rime 用户目录当 `user/`：探针会在里面建 `*.userdb`、写 `user.yaml`。
+- `/tmp` 在有些沙箱里每次命令都会重置，中间产物放 `~/.cache/<名字>/` 之类的持久目录。
+- librime 版本：探针用系统 librime（本次是 1.17.0），而 app 用的是
+  `danjian/librime` fork。核心的拼写运算 / 翻译器行为一致，但不覆盖 app 侧
+  JNI 与 Kotlin 逻辑，所以探针通过 ≠ 实机通过，最终仍要真机验证。
 - 输出里的 `E2026...` 开头的行是 librime 的 glog 错误（例如找不到可选的
   `wanxiang-lts-zh-hans.gram` 语法模型），与方案数据无关，可以忽略或 `rg -v "^E2026"` 过滤。
 
----
+## 探针看不到 app 的 librime 私人补丁
 
-## ⚠️ 探针看不到 app 的 librime 私人补丁
-
-探针用的是**系统 librime**，而 app 用的是 `app/src/main/cpp/deps/librime`
+探针用的是系统 librime，而 app 用的是 `app/src/main/cpp/deps/librime`
 （`danjian/librime` fork，带私人补丁）。所以：
 
-- **探针通过 ≠ 实机通过**。2026-09-19 就踩过一次：fork 在 `src/rime/dict/table.cc`
-  加的 `kAbbreviation rate limit`（全局计数、上限 2）把**全简拼输入**的候选砍得只剩
-  最先展开的几条，手机上是「传记和健身转悠电池了的」这种狗屁不通的候选，
+- 探针通过 ≠ 实机通过。2026-09-19 就踩过一次：fork 在 `src/rime/dict/table.cc`
+  加的 `kAbbreviation rate limit`（全局计数、上限 2）把全简拼输入的候选砍得只剩
+  最先展开的几条，手机上是「传记和健身转悠电池了的」这种不成句的候选，
   而探针（上游 librime）给出的是「这句话就是这样多出来的」。
-- **怀疑引擎行为时，正确的做法是**：把手机编译出来的
+- 怀疑引擎行为时，正确的做法是：把手机编译出来的
   `user/build/wanxiang.prism.bin` / `wanxiang.table.bin` + 部署副本 schema 拉下来，
-  放进一个空 `user` 目录，让探针**加载手机的编译产物**：
+  放进一个空 `user` 目录，让探针加载手机的编译产物：
   - 探针结果 = 手机结果 → 问题在方案数据 / 用户数据；
-  - 探针结果 ≠ 手机结果 → 问题在**引擎二进制（fork 补丁）**，去读
+  - 探针结果 ≠ 手机结果 → 问题在引擎二进制（fork 补丁），去读
     `deps/librime` 的 `git log`，重点看 `dict/`、`gear/`、`algo/`。
 
 ## 要验证 fork 的补丁：本机编一份 librime
