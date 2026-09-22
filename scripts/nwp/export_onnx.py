@@ -184,6 +184,128 @@ def parity_check(model, runner: OnnxRunner, batches: list[list[list[int]]]) -> d
     }
 
 
+def convert_to_fp16(src: Path, dst: Path) -> tuple[bool, str]:
+    """把 fp32 图整体降到 fp16，但**对外 I/O 保持 float32**（`keep_io_types` 的语义）。
+
+    为什么必须有这条路：文档写的退化方案是 fp16（约 260 MB），
+    但之前 `--no-int8` 实际退化到 **fp32 的 500.9 MB**，直接顶爆 300 MB 预算——
+    也就是说「int8 不行就退 fp16」这句承诺在代码里根本不存在。
+    端侧契约（past/present/logits 全 float32）不能动，所以在图的两端补 Cast：
+    进来的 float32 转 fp16 参与计算，出去的 fp16 再转回 float32。
+
+    没有用 onnxconverter_common（要额外装包、离线机器上不一定有）：
+    这里只需要「初始化器降精度 + 两端补 Cast」两件事，用 onnx 原生 API 就能做完。
+    """
+    try:
+        import numpy as np
+        import onnx
+        from onnx import TensorProto, helper, numpy_helper
+    except ImportError as e:
+        return False, f"缺依赖：{e}"
+    try:
+        model = onnx.load(str(src))
+    except Exception as e:  # noqa: BLE001
+        return False, f"读不了 {src}：{e}"
+
+    graph = model.graph
+    FLOAT, HALF = TensorProto.FLOAT, TensorProto.FLOAT16
+    # fp16 的有限范围是 ±65504。GPT2 的 causal mask 用 finfo.min（-3.4e38）填被屏蔽的位置，
+    # 直接 astype 会变 -inf：整行都被屏蔽时 softmax 会出 NaN。夹到有限最小值既保留语义
+    # （加一个足够负的数 = 概率 0），又不会产生 inf/NaN，顺带消掉 numpy 的溢出告警。
+    fp16_max = 65504.0
+
+    def _to_fp16(array):
+        return np.clip(array, -fp16_max, fp16_max).astype(np.float16)
+
+    # 1) 初始化器（权重）降到 fp16
+    converted = 0
+    for init in graph.initializer:
+        if init.data_type == FLOAT:
+            init.CopyFrom(numpy_helper.from_array(_to_fp16(numpy_helper.to_array(init)), init.name))
+            converted += 1
+
+    # 1b) 常量算子也要降精度。torch 导出的 causal mask 里有 `torch.tensor(0.0)` 这种
+    #     Constant（float32），不转就会在图中间出现 fp16 × fp32 的 Add/Where 类型冲突。
+    for node in graph.node:
+        if node.op_type not in ("Constant", "ConstantOfShape"):
+            continue
+        for attr in node.attribute:
+            if attr.name == "value" and attr.t.data_type == FLOAT:
+                attr.t.CopyFrom(numpy_helper.from_array(_to_fp16(numpy_helper.to_array(attr.t))))
+
+    # 2) 入图 float32 → fp16；出图 fp16 → float32。名字按「原名 + __fp16」派生。
+    #    注意 `present.{i}.key` 既是图的输出、**也被下一层当输入用**，
+    #    所以重命名必须同时覆盖节点的输入和输出，只改输出会让消费者指向一个不存在的张量
+    #    （onnx.checker 会报「不是任何前驱节点的输出」）。
+    in_map = {i.name: i.name + "__fp16" for i in graph.input if i.type.tensor_type.elem_type == FLOAT}
+    out_map = {o.name: o.name + "__fp16" for o in graph.output if o.type.tensor_type.elem_type == FLOAT}
+    rename = {**in_map, **out_map}
+    for node in graph.node:
+        for k, name in enumerate(node.input):
+            if name in rename:
+                node.input[k] = rename[name]
+        for k, name in enumerate(node.output):
+            if name in rename:
+                node.output[k] = rename[name]
+
+    # 2b) 图内已有的 `Cast(to=float32)`：torch 在 fp32 下 trace，会把「遮罩转浮点」
+    #     「隐状态转词头 dtype」这些写死成 float32。它们的消费者全是浮点算子
+    #     （Add/MatMul/Gemm），不改成 fp16 就会出现 fp16×fp32 混合 → ORT 直接拒绝加载。
+    #     而 `Cast(to=int64/bool)` 的输出喂的是 Range/Shape/And 这类**索引运算**，
+    #     fp16 不是它们的合法类型，必须原样保留——所以按消费者算子白名单来决定改不改。
+    float_ops = {"Add", "Sub", "Mul", "Div", "MatMul", "Gemm", "Where", "Equal", "Greater",
+                 "Less", "GreaterOrEqual", "LessOrEqual", "Concat", "Unsqueeze", "Squeeze",
+                 "Softmax", "Tanh", "Erf", "Sqrt", "Pow", "ReduceMean", "Neg", "Abs",
+                 "Transpose", "Reshape", "Expand", "Slice", "Split", "Pad", "LayerNormalization",
+                 "Identity", "Cast"}
+    consumers: dict[str, list] = {}
+    for node in graph.node:
+        for name in node.input:
+            consumers.setdefault(name, []).append(node)
+    recast = 0
+    for node in graph.node:
+        if node.op_type != "Cast":
+            continue
+        targets = [a for a in node.attribute if a.name == "to"]
+        if not targets or targets[0].i != FLOAT:
+            continue
+        users = consumers.get(node.output[0], [])
+        if not users or all(u.op_type in float_ops for u in users):
+            targets[0].i = HALF
+            recast += 1
+
+    head_nodes, tail_nodes = [], []
+    for name, renamed in in_map.items():
+        head_nodes.append(helper.make_node("Cast", [name], [renamed], to=HALF, name=f"Cast_in_{name}"))
+    for name, renamed in out_map.items():
+        tail_nodes.append(helper.make_node("Cast", [renamed], [name], to=FLOAT, name=f"Cast_out_{name}"))
+    originals = list(graph.node)
+    del graph.node[:]
+    graph.node.extend(head_nodes + originals + tail_nodes)
+
+    # value_info 里记的还是 float32，改名/降精度后不再成立，直接清掉让 ORT 自己推
+    del graph.value_info[:]
+    try:
+        onnx.checker.check_model(model)
+    except Exception as e:  # noqa: BLE001
+        onnx.save(model, str(dst))
+        return False, f"onnx.checker 未通过：{type(e).__name__}: {e}"
+    onnx.save(model, str(dst))
+    # 用 ORT 真正加载一次：类型不匹配、拓扑错序都会在这里被拒。
+    # 这个文件是要给端侧用的，宁可在导出阶段失败也不能落一个加载不了的文件。
+    try:
+        import onnxruntime as ort
+
+        options = ort.SessionOptions()
+        options.log_severity_level = 3
+        ort.InferenceSession(str(dst), options, providers=["CPUExecutionProvider"])
+    except Exception as e:  # noqa: BLE001
+        dst.unlink(missing_ok=True)
+        return False, f"ORT 无法加载转换后的图：{type(e).__name__}: {e}"
+    return True, (f"降精度初始化器 {converted} 个、图内 Cast 改写 {recast} 个、"
+                  f"入图 Cast {len(head_nodes)}、出图 Cast {len(tail_nodes)}")
+
+
 def graph_op_check(path: Path) -> dict:
     import onnx
 
@@ -223,7 +345,12 @@ def main() -> int:
     ap.add_argument("--eval-samples", type=Path, default=None)
     ap.add_argument("--eval-limit", type=int, default=512)
     ap.add_argument("--skip-eval", action="store_true")
-    ap.add_argument("--no-int8", action="store_true")
+    ap.add_argument("--no-int8", action="store_true",
+                    help="不量化 int8，改为交付 fp16（约 260 MB）；这是文档写的退化方案")
+    ap.add_argument("--fp16", action="store_true",
+                    help="与 --no-int8 等价：交付 nwp.fp16.onnx（I/O 仍是 float32，端侧契约不变）")
+    ap.add_argument("--fp32", action="store_true",
+                    help="只出 fp32 的 nwp.onnx（真正的保底逃生口，体积约 500 MB）")
     ap.add_argument("--parity", action="store_true", default=True)
     ap.add_argument("--no-parity", dest="parity", action="store_false")
     ap.add_argument("--kv-check", action="store_true", default=True)
@@ -292,9 +419,21 @@ def main() -> int:
     report["graph"] = graph_op_check(fp32)
     log(f"  图：{report['graph']['nodes']} 个节点，禁止算子 {report['graph']['banned_ops'] or '无'}")
 
-    int8_ok, int8_reason = (False, "已用 --no-int8 关闭")
+    int8_ok, int8_reason = (False, "未启用量化")
     int8 = out_dir / "nwp.int8.onnx"
-    if not args.no_int8:
+    fp16_ok, fp16_reason = (False, "未启用")
+    fp16 = out_dir / "nwp.fp16.onnx"
+
+    if args.fp32:
+        log("按 --fp32 只交付 fp32（500 MB 级，仅作保底）")
+    elif args.fp16 or args.no_int8:
+        fp16_ok, fp16_reason = convert_to_fp16(fp32, fp16)
+        if fp16_ok:
+            report["fp16"] = {"file": fp16.name, "bytes": file_bytes(fp16), "detail": fp16_reason}
+            log(f"fp16 → {fp16}（{file_bytes(fp16) / 1e6:.1f} MB；I/O 仍是 float32）{fp16_reason}")
+        else:
+            log(f"⚠ fp16 转换失败，退回 int8 尝试：{fp16_reason}")
+    if not args.fp32 and not fp16_ok:
         int8_ok, int8_reason = quantize_int8(fp32, int8)
         if int8_ok:
             report["int8"] = {"file": int8.name, "bytes": file_bytes(int8)}
@@ -303,6 +442,8 @@ def main() -> int:
             log(f"⚠ int8 失败，只交 fp32：{int8_reason}")
     report["int8_available"] = int8_ok
     report["int8_reason"] = int8_reason
+    report["fp16_available"] = fp16_ok
+    report["fp16_reason"] = fp16_reason
 
     # 真实样本：优先用评测集，没有就自己造
     samples_path = args.eval_samples or (lay.samples / "test.jsonl")
@@ -321,6 +462,7 @@ def main() -> int:
     H, D = model.num_heads, model.head_dim
     runner = OnnxRunner(fp32, model.num_layers, H, D)
     runner8 = OnnxRunner(int8, model.num_layers, H, D) if int8_ok else None
+    runner16 = OnnxRunner(fp16, model.num_layers, H, D) if fp16_ok else None
     if args.parity:
         # 对齐到同一长度：对拍批次内左填充后按行比较，ONNX 逐条跑（不填充）
         fixed = [[r["ids"] for r in rows[i : i + 4]] for i in range(0, min(len(rows), args.parity_rows), 4)]
@@ -328,12 +470,16 @@ def main() -> int:
         log(f"  fp32 top-1 一致率 {report['parity_fp32']['top1_agreement'] * 100:.2f}%，"
             f"top-5 重合率 {report['parity_fp32']['top5_overlap'] * 100:.2f}%，"
             f"max|Δ|={report['parity_fp32']['max_abs_diff']:.3e}")
-        if runner8:
-            report["parity_int8"] = parity_check(model, runner8, fixed)
-            log(f"  int8 top-1 一致率 {report['parity_int8']['top1_agreement'] * 100:.2f}%，"
-                f"top-5 重合率 {report['parity_int8']['top5_overlap'] * 100:.2f}%，"
-                f"max|Δ|={report['parity_int8']['max_abs_diff']:.3e}"
-                f"（相对 logits 尺度 {report['parity_int8']['relative_diff'] * 100:.2f}%）")
+        # 注意别用 runner 当循环变量：那会把外层的 fp32 runner 覆盖掉，
+        # 后面的 KV 对拍就会拿到 None。
+        for tag, sub_runner in (("int8", runner8), ("fp16", runner16)):
+            if sub_runner is None:
+                continue
+            report[f"parity_{tag}"] = parity_check(model, sub_runner, fixed)
+            p = report[f"parity_{tag}"]
+            log(f"  {tag} top-1 一致率 {p['top1_agreement'] * 100:.2f}%，"
+                f"top-5 重合率 {p['top5_overlap'] * 100:.2f}%，max|Δ|={p['max_abs_diff']:.3e}"
+                f"（相对 logits 尺度 {p['relative_diff'] * 100:.2f}%）")
 
     if args.kv_check:
         ids = rows[0]["ids"]
@@ -349,6 +495,13 @@ def main() -> int:
         log(f"  ONNX KV：max|Δ|={report['kv_onnx']['max_abs_diff_vs_torch_full']:.3e} "
             f"present_len={report['kv_onnx']['present_len_after_step']}/{report['kv_onnx']['context_len']} "
             f"top5={'一致' if report['kv_onnx']['top5_equal_vs_torch'] else '不一致'}")
+        if runner16:
+            # fp16 的 I/O 仍是 float32，所以同一套 KV 增量流程必须照样成立
+            report["kv_onnx_fp16"] = onnx_kv_check(runner16, ids, cut1, cut2, ref.numpy())
+            k = report["kv_onnx_fp16"]
+            log(f"  ONNX fp16 KV：max|Δ|={k['max_abs_diff_vs_torch_full']:.3e} "
+                f"present_len={k['present_len_after_step']}/{k['context_len']} "
+                f"top5={'一致' if k['top5_equal_vs_torch'] else '不一致'}")
 
     # ------------------------------------------------------------------ manifest
     words = load_word_vocab(lay.word_vocab)
@@ -374,11 +527,16 @@ def main() -> int:
             report["eval_error"] = f"{type(e).__name__}: {e}"
             log(f"⚠ 导出后评测失败：{report['eval_error']}")
 
-    model_file = "nwp.int8.onnx" if int8_ok else "nwp.onnx"
+    if int8_ok:
+        model_file, model_format = "nwp.int8.onnx", "onnx-int8"
+    elif fp16_ok:
+        model_file, model_format = "nwp.fp16.onnx", "onnx-fp16"
+    else:
+        model_file, model_format = "nwp.onnx", "onnx-fp32"
     manifest = {
         "version": MANIFEST_VERSION,
         "name": MANIFEST_NAME,
-        "format": "onnx-int8" if int8_ok else "onnx-fp32",
+        "format": model_format,
         "context_tokens": int(resolved_context_tokens),
         "vocab_size": len(words),
         "char_vocab_size": max(char2id.values()) + 1,
@@ -395,7 +553,10 @@ def main() -> int:
     }
     write_json(out_dir / "manifest.json", manifest)
     report["manifest"] = manifest
-    write_json(lay.results / "export_report.json", report)
+    # 报告跟在 out-dir 后面：否则跑第二遍（比如 --fp16 到另一个目录）会把第一遍的报告覆盖掉，
+    # 「int8 的报告里怎么没有 KV 结果」这种问题就是这么做出来的。
+    report_name = "export_report.json" if out_dir == lay.onnx else f"export_report_{out_dir.name}.json"
+    write_json(lay.results / report_name, report)
 
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     print(f"\n对拍：{json.dumps({k: v for k, v in report.items() if k.startswith('parity')}, ensure_ascii=False)}")

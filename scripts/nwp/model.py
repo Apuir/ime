@@ -139,7 +139,15 @@ class NWPModel(nn.Module):
         cfg = self.backbone.config
         return int(getattr(cfg, "head_dim", cfg.n_embd // cfg.n_head))
 
-    def forward(self, input_ids, attention_mask, position_ids, past_key_values=None):
+    def forward(self, input_ids, attention_mask, position_ids, past_key_values=None,
+                label_positions=None):
+        """`label_positions=None` 时**只回最后一个位置** —— ONNX 契约与端侧都依赖这个行为。
+
+        给了 `label_positions`（`[B, T]` 的 ids 下标）时，改为在那些位置取隐状态 →
+        `[B, T, D]` → 词头 → `[B, T, V]`。这是训练侧的多位置监督：因果 LM 一次前向本来
+        就同时算出了每个位置的「下一个词」，只用最后一个位置等于把 99% 的算力丢掉。
+        导出路径不传这个参数，所以图、I/O 名字/形状/dtype 全部不变。
+        """
         out = self.backbone(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -148,6 +156,12 @@ class NWPModel(nn.Module):
             use_cache=self.output_cache,
             return_dict=True,
         )
+        if label_positions is not None:
+            hidden_states = out.last_hidden_state
+            index = label_positions.unsqueeze(-1).expand(-1, -1, hidden_states.size(-1))
+            hidden = hidden_states.gather(1, index)
+            logits = self.word_head(hidden.to(self.word_head.weight.dtype))
+            return logits, cache_to_legacy(out.past_key_values)
         hidden = out.last_hidden_state[:, -1, :]
         # 骨干的存储精度由底座决定，不归我们管：`IDEA-CCNL/Wenzhong-GPT2-110M` 的权重是
         # **fp16 落盘**的，加载出来骨干参数是 Half，而新建的 word_head 是 Float。
@@ -269,6 +283,83 @@ def model_config_of(model, backbone_name, char_vocab_size, word_vocab_size, smok
         "lora": lora or {},
         "lora_trainable_params": lora_params,
     }
+
+
+def input_embedding(model: "NWPModel") -> nn.Embedding:
+    """拿骨干的字嵌入表（GPT2 的 `wte`）。
+
+    按能力找而不是按属性名找：挂了 peft 之后属性路径会变（`base_model.model...`），
+    写死名字在换底座/换 peft 版本时会静默找错表。
+    """
+    backbone = model.backbone
+    getter = getattr(backbone, "get_input_embeddings", None)
+    if callable(getter):
+        emb = getter()
+        if isinstance(emb, nn.Embedding):
+            return emb
+    for name in ("wte", "word_embeddings", "embeddings"):
+        mod = getattr(backbone, name, None)
+        if isinstance(mod, nn.Embedding):
+            return mod
+    for mod in backbone.modules():
+        if isinstance(mod, nn.Embedding):
+            return mod
+    raise RuntimeError("在骨干里找不到字嵌入表，无法做词头热启动")
+
+
+@torch.no_grad()
+def warmstart_word_head(model: "NWPModel", char2id: dict[str, int], words: list[str]) -> dict:
+    """用「词 = 它的字的字向量均值」初始化词头。
+
+    为什么值得做：词头 23 M 参数（768×30000）是随机初始化的，而骨干本来就带字义。
+    让词头从「字向量的均值」起步，等于省掉一批原本要用来学「词的向量大概长什么样」的步数。
+
+    缺字策略：**跳过**不在 char2id 里、或映射到 `<unk>`/`<pad>` 的字，不参与平均
+    （拿 `<unk>` 行去平均等于把噪声掺进词向量）；一个词一个字都不认识时，
+    保留它原来的随机初始化行，并把数量报出来。
+    """
+    wte = input_embedding(model).weight
+    head = model.word_head
+    n_words, dim = head.weight.shape
+    ids_flat: list[int] = []
+    word_flat: list[int] = []
+    skipped: list[int] = []
+    for wid, word in enumerate(words):
+        if wid == 0:
+            continue                      # <unk> 行保持随机（它只该被 ignore_index 用到）
+        known = [char2id[ch] for ch in word if char2id.get(ch, 0) > 1 and char2id.get(ch, 0) < wte.shape[0]]
+        if not known:
+            skipped.append(wid)
+            continue
+        ids_flat.extend(known)
+        word_flat.extend([wid] * len(known))
+    if not ids_flat:
+        return {"warmed_words": 0, "skipped_no_known_char": len(skipped), "mean_chars_per_word": 0.0}
+    idx = torch.tensor(ids_flat, device=wte.device, dtype=torch.long)
+    wid_t = torch.tensor(word_flat, device=wte.device, dtype=torch.long)
+    sums = torch.zeros(n_words, dim, device=wte.device, dtype=torch.float32)
+    sums.index_add_(0, wid_t, wte.index_select(0, idx).float())
+    counts = torch.zeros(n_words, device=wte.device, dtype=torch.float32)
+    counts.index_add_(0, wid_t, torch.ones_like(wid_t, dtype=torch.float32))
+    targets = wid_t.unique()
+    mean = sums.index_select(0, targets) / counts.index_select(0, targets).clamp(min=1).unsqueeze(1)
+    head.weight.data[targets] = mean.to(head.weight.dtype)
+    head.bias.data.zero_()
+    return {
+        "warmed_words": int(targets.numel()),
+        "skipped_no_known_char": len(skipped),
+        "mean_chars_per_word": len(ids_flat) / max(1, int(targets.numel())),
+        "embedding_dtype": str(wte.dtype),
+        "head_dtype": str(head.weight.dtype),
+    }
+
+
+def maybe_warmstart_word_head(model: "NWPModel", char2id: dict[str, int], words: list[str],
+                              enabled: bool = True, resume: bool = False) -> dict | None:
+    """`--resume` 时必须跳过：checkpoint 里已经有训好的词头，再热启动一次就把训练成果抹了。"""
+    if not enabled or resume:
+        return None
+    return warmstart_word_head(model, char2id, words)
 
 
 # --------------------------------------------------------------------------- #

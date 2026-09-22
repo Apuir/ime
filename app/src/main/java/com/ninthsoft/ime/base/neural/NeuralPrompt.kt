@@ -17,8 +17,12 @@ import com.ninthsoft.ime.base.util.TextUtil
  */
 object NeuralPrompt {
     /**
-     * 上下文预算（汉字数）。对应设计里的 128 词；中文平均词长约 1.6 字，
-     * 取 210 是「3–4 句一段话」的体量。
+     * 端侧上下文的**上限**（汉字数），不是实际使用的预算。
+     *
+     * 真正喂多少由 `min(manifest.context_tokens, MAX_CHARS)` 决定 ——
+     * `manifest.context_tokens` 是模型训练时接受的输入长度上限，**它才是权威**：
+     * 训练与端侧必须用同一个预算，喂长了模型没见过、喂短了白丢上下文。
+     * 这里留 210 只作为「端侧最多愿意喂多少」的护栏（对应设计里的「3–4 句」）。
      */
     const val MAX_CHARS = 210
 

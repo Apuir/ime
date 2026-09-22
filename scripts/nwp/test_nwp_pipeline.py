@@ -240,6 +240,321 @@ def test_char_coverage_guard() -> dict:
             "message_head": bad.splitlines()[0][:40]}
 
 
+
+
+# --------------------------------------------------------------------------- #
+# 提速包（多位置监督 / 分桶组批 / 轮流采样 / 词头热启动 / fp16 导出）
+# --------------------------------------------------------------------------- #
+
+_FIXTURE: dict = {}
+
+
+def _synthetic_work(sources: int = 1, docs_per_source: int = 800, max_context_ids: int = 256,
+                    src_prefix: str = "source") -> Path:
+    """做一个离线小工作目录（语料 + 词表 + 样本），多个用例共用。
+
+    用合成语料是为了不依赖网络与 20 GB 的真实样本；数值口径（labels/token、
+    padding 浪费）在小语料上与真实语料同量级，因为它们只取决于长度分布与采样参数。
+    """
+    key = (sources, docs_per_source, max_context_ids, src_prefix)
+    if key in _FIXTURE:
+        return _FIXTURE[key]
+    import subprocess
+
+    here = Path(__file__).resolve().parent
+    tmp = Path(tempfile.mkdtemp(prefix="nwp-fx-"))
+    lay = Layout(tmp)
+    lay.make("corpus")
+    # 直接写分片命名（{name}-000.txt），与 fetch_corpus 的 ShardWriter 一致
+    import fetch_corpus
+
+    args = type("A", (), {})()
+    args.limit = docs_per_source
+    args.min_cjk = 6
+    args.max_chars = 2000
+    args.seed = 3
+    for i in range(sources):
+        name = f"{src_prefix}-{chr(ord('a') + i)}"
+        writer = fetch_corpus.ShardWriter(lay, name, 10**9, docs_per_source)
+        fetch_corpus.fetch_synthetic(args, lay, writer)
+        writer.close()
+    run = lambda *cmd: subprocess.run([sys.executable, str(here / cmd[0]), "--work", tmp, *cmd[1:]],
+                                      capture_output=True, text=True)
+    proc = run("build_vocab.py", "--char-source", "corpus", "--vocab-source", "synthetic", "--size", "400")
+    assert proc.returncode == 0, proc.stderr[-800:]
+    proc = run("build_samples.py", "--context-words", "128", "--min-context-words", "4",
+               "--test-ratio", "0.05", "--valid-ratio", "0.05",
+               "--max-context-ids", str(max_context_ids))
+    assert proc.returncode == 0, proc.stderr[-800:]
+    _FIXTURE[key] = tmp
+    return tmp
+
+
+def test_multi_label_vs_single_position() -> dict:
+    """(A1) `label_positions=[S-1]` 必须与 `None` 路径**逐位相同**（契约不能被动到）。"""
+    import torch
+
+    model = _tiny_model()
+    ids = torch.randint(2, 64, (3, 11))
+    mask = torch.ones(3, 11, dtype=torch.long)
+    pos = torch.arange(11).unsqueeze(0).expand(3, 11).contiguous()
+    last = torch.full((3, 1), 10, dtype=torch.long)
+    with torch.no_grad():
+        a, _ = model(ids, mask, pos)
+        b, _ = model(ids, mask, pos, label_positions=last)
+    assert a.shape == (3, 40) and b.shape == (3, 1, 40), f"{tuple(a.shape)} vs {tuple(b.shape)}"
+    diff = float((a - b[:, 0, :]).abs().max())
+    assert diff == 0.0, f"最后一个位置 gather 出来的 logits 与 None 路径不一致：max|Δ|={diff}"
+    return {"none_shape": list(a.shape), "gather_shape": list(b.shape), "max_abs_diff": diff}
+
+
+def test_labels_per_token_ratio() -> dict:
+    """(A2) 多位置监督要把标签/token 从 1/130 提到至少 5 倍。
+
+    优先用**真实语料切片**的 report（`.nwp-work/nwp-realcheck/`，README 里有生成命令），
+    没有就退回合成语料——两条路径都要满足 5×。
+    """
+    import json as _json
+
+    baseline = 1 / 130
+    real_report = Path(__file__).resolve().parents[2] / ".nwp-work/nwp-realcheck/samples/report.json"
+    if real_report.exists():
+        report = _json.loads(real_report.read_text(encoding="utf-8"))
+        origin = f"real:{real_report.parent.parent.name}"
+    else:
+        work = _synthetic_work()
+        report = _json.loads((Layout(work).samples / "report.json").read_text(encoding="utf-8"))
+        origin = "synthetic"
+    labels = report["labels"]
+    assert labels["labels_per_token"] > 5 * baseline, (
+        f"[{origin}] labels/token={labels['labels_per_token']:.4f}，没有达到 5×{baseline:.5f}")
+    assert labels["labels_per_sample"] <= labels["max_labels"], (
+        f"labels/样本 {labels['labels_per_sample']} 超过了 --max-labels，统计口径有问题")
+    assert labels["labels_per_sample"] > 1.5, labels
+    return {"origin": origin, "stride": labels["label_stride"],
+            "labels_per_token": round(labels["labels_per_token"], 4),
+            "labels_per_sample": round(labels["labels_per_sample"], 2),
+            "baseline_1_over_130": round(baseline, 5),
+            "improvement": round(labels["labels_per_token"] / baseline, 1)}
+
+
+def test_max_context_ids_variants() -> dict:
+    """(约束) cap=128/160/256 都要能跑，且 report 与 manifest 取同一个值。"""
+    import json as _json
+
+    out = {}
+    for cap in (128, 160):
+        work = _synthetic_work(max_context_ids=cap)
+        report = _json.loads((Layout(work).samples / "report.json").read_text(encoding="utf-8"))
+        assert report["max_context_ids"] == cap
+        worst = 0
+        for split in ("train", "valid", "test"):
+            path = Layout(work).samples / f"{split}.jsonl"
+            with path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    worst = max(worst, len(_json.loads(line)["ids"]))
+        assert worst <= cap, f"cap={cap} 时有 {worst} 个 id 的样本，超过了上限"
+        truncated = sum(v["truncated_by_max_context_ids"] for v in report["splits"].values())
+        if report["max_ids_seen"] > cap:
+            assert truncated > 0, f"cap={cap}：有样本超过上限却没有记录截尾"
+        out[f"cap_{cap}"] = {"max_ids": worst, "max_ids_seen": report["max_ids_seen"],
+                             "truncated": truncated,
+                             "samples": report["splits"]["train"]["samples"]}
+    return out
+
+
+def test_bucket_sampler() -> dict:
+    """(B) 分桶组批：每样本恰好一次、可复现、padding 浪费 < 5%。"""
+    import random as _random
+
+    from train import LengthBucketBatchSampler
+
+    # 用真实长度分布（若本机有真实样本）否则用同量级的合成分布
+    lengths: list[int] = []
+    real = Path(__file__).resolve().parents[2] / ".nwp-work/nwp/samples/train.jsonl"
+    cached = Path(str(real) + ".lengths.bin")
+    if cached.exists():
+        # load_lengths 落下来的长度缓存：1200 万条也能秒级读进来
+        from array import array
+
+        arr = array("l")
+        arr.frombytes(cached.read_bytes())
+        lengths = list(arr)
+        source = f"real:train.jsonl 全量长度缓存（{len(lengths)} 条）"
+    elif real.exists():
+        import json as _json
+
+        with real.open(encoding="utf-8") as fh:
+            for i, line in enumerate(fh):
+                if i >= 20000:
+                    break
+                lengths.append(len(_json.loads(line)["ids"]))
+        source = "real:train.jsonl 前 20000 条"
+    else:
+        rng = _random.Random(0)
+        lengths = [max(16, min(256, int(rng.lognormvariate(4.4, 0.75)))) for _ in range(20000)]
+        source = "synthetic lognormal"
+
+    sampler = LengthBucketBatchSampler(lengths, 8, buffer_size=4096, seed=7)
+    seen: list[int] = []
+    for batch in sampler:
+        seen.extend(batch)
+    assert sorted(seen) == list(range(len(lengths))), "有样本被漏掉或重复"
+    assert len(seen) == len(lengths), f"覆盖 {len(seen)} != {len(lengths)}"
+    again = [i for batch in sampler for i in batch]
+    assert again == seen, "同一 seed/epoch 下结果不可复现"
+    sampler.set_epoch(1)
+    epoch2 = [i for batch in sampler for i in batch]
+    assert sorted(epoch2) == list(range(len(lengths)))
+    assert epoch2 != seen, "换 epoch 后顺序没变，shuffle 没生效"
+    waste = sampler.padding_waste()
+    assert waste < 0.05, f"padding 浪费 {waste * 100:.1f}% 仍高于 5%"
+    # 对照：完全随机的批次
+    rng = _random.Random(0)
+    order = list(range(len(lengths)))
+    rng.shuffle(order)
+    batches = [order[i:i + 8] for i in range(0, len(order), 8)]
+    real_tok = sum(sum(lengths[i] for i in b) for b in batches)
+    pad_tok = sum(max(lengths[i] for i in b) * len(b) for b in batches)
+    return {"source": source, "samples": len(lengths), "batches": len(sampler),
+            "bucket_waste": round(waste * 100, 2), "random_waste": round((1 - real_tok / pad_tok) * 100, 2)}
+
+
+def test_round_robin_sources() -> dict:
+    """(C) 三个来源 + 小配额：每个来源都必须出现在输出里（那次 Wikipedia 被饿死就是反例）。"""
+    import json as _json
+
+    work = _synthetic_work(sources=3, docs_per_source=300, src_prefix="src")
+    lay = Layout(work)
+    report = _json.loads((lay.samples / "report.json").read_text(encoding="utf-8"))
+    sources = report["sources"]
+    assert len(sources) == 3, f"只看到 {len(sources)} 个来源：{sources}"
+    missing = [name for name, v in sources.items() if v["samples"] <= 0]
+    assert not missing, f"这些来源一条样本都没进训练集：{missing}（配额被前面的来源吃光了）"
+    # 再验证一次：train.jsonl 里每个来源的样本数都应接近配额的三分之一
+    counts: dict[str, int] = {}
+    with (lay.samples / "train.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            counts["x"] = counts.get("x", 0) + 1
+    kept = report["splits"]["train"]["sources"]
+    share = {k: v / max(1, sum(kept.values())) for k, v in kept.items()}
+    assert all(0.15 < v < 0.6 for v in share.values()), f"来源占比失衡：{share}"
+    return {"sources": {k: v["samples"] for k, v in sources.items()},
+            "train_share": {k: round(v, 3) for k, v in share.items()}}
+
+
+def test_head_warmstart() -> dict:
+    """(D) 词头行 == 该词的字向量均值；--resume 不得重新初始化。"""
+    import torch
+
+    from model import maybe_warmstart_word_head, warmstart_word_head
+
+    model = _tiny_model()
+    char2id = {"<unk>": 0, "<pad>": 1}
+    words = ["<unk>", "甲", "甲乙", "甲乙丙", "乙"]
+    for i, ch in enumerate("甲乙丙"):
+        char2id[ch] = 5 + i
+    stats = warmstart_word_head(model, char2id, words)
+    wte = model.word_head.weight.new_tensor(0)  # 占位避免误用
+    del wte
+    from model import input_embedding
+
+    emb = input_embedding(model).weight.detach()
+    head = model.word_head.weight.detach()
+    for wid, word in enumerate(words[1:], start=1):
+        expect = emb[[char2id[ch] for ch in word]].float().mean(0)
+        got = head[wid].float()
+        assert torch.allclose(got, expect, atol=1e-5), f"词 {word} 的行不是字向量均值"
+    assert torch.count_nonzero(model.word_head.bias) == 0, "bias 必须保持 0"
+    # 词表外的字：整词无已知字时保留原随机行
+    with torch.no_grad():
+        model.word_head.weight[4] = torch.full_like(model.word_head.weight[4], 0.123)
+    stats2 = warmstart_word_head(model, {"<unk>": 0, "<pad>": 1}, words)
+    assert stats2["skipped_no_known_char"] >= 4
+    assert torch.allclose(model.word_head.weight[4], torch.full_like(model.word_head.weight[4], 0.123))
+    # resume：不得动权重
+    before = model.word_head.weight.detach().clone()
+    assert maybe_warmstart_word_head(model, char2id, words, enabled=True, resume=True) is None
+    assert torch.equal(before, model.word_head.weight.detach()), "--resume 时又热启动了一次"
+    assert maybe_warmstart_word_head(model, char2id, words, enabled=False, resume=False) is None
+    return {"warmed": stats["warmed_words"], "skipped": stats["skipped_no_known_char"],
+            "mean_chars_per_word": round(stats["mean_chars_per_word"], 2),
+            "resume_skipped": True}
+
+
+def test_fp16_export() -> dict:
+    """(E) fp16 导出：I/O 仍是 float32、无 TopK、体积明显更小、ORT 能加载并跑出与 fp32 一致的 top-k。"""
+    import os
+
+    import onnx
+    import torch
+
+    from export_onnx import OnnxRunner, convert_to_fp16, graph_op_check
+    from model import export_onnx as export_fp32
+
+    model = _tiny_model()
+    with tempfile.TemporaryDirectory(prefix="nwp-fp16-") as tmp:
+        src = Path(tmp) / "fp32.onnx"
+        dst = Path(tmp) / "fp16.onnx"
+        export_fp32(model, src, seq=8, past=2)
+        ok, reason = convert_to_fp16(src, dst)
+        assert ok, f"fp16 转换失败：{reason}"
+        graph = onnx.load(str(dst))
+        kinds = {1: "float32", 10: "float16", 7: "int64", 6: "int32", 9: "bool"}
+        io = {i.name: kinds.get(i.type.tensor_type.elem_type) for i in graph.graph.input}
+        oo = {o.name: kinds.get(o.type.tensor_type.elem_type) for o in graph.graph.output}
+        assert all(v in ("float32", "int64") for v in io.values()), f"输入 dtype 不对：{io}"
+        assert all(v == "float32" for v in oo.values()), f"输出 dtype 必须是 float32：{oo}"
+        assert graph_op_check(dst)["has_topk"] is False, "fp16 图里出现了 TopK/ArgMax"
+        assert os.path.getsize(dst) < 0.7 * os.path.getsize(src), "fp16 体积没有明显变小"
+
+        ids = [3, 5, 7, 9, 11, 13, 15]
+        runner16 = OnnxRunner(dst, model.num_layers, model.num_heads, model.head_dim)
+        runner32 = OnnxRunner(src, model.num_layers, model.num_heads, model.head_dim)
+        l16, present = runner16.prefill(ids)
+        l32, _ = runner32.prefill(ids)
+        assert l16.shape == l32.shape and present["present.0.key"].dtype.name == "float32"
+        agree = int(l16[0].argmax()) == int(l32[0].argmax())
+        top5 = len(set(l16[0].argsort()[-5:].tolist()) & set(l32[0].argsort()[-5:].tolist()))
+        # KV 增量同样要走得通（I/O 是 float32，所以调用方不需要知道图内是 fp16）
+        _, p1 = runner16.step(ids[:3])
+        inc, pr = runner16.step(ids[3:], p1)
+        assert pr["present.0.key"].shape[2] == len(ids)
+        return {"fp32_kb": round(os.path.getsize(src) / 1024), "fp16_kb": round(os.path.getsize(dst) / 1024),
+                "ratio": round(os.path.getsize(dst) / os.path.getsize(src), 3),
+                "io_dtypes": sorted(set(io.values())), "top1_match": agree, "top5_overlap": top5,
+                "kv_present_len": int(pr["present.0.key"].shape[2]), "detail": reason}
+
+
+def test_onnx_parity_after_multi_label() -> dict:
+    """(A3) 多位置监督改动之后，ONNX 仍是 `logits [B,V]` 且与 PyTorch top-1 100% 一致。"""
+    import numpy as np
+    import torch
+
+    from export_onnx import OnnxRunner
+    from eval import pad_batch
+    from model import export_onnx as export_fp32
+
+    model = _tiny_model()
+    with tempfile.TemporaryDirectory(prefix="nwp-parity-") as tmp:
+        path = Path(tmp) / "m.onnx"
+        export_fp32(model, path, seq=8, past=2)
+        runner = OnnxRunner(path, model.num_layers, model.num_heads, model.head_dim)
+        rows = [{"ids": [2 + (i * 5 + j) % 50 for j in range(6 + i)], "label": 1, "ctx": ""} for i in range(6)]
+        ids, mask, pos = pad_batch(rows)
+        with torch.no_grad():
+            logits, _ = model(ids, mask, pos)
+        assert logits.shape[1] == model.word_head.out_features, "logits 必须是 [B,V]，不是多位置形状"
+        ok = 0
+        for i, row in enumerate(rows):
+            out, _ = runner.prefill(row["ids"])
+            assert out.shape[1] == model.word_head.out_features
+            ok += int(int(out[0].argmax()) == int(logits[i].argmax()))
+        assert ok == len(rows), f"top-1 一致率 {ok}/{len(rows)}，不是 100%"
+        return {"rows": len(rows), "top1_agreement": ok / len(rows),
+                "logits_shape": list(logits.shape)}
+
+
 def main() -> int:
     tests = [
         ("分片文件名唯一 + 磁盘行数 == 报告条数", test_shards_are_distinct),
@@ -249,6 +564,14 @@ def main() -> int:
         ("去重边界 + 覆盖率可报数", test_dedup_boundary_and_coverage),
         ("抓取失败要响亮且不留半截分片", test_failed_fetch_is_loud_and_leaves_no_partial),
         ("char 覆盖率闸门（拦下字节级 BPE 底座）", test_char_coverage_guard),
+        ("A1 label_positions=[S-1] == None 路径", test_multi_label_vs_single_position),
+        ("A2 labels/token 提升 ≥5×", test_labels_per_token_ratio),
+        ("A3 多位置之后的 ONNX 对拍 100%", test_onnx_parity_after_multi_label),
+        ("B 分桶组批：恰好一次/可复现/浪费<5%", test_bucket_sampler),
+        ("C 轮流采样：三个来源都进训练集", test_round_robin_sources),
+        ("D 词头热启动 + resume 不重置", test_head_warmstart),
+        ("E fp16 导出：I/O float32/无 TopK/更小/可跑", test_fp16_export),
+        ("约束 cap=128/160 都能跑", test_max_context_ids_variants),
     ]
     failed = 0
     for name, fn in tests:

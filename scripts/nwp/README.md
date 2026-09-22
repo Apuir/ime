@@ -23,7 +23,8 @@
 | 滑窗样本 + ≥8 字 n-gram 去重 | ✅ **实跑过** | 含边界自检（8 字命中 / 7 字放过）与 hash≈exact 一致性 |
 | 训练管线（LoRA + 判别式 LR + 逐步解冻 + 断点续训） | ✅ **实跑过** | 随机小骨干 CPU 40 步；**真实底座 125.7M 也实跑过 3 步**（LoRA 解冻生效，1.9–2.4 s/步 @batch 2×2） |
 | **Phase 1 质量探针（用户 4060 主机）** | ✅ **跑过** | cluecorpus 4000 步：top-1 **13.51%** vs unigram 0.06% / n-gram 0.57%（见「Phase 1 探针实测」） |
-| 正式训练（全量语料 + 完整步数） | ⚠️ 用户主机进行中 | 语料被 `ShardWriter` 的 bug 砍到 187 MB，已修；那批数字是**下限** |
+| 正式训练（全量语料 + 完整步数） | ✅ **跑过（用户 4060）** | 20000 步 / 5.8 h / 1.048 s 每步；512 条验证集 top-1 **5.27%**、top-5 **11.72%** |
+| 提速包：多位置监督 / 分桶组批 / 轮流采样 / 词头热启动 / fp16 导出 | ✅ **实跑过** | 见「提速包实测」；全部有回归测试 |
 | ONNX 导出 + int8 + manifest（**真实 125.7M**） | ✅ **实跑过** | fp32 图 2353 节点、对拍 100%；int8 **126.2 MB**；KV cache 对拍通过 |
 | C++ n-gram 基线（marisa） | ✅ **实跑过** | 795 万条键全量枚举 1.2 s |
 | **110M 正式微调的质量数字** | ❌ **没做** | 需要用户的 4060。本目录给出的 4060 时间/显存都是**估算**，不是实测 |
@@ -63,6 +64,46 @@ bash scripts/nwp/smoke_test.sh          # CPU、离线、约 1 分钟，退出�
    `build_vocab.py` 现在会在覆盖率 < 80 % 时**直接报错退出**（`--min-char-coverage`，
    要用 Wenzhong 得显式 `--allow-low-char-coverage`，或改用
    `--char-source file:<cluecorpus 的 char2id.json>` 明确表示「只借 id 行号」）。
+
+## 提速包实测（本机 CPU 量的数，逻辑与 GPU 无关）
+
+| 手段 | 改动 | 实测效果 |
+|---|---|---|
+| **A 多位置监督** | 一个样本监督多个位置（`labels: [[位置, 词id], ...]`），一次前向的 200+ 个字不再只为 1 个标签买单 | 标签/token：**0.0077 → 0.0606**（真实语料切片，**7.9×**；合成语料 0.0612 / 8.0×） |
+| **B 长度分桶组批** | 缓冲窗口内按长度排序再切批（`--bucket`，默认开） | 真实 1200 万条样本的全量长度：随机批 padding 浪费 **17.93% → 0.10%**（batch=8、窗口 4096），batch=32 时 0.42% |
+| **C 轮流采样** | 语料文件按行轮流读（`iter_docs_round_robin`），`--max-samples` 不再被第一个语料吃光；`report.sources` 逐个来源报数 | 三个来源各占 **33.3%**（此前 Wikipedia 一条都进不去） |
+| **D 词头热启动** | `word_head[w]` = 该词字向量的均值（`--head-warmstart`，默认开；`--resume` 自动跳过） | 词头 23 M 参数不再从纯随机起步；跳过无已知字的词并报数 |
+| **E fp16 导出** | `--fp16`（= `--no-int8`）产出 `nwp.fp16.onnx`，**I/O 保持 float32**；`--fp32` 才是真·保底 | 真实 125.7M：**500.9 MB → 250.7 MB**，与 fp32 的 top-1/top-5 一致率 **100%**（相对误差 0.20%），KV 增量一致 |
+
+### A 的标签/token 为什么在真实语料上低于合成语料
+
+一个样本的标签数 = `min(--max-labels, 上下文词数 / --label-stride)`，而 token 数 = `len(ids)`。
+真实语料里**短上下文样本占比不小**（文档开头那一段、以及短文档），它们的分母小、分子更小，
+于是整体比值被拉低。实测（3 个真实分片：lccc 2.9 MB + thucnews 95 MB + wiki 90 MB）：
+
+| `--label-stride` | labels/样本 | labels/token | 相对 1/130 |
+|---|---|---|---|
+| 8 | 10.51 | 0.0351 | 4.6×（**不达标**） |
+| **4（现默认）** | **12.93** | **0.0606** | **7.9×** |
+| 2 | 20.88 | 0.0698 | 9.1× |
+
+上表的复现命令（用真实语料里最小的三个分片，约 3 分钟）：
+
+```bash
+W=.nwp-work/nwp-realcheck; mkdir -p $W/corpus $W/vocab
+for pref in lccc thucnews wiki; do cp "$(ls -S .nwp-work/nwp/corpus/$pref-*.txt | tail -1)" $W/corpus/; done
+cp .nwp-work/nwp/vocab/{char2id.json,word_vocab.txt} $W/vocab/
+$PY scripts/nwp/build_samples.py --work $W --context-words 128 --min-context-words 16 \
+  --max-context-ids 256 --max-samples 1500000        # 报告在 $W/samples/report.json 的 labels 段
+```
+
+默认取 4 而不是 8 就是这张表定的：stride=8 在真实语料上只有 4.6×，达不到 5× 的目标；
+而调小 stride **不增加骨干成本**——长上下文样本的标签数被 `--max-labels` 截住，
+只有本来就更便宜的短上下文样本多拿几个标签。想再密一点可以 `--label-stride 2`，
+或提高 `--max-labels`（长上下文线性增加，但每个标签的边际信息在变小）。
+
+> 收益的正确读法：**不是**「步数减少 8 倍」。标签数变多只说明同样一次前向提供了更多监督信号，
+> 实际能省多少步取决于任务与数据；保守地按 **2–4×** 估算，并且必须用真实训练曲线验证。
 
 ## 磁盘布局
 
@@ -260,6 +301,8 @@ $PY scripts/nwp/build_samples.py --dedup-selftest     # 8 字命中 / 7 字放�
 ```bash
 # CPU 冒烟（随机小骨干，验证管线；结论无意义）
 $PY scripts/nwp/train.py --smoke --max-steps 40
+# 提速包的开关（默认全开，--no-* 可做对照实验）
+$PY scripts/nwp/train.py --bucket --bucket-buffer 4096 --head-warmstart
 
 # 4060 Laptop 8 GB 上的正式微调（用户机器执行）
 $PY scripts/nwp/train.py --backbone cluecorpus --max-steps 20000 \
@@ -333,6 +376,23 @@ $PY scripts/nwp/export_onnx.py --eval-limit 512
 
 产出 `onnx/nwp.onnx`（fp32）、`onnx/nwp.int8.onnx`（**动态范围** int8）、
 `onnx/word_vocab.txt`、`onnx/char2id.json`、`onnx/manifest.json`。
+
+三种交付格式，`manifest.format` / `model.file` 跟着变，**schema 一个键都不变**：
+
+| 命令 | 交付文件 | `format` | 真实 125.7M 体积 |
+|---|---|---|---|
+| 默认 | `nwp.int8.onnx` | `onnx-int8` | 126.2 MB |
+| `--no-int8` / `--fp16` | `nwp.fp16.onnx` | `onnx-fp16` | **250.7 MB** |
+| `--fp32` | `nwp.onnx` | `onnx-fp32` | 500.9 MB |
+
+fp16 那条路是**文档承诺的退化方案**，之前代码里并不存在（`--no-int8` 实际只留 fp32 的 500 MB，
+顶爆 300 MB 预算）。实现是「初始化器降精度 + 图两端补 Cast」，
+用 `onnx` 原生 API 完成，**不依赖 onnxconverter_common**（离线机器上不一定装得上）；
+转换后会**用 ORT 真加载一次**，加载不了就删文件并让上层退到 int8。
+数值上还不够的地方还有两处硬处理：GPT2 的 causal mask 用 `finfo.min`（-3.4e38）填屏蔽位，
+直接转 fp16 会变 -inf、整行屏蔽时 softmax 出 NaN，所以降精度时**夹到 fp16 有限范围**；
+图内 trace 时写死的 `Cast(to=float32)`（遮罩转浮点、隐状态转词头 dtype）按消费者算子白名单
+改写成 fp16，而喂 `Range/Shape` 的 `Cast(to=int64/bool)` 原样保留。
 
 - 量化只用 `quantize_dynamic`，**不做静态校准**（spec：静态定点 int8 在这些小模型上是抽奖，
   93.20 → 30.95 的崩法出现过）。

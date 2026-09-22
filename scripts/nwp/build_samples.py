@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import zlib
@@ -38,6 +39,38 @@ from nwp_common import (  # noqa: E402
     ngram_strings,
     write_json,
 )
+
+
+def iter_docs_round_robin(corpus_files: list[Path]):
+    """按行**轮流**读各语料文件，而不是一个读完了再读下一个。
+
+    为什么必须轮流：`--max-samples` 是按遍历顺序填的，而分片名是按数据集排的
+    （lccc-* → thucnews-* → wiki-*）。顺序读的话配额会在前面的数据集里用光——
+    用户那次 `--max-samples 12000000` 就是这样，**Wikipedia 一条都没进训练集**
+    （训练尾部 维基/参考文献 = 27/0，测试尾部 = 100/20）。
+    轮流读让配额在所有来源之间摊开；配合 report.sources 的逐来源计数，
+    这种「某个语料其实没进去」的事不可能再悄悄发生。
+    """
+    handles = [(path, path.open("r", encoding="utf-8")) for path in corpus_files]
+    try:
+        while handles:
+            alive = []
+            for path, fh in handles:
+                line = fh.readline()
+                if not line:
+                    fh.close()
+                    continue
+                doc = line.strip()
+                if doc:
+                    yield path.name, doc
+                alive.append((path, fh))
+            handles = alive
+    finally:
+        for _, fh in handles:
+            try:
+                fh.close()
+            except OSError:
+                pass
 
 
 def split_of(doc: str, valid_ratio: float, test_ratio: float) -> str:
@@ -61,6 +94,8 @@ def emit_samples(
     stride: int,
     max_context_ids: int,
     stats: dict,
+    label_stride: int = 8,
+    max_labels: int = 16,
 ):
     """滑窗产样本。`max_context_ids` 是**硬上限**，超了保留尾部。
 
@@ -79,18 +114,40 @@ def emit_samples(
         if word_id == 0:
             # 目标是 <unk> 的样本进 loss 也会被 ignore_index 丢掉，不如根本别写入磁盘
             continue
-        start = seg[max(0, i - ctx_words)][1]
-        ctx = doc[start : seg[i][1]]
+        a = max(0, i - ctx_words)          # 上下文词的第一个下标
+        c_lo = seg[a][1]                   # 上下文起点（seg 元组是 (词, 起, 止)）
+        ctx = doc[c_lo : seg[i][1]]        # 到 label 词的**起点**为止：上下文不含答案
         if len(ctx) < 8:
             continue
         ids = [char2id.get(ch, unk) for ch in ctx]
         stats["max_ids_seen"] = max(stats.get("max_ids_seen", 0), len(ids))
+        dropped_head = 0
         if len(ids) > max_context_ids:
             # ctx 与 ids 必须同步裁，否则评测/人工看错误样例时文本与张量对不上
+            dropped_head = len(ids) - max_context_ids
             ids = ids[-max_context_ids:]
             ctx = ctx[-max_context_ids:]
             stats["truncated"] = stats.get("truncated", 0) + 1
-        yield {"ids": ids, "label": word_id, "ctx": ctx}
+
+        # 多位置监督：上下文里**每个词的最后一个字**都在预测它的下一个词
+        # （和单标签同语义——最后那个位置预测的就是 sample 的 label），
+        # 于是一次前向的 ~130 个字不再只为 1 个标签买单。
+        # 位置是 ids 的下标；截尾后整体左移 dropped_head，移出上下文的直接丢掉。
+        pairs: list[list[int]] = []
+        for k in range(a, i):
+            pos = seg[k][2] - 1 - c_lo - dropped_head   # 词 k 的末字在 ids 里的下标
+            if pos < 0:
+                continue
+            target = word2id.get(seg[k + 1][0], 0)
+            if target == 0:
+                continue      # 目标 <unk> 会被 ignore_index 丢掉，没必要占一个位置
+            pairs.append([pos, target])
+        # 从**最近的**位置往前按 stride 取样：远端位置信息价值低，且最近的位置与端侧用法一致
+        if label_stride > 1:
+            pairs = pairs[::-1][::label_stride][::-1]
+        if max_labels and len(pairs) > max_labels:
+            pairs = pairs[-max_labels:]
+        yield {"ids": ids, "label": word_id, "labels": pairs, "ctx": ctx}
 
 
 class Deduper:
@@ -194,6 +251,12 @@ def main() -> int:
                          "manifest.context_tokens 取的就是这个值，必须 ≥ 端侧 prompt 预算 210")
     ap.add_argument("--min-context-words", type=int, default=8)
     ap.add_argument("--stride", type=int, default=1, help="每多少词出一个样本（>1 可线性缩小样本量）")
+    ap.add_argument("--label-stride", type=int, default=4,
+                    help="多位置监督的取样间隔（按上下文词边界，默认 4 个词）。"
+                         "真实语料实测：stride=8 只有 4.6× 标签密度、stride=4 有 7.9×；"
+                         "长上下文样本被 --max-labels 截住，所以调小 stride 不增加骨干成本")
+    ap.add_argument("--max-labels", type=int, default=16,
+                    help="单个样本最多监督多少个位置（默认 16，取最近的若干个）")
     ap.add_argument("--valid-ratio", type=float, default=0.02)
     ap.add_argument("--test-ratio", type=float, default=0.02)
     ap.add_argument("--max-samples", type=int, default=0, help="每个分片最多写多少条（0=不限）")
@@ -220,19 +283,20 @@ def main() -> int:
     segmenter = Segmenter(words)
     log(f"词表 {len(words)} 词，char2id {len(char2id)} 项，最大词长 {segmenter.max_len}")
 
-    corpus_files = sorted(lay.corpus.glob("*.txt"))
+    # 只认分片命名 `{dataset}-NNN.txt`。语料目录里还躺着 synthetic_words.txt 这类
+    # 辅助文件（词表清单），按 *.txt 全收会把它当文档切出垃圾样本，也把 sources 计数搞花。
+    corpus_files = sorted(
+        p for p in lay.corpus.glob("*.txt") if re.fullmatch(r".+-\d{3,}\.txt", p.name))
     if not corpus_files:
-        raise SystemExit(f"{lay.corpus} 下没有 *.txt：先跑 fetch_corpus.py")
+        raise SystemExit(f"{lay.corpus} 下没有分片（形如 xxx-000.txt）：先跑 fetch_corpus.py")
 
-    docs: dict[str, list[str]] = {"train": [], "valid": [], "test": []}
-    for path in corpus_files:
-        with path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                doc = line.strip()
-                if not doc:
-                    continue
-                docs[split_of(doc, args.valid_ratio, args.test_ratio)].append(doc[: args.max_doc_chars])
-    log(f"文档分片：train={len(docs['train'])} valid={len(docs['valid'])} test={len(docs['test'])}")
+    docs: dict[str, list[tuple[str, str]]] = {"train": [], "valid": [], "test": []}
+    docs_by_source: dict[str, int] = {}
+    for source, doc in iter_docs_round_robin(corpus_files):
+        docs_by_source[source] = docs_by_source.get(source, 0) + 1
+        docs[split_of(doc, args.valid_ratio, args.test_ratio)].append((source, doc[: args.max_doc_chars]))
+    log(f"文档分片：train={len(docs['train'])} valid={len(docs['valid'])} test={len(docs['test'])}"
+        f"（来源 {len(docs_by_source)} 个，轮流读取）")
 
     lay.make("samples")
     report: dict = {
@@ -240,6 +304,8 @@ def main() -> int:
         "docs": {k: len(v) for k, v in docs.items()},
         "context_words": args.context_words,
         "max_context_ids": args.max_context_ids,
+        "label_stride": args.label_stride,
+        "max_labels": args.max_labels,
         "stride": args.stride,
         "dedup": {"mode": args.dedup_mode, "ngram": args.dedup_ngram,
                   "window": args.dedup_window, "max_ngrams": args.dedup_max_ngrams,
@@ -251,6 +317,10 @@ def main() -> int:
     deduper = Deduper(args.dedup_mode, args.dedup_max_ngrams, args.dedup_window,
                       args.dedup_ngram, args.dedup_min_match)
     max_ids_seen = 0
+    source_samples: dict[str, int] = {}
+    labels_total = 0
+    tokens_total = 0
+    samples_total = 0
     for split in ("train", "valid", "test"):
         out = lay.samples / f"{split}.jsonl"
         kept = 0
@@ -260,15 +330,16 @@ def main() -> int:
         stats: dict = {}
         checked_complete = 0   # 在索引仍完整时做过重叠判断的样本数
         checked_partial = 0    # 索引已不完整之后才判断的样本数
+        src_samples: dict[str, int] = {}
         with out.open("w", encoding="utf-8") as fh:
-            for doc in docs[split]:
+            for source, doc in docs[split]:
                 if stop:
                     break
                 wrote_any = False
                 for sample in emit_samples(
                     words, word2id, char2id, segmenter, doc,
                     args.context_words, args.min_context_words, args.stride,
-                    args.max_context_ids, stats,
+                    args.max_context_ids, stats, args.label_stride, args.max_labels,
                 ):
                     wrote_any = True
                     # valid/test 先查重叠再入库；train 只负责建集合
@@ -292,6 +363,11 @@ def main() -> int:
                     deduper.add_text(tail)
                     fh.write(json.dumps(sample, ensure_ascii=False, separators=(",", ":")) + "\n")
                     kept += 1
+                    # 监督密度只在**真的写出去**的样本上统计：被去重丢掉的样本不该进分子，
+                    # 否则 labels/sample 会算出大于 --max-labels 的不可能值
+                    stats["labels_total"] = stats.get("labels_total", 0) + len(sample["labels"])
+                    stats["tokens_total"] = stats.get("tokens_total", 0) + len(sample["ids"])
+                    src_samples[source] = src_samples.get(source, 0) + 1
                 if not wrote_any:
                     skipped_short += 1
         rate = dropped / (kept + dropped) if (kept + dropped) else 0.0
@@ -304,14 +380,34 @@ def main() -> int:
             "truncated_by_max_context_ids": stats.get("truncated", 0),
             "dedup_checked_with_complete_index": checked_complete,
             "dedup_checked_with_partial_index": checked_partial,
+            "sources": src_samples,
         }
+        for name, n in src_samples.items():
+            source_samples[name] = source_samples.get(name, 0) + n
         max_ids_seen = max(max_ids_seen, stats.get("max_ids_seen", 0))
+        labels_total += stats.get("labels_total", 0)
+        tokens_total += stats.get("tokens_total", 0)
+        samples_total += kept
         log(f"{split}: {kept} 条，去重丢弃 {dropped} 条（{rate * 100:.2f}%），"
             f"因超 {args.max_context_ids} 字截尾 {stats.get('truncated', 0)} 条，"
             f"耗时 {time.time() - t0:.1f}s")
 
     # 截尾**之前**真实出现过的最大 id 数：export_onnx 用它断言 manifest 不会低报模型输入长度
     report["max_ids_seen"] = max_ids_seen
+    # 监督密度：多位置监督是否真的生效，用「标签数 / token 数」这一个数就看得出
+    report["labels"] = {
+        "label_stride": args.label_stride,
+        "max_labels": args.max_labels,
+        "labels_total": labels_total,
+        "tokens_total": tokens_total,
+        "labels_per_sample": (labels_total / samples_total) if samples_total else 0.0,
+        "labels_per_token": (labels_total / tokens_total) if tokens_total else 0.0,
+    }
+    # 逐来源计数：哪个语料实际进了多少条，一眼可见（防止某个来源被配额饿死）
+    report["sources"] = {
+        name: {"docs": n, "samples": source_samples.get(name, 0)}
+        for name, n in sorted(docs_by_source.items())
+    }
     report["dedup"]["ngrams_indexed"] = len(deduper.seen)
     report["dedup"]["truncated"] = deduper.truncated
     report["dedup"]["coverage"] = deduper.coverage()

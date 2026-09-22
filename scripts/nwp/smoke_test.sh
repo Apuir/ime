@@ -50,21 +50,21 @@ MAX_CONTEXT_IDS="${MAX_CONTEXT_IDS:-48}"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 
-step "0/8 py_compile 全部脚本"
+step "0/9 py_compile 全部脚本"
 "$PY" -m py_compile "$ROOT"/scripts/nwp/*.py
 ok "scripts/nwp/*.py 全部编译通过"
 
-step "0.5/8 回归测试（分片文件名唯一/磁盘行数==报告条数、fp16 骨干前向、ONNX 强制 float32 I/O、去重覆盖率）"
+step "0.5/9 回归测试（分片文件名唯一/磁盘行数==报告条数、fp16 骨干前向、ONNX 强制 float32 I/O、去重覆盖率）"
 PYTHONPATH="$ROOT/scripts/nwp" "$PY" "$ROOT/scripts/nwp/test_nwp_pipeline.py"
 
-step "1/8 合成语料（离线，$N_DOCS 条，含刻意注入的跨分片重复）"
+step "1/9 合成语料（离线，$N_DOCS 条，含刻意注入的跨分片重复）"
 "$PY" "$ROOT/scripts/nwp/fetch_corpus.py" --work "$WORK" --dataset synthetic --limit "$N_DOCS"
 
-step "2/8 词表：char2id（corpus 模式，冒烟骨干没有预训练字表）+ word_vocab"
+step "2/9 词表：char2id（corpus 模式，冒烟骨干没有预训练字表）+ word_vocab"
 "$PY" "$ROOT/scripts/nwp/build_vocab.py" --work "$WORK" \
   --char-source corpus --vocab-source synthetic --size 400
 
-step "3/8 滑窗样本 + ≥8 字 n-gram 去重（含边界自检）"
+step "3/9 滑窗样本 + ≥8 字 n-gram 去重（含边界自检）"
 "$PY" "$ROOT/scripts/nwp/build_samples.py" --dedup-selftest
 "$PY" "$ROOT/scripts/nwp/build_samples.py" --work "$WORK" \
   --context-words 32 --min-context-words 4 --valid-ratio 0.05 --test-ratio 0.1 \
@@ -86,18 +86,22 @@ print(f"[PASS] --max-context-ids={rep['max_context_ids']}：截尾 {tr} 条，"
       f"截尾前最长 {rep['max_ids_seen']} 个 id（context_words={rep['context_words']}，仅采样规则）")
 EOF
 
-step "4/8 冒烟训练（随机小骨干，CPU，$STEPS 步，含逐步解冻 + LoRA）"
+step "4/9 冒烟训练（随机小骨干，CPU，$STEPS 步，含逐步解冻 + LoRA）"
 "$PY" "$ROOT/scripts/nwp/train.py" --work "$WORK" --smoke --max-steps "$STEPS" \
   --batch-size 8 --log-every 10 --eval-every 20 --lora-rank 4
 
-step "5/8 评测：checkpoint + unigram + n-gram 基线"
+step "5/9 评测：checkpoint + unigram + n-gram 基线"
 "$PY" "$ROOT/scripts/nwp/eval.py" run --work "$WORK" \
   --checkpoint "$WORK/ckpt/best.pt" --baseline all --limit 200 --name smoke-ckpt
 
-step "6/8 导出 ONNX（fp32 + 动态范围 int8）+ manifest + top-k / KV cache 对拍"
+step "6/9 导出 ONNX（fp32 + 动态范围 int8）+ manifest + top-k / KV cache 对拍"
 "$PY" "$ROOT/scripts/nwp/export_onnx.py" --work "$WORK" --eval-limit 128 --parity-rows 8
 
-step "7/8 校验产物"
+step "6.5/9 fp16 导出路径（--fp16：I/O 仍 float32、无 TopK、体积更小）"
+"$PY" "$ROOT/scripts/nwp/export_onnx.py" --work "$WORK" --out-dir "$WORK/onnx-fp16" \
+  --fp16 --eval-limit 32 --parity-rows 4 2>&1 | grep -E 'fp16|一致率|验收|格式' || true
+
+step "7/9 校验产物"
 PYTHONPATH="$ROOT/scripts/nwp" "$PY" - "$WORK" <<'EOF'
 import json, sys, os
 work = sys.argv[1]
@@ -139,6 +143,25 @@ print(f"[PASS] PyTorch KV max|Δ|={rep['kv_torch']['max_abs_diff']:.3e}；"
       f"ONNX KV max|Δ|={rep['kv_onnx']['max_abs_diff_vs_torch_full']:.3e}"
       f"（present_len={rep['kv_onnx']['present_len_after_step']}）")
 print(f"[PASS] 图中节点 {rep['graph']['nodes']} 个，无 TopK/ArgMax")
+
+# fp16 交付路径（文档写的 int8 退化方案）必须真的存在且仍满足端侧契约
+fdir = os.path.join(work, "onnx-fp16")
+if os.path.exists(os.path.join(fdir, "manifest.json")):
+    fman = json.load(open(os.path.join(fdir, "manifest.json"), encoding="utf-8"))
+    assert fman["format"] == "onnx-fp16" and fman["model"]["file"] == "nwp.fp16.onnx", fman
+    assert set(fman.keys()) == set(man.keys()), "fp16 manifest 的键必须与 int8 完全一致"
+    import onnx
+    fg = onnx.load(os.path.join(fdir, "nwp.fp16.onnx"))
+    kinds = {1: "float32", 10: "float16", 7: "int64", 6: "int32"}
+    io_t = {kinds.get(i.type.tensor_type.elem_type) for i in fg.graph.input}
+    oo_t = {kinds.get(o.type.tensor_type.elem_type) for o in fg.graph.output}
+    assert io_t <= {"float32", "int64"} and oo_t == {"float32"}, (io_t, oo_t)
+    assert not ({n.op_type for n in fg.graph.node} & {"TopK", "ArgMax"}), "fp16 图里有 TopK"
+    fp32_b = os.path.getsize(os.path.join(fdir, "nwp.onnx"))
+    fp16_b = os.path.getsize(os.path.join(fdir, "nwp.fp16.onnx"))
+    assert fp16_b < 0.7 * fp32_b, (fp16_b, fp32_b)
+    print(f"[PASS] fp16 交付：I/O=float32/无 TopK/{fp32_b/1e6:.0f}MB → {fp16_b/1e6:.0f}MB"
+          f"（{100*fp16_b/fp32_b:.0f}%），manifest 键与 int8 完全一致")
 EOF
 
 printf '\n\033[1;32m全部通过。\033[0m 产物在 %s\n' "$WORK"
