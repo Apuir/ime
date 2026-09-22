@@ -87,6 +87,9 @@ def collate(batch: list[dict], pad_id: int = CHAR_PAD):
     mask = torch.zeros((rows, width), dtype=torch.long)
     label_pos = torch.zeros((rows, max_t), dtype=torch.long)
     label_ids = torch.zeros((rows, max_t), dtype=torch.long)
+    # 「最后一个位置」的那一个标签，单独给出来：验证/导出走的是只算末位 logits 的路径，
+    # 而 [B,T] 矩阵的末**列**在标签条数不足时是补的 0，不能直接拿 `[:, -1]` 用。
+    last_label = torch.zeros(rows, dtype=torch.long)
     for row, item in enumerate(batch):
         seq = item["ids"]
         ids[row, width - len(seq) :] = torch.tensor(seq, dtype=torch.long)
@@ -94,9 +97,10 @@ def collate(batch: list[dict], pad_id: int = CHAR_PAD):
         for j, (pos, wid) in enumerate(labels_list[row]):
             label_pos[row, j] = pos
             label_ids[row, j] = wid
+        last_label[row] = labels_list[row][-1][1]
     # 位置从真实 token 起算：左填充不能把位置索引推偏，否则与端侧（无填充）不一致
     position_ids = (mask.cumsum(-1) - 1).clamp(min=0)
-    return ids, mask, position_ids, label_pos, label_ids
+    return ids, mask, position_ids, label_pos, label_ids, last_label
 
 
 class LengthBucketBatchSampler:
@@ -111,13 +115,17 @@ class LengthBucketBatchSampler:
     """
 
     def __init__(self, lengths, batch_size: int, buffer_size: int = 4096, seed: int = 0,
-                 shuffle: bool = True) -> None:
+                 shuffle: bool = True, shuffle_buffer: int = 256) -> None:
         self.lengths = list(lengths)
         self.batch_size = batch_size
         self.buffer_size = max(buffer_size, batch_size)
         self.seed = seed
         self.shuffle = shuffle
+        self.shuffle_buffer = max(shuffle_buffer, 1)
         self.epoch = 0
+        # 训练循环**应当每轮只启动一次迭代**。这个计数专门给回归测试用：
+        # 一旦有人把 `for batch in loader` 又写回 while 里，它就会等于步数而不是 1。
+        self.iter_calls = 0
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
@@ -130,28 +138,53 @@ class LengthBucketBatchSampler:
         return total
 
     def __iter__(self):
+        self.iter_calls += 1
+        return self._iter_batches()
+
+    def _iter_batches(self):
+        """**惰性**产出批次：内存只占「当前窗口 + 一个有界的批缓冲」。
+
+        早先的实现在 yield 之前先把整轮所有批都排进一个 list —— 真实训练集
+        2477 万条约 10–30 秒；而调用方每个梯度累积窗口都重建一次迭代器
+        （`for batch in loader` 写在 while 里），于是每 8 个 micro-batch 就重排一次
+        全量，实测把步时从 1.05 s 拖到 3.4 s，GPU 基本在空转。
+
+        与 `__iter__` 分开是为了让 `padding_waste()` 这类内部用途不污染 [iter_calls]。
+        """
         n = len(self.lengths)
         order = list(range(n))
         rng = random.Random(self.seed + self.epoch)
         if self.shuffle:
             rng.shuffle(order)
-        batches: list[list[int]] = []
-        for start in range(0, n, self.buffer_size):
-            window = order[start : start + self.buffer_size]
-            window.sort(key=lambda i: self.lengths[i])
-            for cut in range(0, len(window), self.batch_size):
-                chunk = window[cut : cut + self.batch_size]
-                if chunk:
-                    batches.append(chunk)
-        if self.shuffle:
-            # 批之间也打乱：否则模型会按长度递增的顺序看数据，等于引入一个系统性偏差
-            rng.shuffle(batches)
-        yield from batches
 
-    def padding_waste(self) -> float:
-        """按真实长度算 padding 浪费比例，训练报告里会写它。"""
+        # 比 lambda 快，且每个窗口只排序 buffer_size 个元素
+        get_len = self.lengths.__getitem__
+        pending: list[list[int]] = []
+        for start in range(0, n, self.buffer_size):
+            window = order[start:start + self.buffer_size]
+            window.sort(key=get_len)
+            for cut in range(0, len(window), self.batch_size):
+                chunk = window[cut:cut + self.batch_size]
+                if not chunk:
+                    continue
+                if self.shuffle and len(pending) >= self.shuffle_buffer:
+                    # 从缓冲里随机换出一个再发：批间乱序照样成立，但内存与时间都有界。
+                    # 用「与末尾互换再 pop」而不是 pop(idx) —— 后者是 O(k)，会退化。
+                    idx = rng.randrange(len(pending))
+                    pending[idx], pending[-1] = pending[-1], pending[idx]
+                    yield pending.pop()
+                pending.append(chunk)
+        if self.shuffle:
+            rng.shuffle(pending)
+        yield from pending
+
+    def padding_waste(self, max_batches: int = 20000) -> float:
+        """按真实长度估 padding 浪费。只抽样前 [max_batches] 批 ——
+        流一遍全量要十几秒，而这个数只用于日志和回归断言，抽样足够。"""
         real = padded = 0
-        for chunk in self:
+        for seen, chunk in enumerate(self._iter_batches()):
+            if seen >= max_batches:
+                break
             width = max(self.lengths[i] for i in chunk)
             real += sum(self.lengths[i] for i in chunk)
             padded += width * len(chunk)
@@ -264,14 +297,18 @@ def quick_metric(model, dataset, limit: int, batch_size: int, device: str, amp_d
     total = 0
     for start in range(0, n, batch_size):
         chunk = [dataset[i] for i in range(start, min(start + batch_size, n))]
-        ids, mask, pos, _, labels = collate(chunk)
+        ids, mask, pos, _, _, last_label = collate(chunk)
         ids, mask, pos = ids.to(device), mask.to(device), pos.to(device)
         with torch.autocast(device_type="cuda" if device == "cuda" else "cpu",
                             dtype=amp_dtype, enabled=amp_enabled):
             logits, _ = model(ids, mask, pos)
         logits = logits.float()
         top5 = torch.topk(logits, k=min(5, logits.shape[-1]), dim=-1).indices.cpu()
-        for row, label in enumerate(labels.tolist()):
+        # 用 `last_label`（每个样本自己的下一个词），不能拿 [B,T] 的末列 ——
+        # 标签条数不足的行末列是补 0。曾经这里整段拿 [B,T] 去比，label 成了 list，
+        # `label in ranked` 恒为 False，于是 top1/top5/mrr 全是 0，
+        # 而训练 loss 正常下降，看起来像「模型没学会」。
+        for row, label in enumerate(last_label.tolist()):
             total += 1
             ranked = top5[row].tolist()
             if label in ranked:
@@ -476,8 +513,7 @@ def main() -> int:
     running = 0.0
     running_n = 0
     running_samples = 0
-    valid_window = None       # 当前累积窗口内的真实标签数（loss 的分母）
-    window_target = 1
+    # 窗口内的真实标签数（loss 的分母）在每个窗口开头重算，见下面的 window_target。
     lora_on = not lora_cfg or unfreeze_at <= 0
     def epochs():
         epoch = 0
@@ -488,40 +524,50 @@ def main() -> int:
             epoch += 1
 
     epoch_iter = epochs()
-    while step < args.max_steps:
-        # 按 grad_accum 先取一整个窗口，是为了**按窗口内真实标签数**归一化：
-        # 每个 micro-batch 的标签数不一样（多位置监督 + 长度不一），
-        # 若按 micro-batch 各自平均，等效学习率会随数据抖动，梯度累积也就失去意义。
-        window: list = []
-        for batch in loader:
-            window.append(batch)
-            if len(window) >= args.grad_accum:
-                break
-        if not window:
-            next(epoch_iter)
-            continue
-        for batch in window:
-            if step >= args.max_steps:
-                break
-            if lora_cfg and not lora_on and step >= unfreeze_at:
-                # 逐步解冻：LoRA 参数**加进优化器**才算真的开始训。
-                # 不能靠 requires_grad 假装冻结——AdamW 不检查它，照样会更新。
-                optimizer.add_param_group({
-                    "params": lora_params_all,
-                    "name": "lora", "lr": args.lr_lora, "weight_decay": args.weight_decay,
-                })
-                lora_on = True
-                log(f"step {step}: 打开 LoRA（rank={lora_cfg['rank']}，lr={args.lr_lora}）")
+    next(epoch_iter)
+    # **迭代器只建一次**。原先写的是 `for batch in loader` 且在 while 里，
+    # 于是每个梯度累积窗口都要重建迭代器、重新 shuffle 一遍全量样本；
+    # 配合当时「整轮物化」的采样器，每 8 个 micro-batch 就重排 2477 万条 ——
+    # 实测把步时从 1.05 s 拖到 3.4 s，GPU 大部分时间在空转。
+    loader_iter = iter(loader)
+    pending_s = 0.0
 
-            lrs = apply_lr(optimizer, schedules, step, args.max_steps, args.schedule, args.min_lr_ratio)
-            ids, mask, pos, label_pos, label_ids = batch
+    while step < args.max_steps:
+        # 取满一个梯度累积窗口；一轮走完就换轮（重新 shuffle）后接着取。
+        t_fill = time.time()
+        window: list = []
+        while len(window) < args.grad_accum:
+            try:
+                window.append(next(loader_iter))
+            except StopIteration:
+                next(epoch_iter)
+                loader_iter = iter(loader)
+                if not window:
+                    break
+        pending_s += time.time() - t_fill
+        if not window:
+            break
+
+        if lora_cfg and not lora_on and step >= unfreeze_at:
+            # 逐步解冻：LoRA 参数**加进优化器**才算真的开始训。
+            # 不能靠 requires_grad 假装冻结——AdamW 不检查它，照样会更新。
+            optimizer.add_param_group({
+                "params": lora_params_all,
+                "name": "lora", "lr": args.lr_lora, "weight_decay": args.weight_decay,
+            })
+            lora_on = True
+            log(f"step {step}: 打开 LoRA（rank={lora_cfg['rank']}，lr={args.lr_lora}）")
+
+        lrs = apply_lr(optimizer, schedules, step, args.max_steps, args.schedule, args.min_lr_ratio)
+        # 整个窗口共用一个分母：各样本标签数不同，按 micro-batch 各自平均会让
+        # 等效学习率随数据抖动，梯度累积也就失去意义。
+        window_target = max(1, int(sum((b[4] != 0).sum() for b in window)))
+
+        for batch in window:
+            ids, mask, pos, label_pos, label_ids, _ = batch
             ids, mask, pos = ids.to(device), mask.to(device), pos.to(device)
             label_pos, label_ids = label_pos.to(device), label_ids.to(device)
 
-            # 窗口内真实标签数（分母）。第一次进入窗口时算好，之后每个 micro-batch 共用。
-            if valid_window is None:
-                valid_window = max(1, int(sum((b[4] != 0).sum() for b in window)))
-                window_target = valid_window
             with torch.autocast(device_type="cuda" if device == "cuda" else "cpu", dtype=amp_dtype,
                                 enabled=amp_dtype is not None):
                 logits, _ = model(ids, mask, pos, label_positions=label_pos)
@@ -541,42 +587,49 @@ def main() -> int:
             running_samples += int(ids.shape[0])
             micro += 1
 
-            if use_scaler:
-                scaler.unscale_(optimizer)
-            if args.grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], args.grad_clip)
-            if use_scaler:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-            step += 1
-            valid_window = None
-            window_target = 1
+        # **整个窗口跑完才更新一次参数。** 原先这一步写在 for 里面，梯度累积形同虚设：
+        # 等效 batch 从 64 掉回 8；而 loss 已经除过窗口标签数、却只有单个 micro-batch
+        # 贡献梯度，等于梯度又被缩小约 8 倍；`step` 还按 micro-batch 计数，
+        # 于是 --max-steps 只覆盖到预期 1/8 的数据。
+        if use_scaler:
+            scaler.unscale_(optimizer)
+        if args.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in model.parameters() if p.requires_grad], args.grad_clip)
+        if use_scaler:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        step += 1
 
-            if step % args.log_every == 0:
-                speed = (time.time() - t0) / max(1, step - start_step)
-                log(f"step {step}/{args.max_steps} loss/label={running / max(1, running_n):.4f} "
-                    f"labels/sample={running_n / max(1, running_samples):.2f} "
-                    f"lr={','.join(f'{k}:{v:.2e}' for k, v in lrs.items())} {speed:.2f}s/step")
-                running, running_n, running_samples = 0.0, 0, 0
+        if step % args.log_every == 0:
+            speed = (time.time() - t0) / max(1, step - start_step)
+            # data= 是等数据的时间。它一旦和步时同量级，瓶颈就在采样器而不是 GPU ——
+            # 之前那个「每窗口重排全量样本」的 bug 正是这样被看出来的。
+            log(f"step {step}/{args.max_steps} loss/label={running / max(1, running_n):.4f} "
+                f"labels/sample={running_n / max(1, running_samples):.2f} "
+                f"lr={','.join(f'{k}:{v:.2e}' for k, v in lrs.items())} "
+                f"{speed:.2f}s/step data={pending_s / max(1, args.log_every):.2f}s")
+            running, running_n, running_samples = 0.0, 0, 0
+            pending_s = 0.0
 
-            if args.eval_every and step % args.eval_every == 0:
-                metrics = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device, amp_dtype)
-                metrics["step"] = step
-                history.append(metrics)
-                log(f"  valid@{step}: top1={metrics['top1']:.4f} top5={metrics['top5']:.4f} mrr={metrics['mrr']:.4f}")
-                if metrics["top1"] > best.get("top1", -1):
-                    best = metrics
-                    save_checkpoint(out_dir / "best.pt", model, {"step": step, "metrics": metrics, "args": vars(args) | {"samples": str(samples_dir)}})
-                model.train()
+        if args.eval_every and step % args.eval_every == 0:
+            metrics = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device, amp_dtype)
+            metrics["step"] = step
+            history.append(metrics)
+            log(f"  valid@{step}: top1={metrics['top1']:.4f} top5={metrics['top5']:.4f} mrr={metrics['mrr']:.4f}")
+            if metrics["top1"] > best.get("top1", -1):
+                best = metrics
+                save_checkpoint(out_dir / "best.pt", model, {"step": step, "metrics": metrics, "args": vars(args) | {"samples": str(samples_dir)}})
+            model.train()
 
-            if args.save_every and step % args.save_every == 0:
-                save_checkpoint(out_dir / "last.pt", model, {
-                    "step": step, "optimizer": optimizer.state_dict(), "best": best,
-                    "history": history, "args": vars(args) | {"samples": str(samples_dir)},
-                })
+        if args.save_every and step % args.save_every == 0:
+            save_checkpoint(out_dir / "last.pt", model, {
+                "step": step, "optimizer": optimizer.state_dict(), "best": best,
+                "history": history, "args": vars(args) | {"samples": str(samples_dir)},
+            })
 
     # 训练侧监督密度（样本文件里记录的 labels 总量）
     srep = read_json(lay.samples / "report.json") if (lay.samples / "report.json").exists() else {}
@@ -602,6 +655,12 @@ def main() -> int:
         "device": device,
         "dtype": dtype,
         "steps": step,
+        # 这两个数是不变量，回归测试会断言它们：
+        # micro_batches 应当等于 steps×grad_accum（否则梯度累积没生效），
+        # epoch_iterations 应当是 1（否则迭代器被每个窗口重建，采样开销要乘上步数）。
+        "micro_batches": micro,
+        "grad_accum": args.grad_accum,
+        "epoch_iterations": batch_sampler.iter_calls if batch_sampler is not None else 0,
         "elapsed_sec": round(elapsed, 1),
         "sec_per_step": round(elapsed / max(1, step - start_step), 3),
         "final_valid": final,

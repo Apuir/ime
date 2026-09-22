@@ -555,6 +555,83 @@ def test_onnx_parity_after_multi_label() -> dict:
                 "logits_shape": list(logits.shape)}
 
 
+def test_train_loop_invariants() -> dict:
+    """训练循环的两个不变量。两个都是踩过的坑，而且**单测与冒烟当时都是绿的** ——
+    只有真跑 20000 步才暴露，所以必须由这个用例钉住：
+
+    - `micro_batches == steps × grad_accum`：参数更新只能**每个累积窗口一次**。
+      曾把 `optimizer.step()` 写在 micro-batch 循环内，等效 batch 从 64 掉回 8，
+      而 loss 已除过窗口标签数、却只有单个 micro-batch 贡献梯度，梯度又被缩小约 8 倍；
+      `step` 还按 micro-batch 计数，于是 `--max-steps` 只覆盖预期 1/8 的数据。
+    - `epoch_iterations == 1`：加载器迭代器每轮只能建一次。曾写在 while 里，
+      配合当时「整轮物化」的采样器，每 8 个 micro-batch 就重排 2477 万条样本 ——
+      步时因此从 1.05 s 涨到 3.4 s，GPU 大部分时间在空转。
+    """
+    import subprocess
+
+    here = Path(__file__).resolve().parent
+    tmp = _synthetic_work(sources=1, docs_per_source=400)
+    steps, accum = 3, 4
+    # 显式给 `--backbone smoke`：`--smoke` 只在 backbone 仍是默认值时才会把
+    # grad_accum 压成 1（那是给「一条命令冒烟」用的），而这里要**真的测累积**。
+    proc = subprocess.run(
+        [sys.executable, str(here / "train.py"), "--work", tmp,
+         "--smoke", "--backbone", "smoke", "--device", "cpu", "--dtype", "fp32",
+         "--max-steps", str(steps), "--grad-accum", str(accum),
+         "--batch-size", "2", "--eval-every", "0", "--save-every", "0"],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-1500:]
+
+    reports = sorted((Path(tmp) / "results").glob("train_*.json"))
+    assert reports, f"没有产出训练报告：{proc.stdout[-500:]}"
+    rep = json.loads(reports[-1].read_text())
+
+    iters = rep["epoch_iterations"]
+    assert iters == 1, f"加载器迭代器被重建了 {iters} 次（每轮应当只建一次）"
+    assert rep["grad_accum"] == accum, f"累积步数被改成了 {rep['grad_accum']}，用例前提不成立"
+    micro = rep["micro_batches"]
+    assert micro == steps * accum, (
+        f"micro_batch={micro}，应为 steps({steps})×grad_accum({accum})={steps * accum}"
+        " —— 说明参数更新被写进了 micro-batch 循环里")
+    return {"steps": rep["steps"], "grad_accum": rep["grad_accum"],
+            "micro_batches": micro, "epoch_iterations": iters}
+
+
+def test_quick_metric_uses_last_position_label() -> dict:
+    """验证指标取的是「末位 logits vs 该样本自己的下一个词」。
+
+    collate 改成多标签后返回 `[B,T]` 的 `label_ids`，而验证走的仍是「只算末位」的
+    前向；当时验证代码整段遍历了 `[B,T]`，`label` 于是成了 list，
+    `label in ranked` 恒为 False —— **top1/top5/mrr 全是 0**，而训练 loss 正常下降，
+    看起来像「模型没学会」。这个用例用一个「必然答对」的假模型把这条通路钉死。
+
+    样本故意做成同构（label 固定 7），这样与批大小、批顺序都无关。
+    """
+    import torch
+
+    import train as T
+
+    dataset = [{"ids": [3, 4, 5], "labels": [[2, 7]], "label": 7} for _ in range(8)]
+
+    class AlwaysRight:
+        def eval(self):
+            return self
+
+        def train(self):
+            return self
+
+        def __call__(self, ids, mask, pos, label_positions=None):
+            logits = torch.zeros(ids.shape[0], 10)
+            logits[:, 7] = 1.0
+            return logits, None
+
+    m = T.quick_metric(AlwaysRight(), dataset, 8, 4, "cpu", None)
+    assert m["n"] == 8, m
+    assert m["top1"] == 1.0, f"必然答对的假模型 top1 却是 {m['top1']} —— 末位标签取错了"
+    assert m["top5"] == 1.0 and m["mrr"] == 1.0, m
+    return {"n": m["n"], "top1": m["top1"], "top5": m["top5"], "mrr": m["mrr"]}
+
+
 def main() -> int:
     tests = [
         ("分片文件名唯一 + 磁盘行数 == 报告条数", test_shards_are_distinct),
@@ -572,6 +649,8 @@ def main() -> int:
         ("D 词头热启动 + resume 不重置", test_head_warmstart),
         ("E fp16 导出：I/O float32/无 TopK/更小/可跑", test_fp16_export),
         ("约束 cap=128/160 都能跑", test_max_context_ids_variants),
+        ("训练循环不变量：每窗口一次更新 + 迭代器只建一次", test_train_loop_invariants),
+        ("评测量的是末位标签（必然答对的假模型 top1==1）", test_quick_metric_uses_last_position_label),
     ]
     failed = 0
     for name, fn in tests:
