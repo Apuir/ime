@@ -66,8 +66,8 @@ class KeyboardWindow(
     /** 横屏悬浮键盘开关：由宿主 [ImeInputMethodService] 按当前方向与设置决定。 */
     fun setFloatingMode(enabled: Boolean) = view.setFloatingMode(enabled)
 
-    fun setCandidates(list: List<EngineMessage.Candidate>) {
-        view.setCandidates(list)
+    fun setCandidates(list: List<EngineMessage.Candidate>, hasMore: Boolean = true) {
+        view.setCandidates(list, hasMore)
     }
 
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {

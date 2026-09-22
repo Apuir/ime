@@ -45,5 +45,15 @@ interface IEngine {
      * 候选面板右侧那个「叉」走的就是这条路径。
      */
     fun dismissPrediction()
+
+    /**
+     * 候选列表划到底之后再要一批。
+     *
+     * 候选总量不设上限（引擎那边本来就支持按位次取任意一段），但一次只给一批：
+     * 每 +1 批，字长分组里各组再往后各取一段，必要时再向引擎补拉一页。
+     * 前端只在真的划到底时才调它，避免长输入下一次性把候选图铺满。
+     */
+    fun requestMoreCandidates()
+
     fun observeMessages(scope: CoroutineScope, onMessage: suspend (EngineMessage) -> Unit): Job
 }

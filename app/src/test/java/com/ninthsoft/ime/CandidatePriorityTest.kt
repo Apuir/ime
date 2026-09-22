@@ -15,6 +15,9 @@ import org.junit.Test
  *
  * 改造前的问题：`baseScore` 权重 0.5 却恒传 0、词长权重 0.1 且无位次先验，
  * 于是「长词无条件抬前 + 引擎排序被整段打乱」。
+ *
+ * 注意 `wordLength` 现在**只有「联想」下一词在传**：方案候选的字长排序已经交给
+ * `CandidateGrouping` 显式负责（分组之后同组同长，传了也不影响次序），见 `CandidateGroupingTest`。
  */
 class CandidatePriorityTest {
 

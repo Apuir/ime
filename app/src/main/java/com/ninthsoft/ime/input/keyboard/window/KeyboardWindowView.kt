@@ -1784,10 +1784,10 @@ class KeyboardWindowView(
 
     private var currentKeyboard: IKeyboard? = null
 
-    fun setCandidates(list: List<EngineMessage.Candidate>) {
+    fun setCandidates(list: List<EngineMessage.Candidate>, hasMore: Boolean = true) {
         // 手写面板打开时顶栏归手写候选；方案候选（Rime 的）这时候推上来只会互相顶掉
         if (isHandwritingPanelVisible) return
-        panel.setCandidates(list)
+        panel.setCandidates(list, hasMore)
     }
 
     fun onPossibleCandidatePinYin(pinyins: List<CandidatePinYin>) {

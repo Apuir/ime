@@ -29,9 +29,12 @@ import com.ninthsoft.ime.engine.rime.behavior.SelectPinYin
 import com.ninthsoft.ime.engine.rime.behavior.Selection
 import com.ninthsoft.ime.engine.rime.core.IRimeJob
 import com.ninthsoft.ime.engine.rime.core.RimeApi
+import com.ninthsoft.ime.engine.rime.core.CandidateProto
 import com.ninthsoft.ime.engine.rime.daemon.RimeDaemon
 import com.ninthsoft.ime.engine.rime.daemon.RimeSession
+import com.ninthsoft.ime.engine.manager.CandidateGrouping
 import com.ninthsoft.ime.engine.manager.CandidateRerankManager
+import com.ninthsoft.ime.engine.manager.GroupingConfig
 import com.ninthsoft.ime.engine.manager.PredictionManager
 import com.ninthsoft.ime.engine.rime.core.KeyMapping
 import com.ninthsoft.ime.engine.rime.core.Rime.Companion.getCurrentSchema
@@ -91,8 +94,23 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         data class Predict(val commit: String) : Action
         data class PredictionReady(val requestId: Long, val candidates: List<Candidate>) : Action
         data class EmitMessage(val message: EngineMessage) : Action
-        data class CandidatesReady(val requestId: Long, val message: EngineMessage.Candidates) :
-            Action
+
+        /** 引擎给出的完整候选（已重排，未分组），见 [Action.CandidatesReady]。 */
+        data class CandidatesReady(val requestId: Long, val list: List<Candidate>) : Action
+
+        /**
+         * 异步挖深读到的一页候选。
+         *
+         * [generation] 与当前代次不符就说明输入已经换了，这一页直接作废（见
+         * [schedulePoolDeepening]）；[page] 为 null 表示这次读取失败，不改任何状态。
+         */
+        data class PoolPageReady(
+            val generation: Long,
+            val start: Int,
+            val page: Array<CandidateProto>?,
+        ) : Action
+
+        data object RequestMoreCandidates : Action
 
         data class PossibleCandidatePinYinSnapshot(
             val candidatePinYinType: String,
@@ -139,6 +157,25 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private val state = EngineState()
     private var predictionJob: Job? = null
     private var candidateRestoreJob: Job? = null
+
+    // ── 候选分批展示的状态（只在 actions 协程里读写）──
+
+    /** 引擎给出的完整候选（已重排、未分组）；列表位置即常用度位次。 */
+    private var fullCandidates: List<Candidate> = emptyList()
+
+    /** 已展示到第几批（从 1 起）。每 +1，字长分组里各组再往后各取一段。 */
+    private var candidateBatch: Int = 1
+
+    /** 引擎那边已经给完了，再往下拉也是空的。 */
+    private var engineExhausted: Boolean = true
+
+    /** 候选请求的代次：每来一份新的候选列表 +1。异步挖深靠它判断自己是不是已经作废了。 */
+    private var candidateGeneration: Long = 0
+
+    /** 当前输入码上「自动挖深」已经读掉多少条候选。 */
+    private var deepenedCount: Int = 0
+
+    private val groupingConfig = GroupingConfig()
 
     @Volatile
     private var lastSelection: LastSelection? = null
@@ -370,6 +407,9 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             is Action.PredictionReady -> {
                 if (action.requestId == state.latestPredictionRequestId) {
                     state.predictionVisible = action.candidates.isNotEmpty()
+                    // 联想候选顶掉了方案候选：把分批状态一起丢掉，否则「要下一批」会把
+                    // 已经作废的方案候选又发回来。
+                    clearCandidateState()
                     messages.emit(EngineMessage.Candidates(action.candidates, 0, 0))
                 }
             }
@@ -385,9 +425,41 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
             is Action.CandidatesReady -> {
                 if (action.requestId == state.latestCandidateRequestId) {
-                    messages.emit(action.message)
+                    fullCandidates = action.list
+                    candidateBatch = 1
+                    candidateGeneration++
+                    deepenedCount = 0
+                    // 有候选就假定引擎还有更多：真有没有，等挖深读到空页就知道了。
+                    engineExhausted = action.list.isEmpty()
+                    emitGroupedCandidates()
+                    // 引擎把长词排得很前，第一批常常凑不满 50 条（九键 hhhh 的前 100 条里
+                    // 一条短词都没有），挖深是异步分块做的。
+                    schedulePoolDeepening()
                 }
             }
+
+            is Action.PoolPageReady -> {
+                if (action.generation != candidateGeneration) return
+                val page = action.page ?: return
+                if (page.isEmpty()) {
+                    engineExhausted = true
+                    return
+                }
+                fullCandidates = fullCandidates + page.mapIndexed { offset, proto ->
+                    Candidate(
+                        index = action.start + offset,
+                        text = proto.text,
+                        comment = proto.comment,
+                        type = proto.type,
+                    )
+                }
+                deepenedCount += page.size
+                if (page.size < POOL_PAGE_SIZE) engineExhausted = true
+                emitGroupedCandidates()
+                schedulePoolDeepening()
+            }
+
+            Action.RequestMoreCandidates -> handleRequestMoreCandidates()
 
             Action.Reset -> {
                 flowBehavior(Reset())
@@ -404,6 +476,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             Action.InputCleared -> {
                 if (state.predictionVisible) {
                     state.predictionVisible = false
+                    clearCandidateState()
                     messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
                 }
             }
@@ -442,6 +515,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         }
         if (state.predictionVisible) {
             state.predictionVisible = false
+            clearCandidateState()
             messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
             return
         }
@@ -519,6 +593,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 if (state.suppressNextEmptyCandidates) {
                     state.suppressNextEmptyCandidates = false
                     if (msg.list.isEmpty()) {
+                        clearCandidateState()
                         return
                     }
                 }
@@ -611,6 +686,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
     private suspend fun clearInternal() {
         val clearPredictions = state.predictionVisible
         state.predictionVisible = false
+        clearCandidateState()
         if (clearPredictions) {
             messages.emit(EngineMessage.Candidates(emptyList(), 0, 0))
         }
@@ -644,6 +720,13 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         return withTimeoutOrNull(2000L) { deferred.await() } ?: defaultValue
     }
 
+    /**
+     * 把引擎这次的候选整理成**展示顺序**再发出去。
+     *
+     * 两步：重排（用户偏好 / 语法分，见 [CandidateRerankManager]）→ 字长分组
+     * （见 [CandidateGrouping]）。分组只在发出前做，[fullCandidates] 里存的是未分组的完整列表，
+     * 「要下一批」时直接对它按新批次重算，不必再问引擎要一遍。
+     */
     private fun restoreCandidates(msg: EngineMessage.Candidates) {
         val requestId = ++state.candidateRequestId
         state.latestCandidateRequestId = requestId
@@ -652,52 +735,43 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
             try {
                 val ctx = context
                 if (ctx == null) {
-                    actions.send(Action.CandidatesReady(requestId, msg))
+                    actions.send(Action.CandidatesReady(requestId, msg.list))
                     return@launch
                 }
 
                 val db = AppDatabase.getInstance(ctx)
                 val rerankEnabled = CandidateManager.isRerankEnabled(ctx)
-                if (rerankEnabled) {
+                val ordered = if (rerankEnabled) {
                     // 开启重排：使用重排结果，不还原用户排序
                     val inputContext =
                         (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "")
                     // gramDb 必须传真实的那一份：改造前这里恒传 null，
                     // 让权重最大的语法模型项永远为 0。
-                    val sortedList = rerankManager?.rerank(
+                    rerankManager?.rerank(
                         msg.list, inputContext, predictionManager?.gramDb
-                    )
-                    // 诊断：一眼看出「引擎给的顺序」与「应用侧重排后的顺序」差在哪。
-                    // release 构建不装 Timber tree（treeCount == 0）时直接跳过，零开销。
-                    if (Timber.treeCount > 0) {
-                        Timber.d(
-                            "diag-rerank engine=%s reranked=%s",
-                            msg.list.take(5).joinToString(" ") { it.text },
-                            sortedList?.take(5)?.joinToString(" ") { it.text } ?: "null",
-                        )
-                    }
-                    actions.send(
-                        Action.CandidatesReady(
-                            requestId, EngineMessage.Candidates(sortedList ?: msg.list, 0, 0)
-                        )
-                    )
+                    ) ?: msg.list
                 } else {
                     // 关闭重排：还原用户拖拽保存的排序；无记录则原样展示
                     val savedIds = CandidateSortingManager(db).load(msg.list)
-                    actions.send(
-                        Action.CandidatesReady(
-                            requestId, if (savedIds.isNullOrEmpty()) msg
-                            else EngineMessage.Candidates(
-                                restoreCandidateOrder(msg.list, savedIds), 0, 0
-                            )
-                        )
+                    if (savedIds.isNullOrEmpty()) msg.list
+                    else restoreCandidateOrder(msg.list, savedIds)
+                }
+
+                // 诊断：一眼看出「引擎给的顺序」与「应用侧重排后的顺序」差在哪。
+                // release 构建不装 Timber tree（treeCount == 0）时直接跳过，零开销。
+                if (Timber.treeCount > 0) {
+                    Timber.d(
+                        "diag-rerank engine=%s reranked=%s",
+                        msg.list.take(5).joinToString(" ") { it.text },
+                        ordered.take(5).joinToString(" ") { it.text },
                     )
                 }
+                actions.send(Action.CandidatesReady(requestId, ordered))
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 Timber.e(error, "Failed to restore candidates; using original list")
-                actions.send(Action.CandidatesReady(requestId, msg))
+                actions.send(Action.CandidatesReady(requestId, msg.list))
             }
         }
     }
@@ -718,12 +792,84 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         return restored
     }
 
+    // ── 候选分批展示 ──
+
+    /** 按当前批次把完整候选整理成展示顺序发出去。 */
+    private suspend fun emitGroupedCandidates() {
+        val visible = CandidateGrouping.apply(fullCandidates, candidateBatch, groupingConfig)
+        messages.emit(
+            EngineMessage.Candidates(
+                list = visible,
+                highlighted = 0,
+                page = 0,
+                hasMore = hasMoreCandidates(),
+            )
+        )
+    }
+
+    /**
+     * 还有下一批吗？
+     *
+     * 两种来源：已经拿到的候选池里各组还有下一段可取（[CandidateGrouping.hasMoreInBatch]），
+     * 或者引擎那边还没拉过（[engineExhausted] 为 false）—— 后者是猜的，真拉一次空页才会翻成已知。
+     */
+    private fun hasMoreCandidates(): Boolean =
+        !engineExhausted ||
+            CandidateGrouping.hasMoreInBatch(fullCandidates, candidateBatch, groupingConfig)
+
+    /**
+     * 划到底要下一批。
+     *
+     * 批数 +1，把挖深预算重置（用户主动要，重新给一份），发出去之后继续异步挖深 ——
+     * 该展示的批次还没凑满时，[schedulePoolDeepening] 会自己把池子读下去。
+     */
+    private suspend fun handleRequestMoreCandidates() {
+        if (fullCandidates.isEmpty()) return
+        candidateBatch++
+        deepenedCount = 0
+        emitGroupedCandidates()
+        schedulePoolDeepening()
+    }
+
+    /**
+     * 池子还不够填满当前要展示的批次时，**异步**往深里再读一页。
+     *
+     * 为什么必须异步、必须分块：读得越深越慢（实测九键 `4444`：读 100 条 2 ms、
+     * 读 2500 条 61 ms），而 rime 线程是串行的 —— 一次读满 2500 条会让用户的下一次按键
+     * 在队列里干等 60 ms 以上。这里一次只读 [POOL_PAGE_SIZE] 条，读完把下一页投回**队列尾部**：
+     * 中间插进来的按键会先跑，随后这一页回来时代次已经对不上，挖深自己作废。
+     */
+    private fun schedulePoolDeepening() {
+        if (engineExhausted || deepenedCount >= POOL_DEEPEN_BUDGET) return
+        if (CandidateGrouping.isBatchFilled(fullCandidates, candidateBatch, groupingConfig)) return
+        val generation = candidateGeneration
+        val start = fullCandidates.size
+        sendJob {
+            val page = runCatching { getCandidates(start, POOL_PAGE_SIZE) }.getOrNull()
+            actions.trySend(Action.PoolPageReady(generation, start, page))
+        }
+    }
+
+    /** 丢掉分批状态：候选被清空、或被联想候选顶掉时调用。 */
+    private fun clearCandidateState() {
+        fullCandidates = emptyList()
+        candidateBatch = 1
+        engineExhausted = true
+        // 代次往前走一格：已经投出去、还没回来的挖深页也会跟着作废。
+        candidateGeneration++
+        deepenedCount = 0
+    }
+
     /**
      * 输入诊断日志（**只影响 debug 构建**）。
      *
      * 动机：简拼（如 `qryt` → 「杞人忧天」）这类问题在真机上排查时，光看候选面板
      * 说不清「是方案选错了、还是引擎没给出这个候选」。这里把**当前方案 id、
-     * 原始输入码、候选总数与头几个候选**打进同一行，一次日志就能定位。
+     * 原始输入码、候选总数、字长分布与头几个候选**打进同一行，一次日志就能定位。
+     *
+     * 字长分布是 2026-09-22 补的：那天排查「九键打 hhhh 时单字双字一个都没有」，
+     * 翻遍了分组代码才发现引擎把短词排到两千多位、前 100 条里根本没有 ——
+     * 有这一行就能一眼看出「候选池还没挖到那一层」，不用再去猜。
      *
      * 关掉的开销：release 构建里 `AppStartup.setupLogger` 不装 Timber tree，
      * [Timber.treeCount] 为 0 时直接返回，连读取 rawInput 的 job 都不会投递。
@@ -733,11 +879,17 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         sendJob {
             val input = getRawInput()
             if (input.length < DIAG_MIN_INPUT_LENGTH) return@sendJob
+            val lengths = list.groupingBy { CandidateGrouping.charCount(it.text) }
+                .eachCount()
+                .toSortedMap()
+                .entries
+                .joinToString(",") { "${it.key}字:${it.value}" }
             Timber.d(
-                "diag schema=%s input=%s candidates=%d top=%s",
+                "diag schema=%s input=%s candidates=%d len={%s} top=%s",
                 schemaCached.schemaId,
                 input,
                 list.size,
+                lengths,
                 list.take(5).joinToString(" ") { it.text },
             )
         }
@@ -824,6 +976,10 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
         actions.trySend(Action.DismissPrediction)
     }
 
+    override fun requestMoreCandidates() {
+        actions.trySend(Action.RequestMoreCandidates)
+    }
+
     private companion object {
         /** 「上屏后回删」判定为误选的时间窗。超出窗口的删除不再算误选。 */
         const val UNDO_WINDOW_MS = 8_000L
@@ -833,5 +989,16 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
         /** 诊断日志的最小原始输入码长度（低于这个长度不记，避免刷屏）。 */
         const val DIAG_MIN_INPUT_LENGTH = 3
+
+        /**
+         * 同一个输入码上「自动挖深」最多读多少条候选。
+         *
+         * 3000 是根据实测定的：四码九键输入要把单字读出来得走到第 2400 多位
+         * （见 9.6.3 的表），再往上留一点余量。划到底会重置这份预算。
+         */
+        const val POOL_DEEPEN_BUDGET = 3000
+
+        /** 挖深时每页多少条（一页一次 native 调用；分页是为了让按键能插队）。 */
+        const val POOL_PAGE_SIZE = 500
     }
 }

@@ -178,6 +178,8 @@ class KawaiiPanel(
             if (handwritingMode) return@drag
             this@KawaiiPanel.listener?.onCandidateGridDragComplete(candidates)
         }
+        // 展开网格里划到底之后继续往上拉，再要一批
+        onReachEnd = { requestMoreCandidates() }
     }
 
     val textEditingView = TextEditView(
@@ -511,6 +513,9 @@ class KawaiiPanel(
             else currentStateRender?.hideExpand()
         }
 
+        // 顶栏划到最右端还继续划，再要一批
+        v.onScrollEndReached = { requestMoreCandidates() }
+
         currentStateRender = createStateRender(State.Idle)
         v.currentRenderer = currentStateRender!!.createToolbarRenderer()
     }
@@ -631,27 +636,61 @@ class KawaiiPanel(
         if (!enabled) applyCandidates(emptyList())
     }
 
-    override fun setCandidates(list: List<EngineMessage.Candidate>) {
-        // 手写面板打开期间，方案候选一律不顶栏（两者同一条栏，抢起来会闪）
-        if (handwritingMode) return
-        applyCandidates(list)
+    /**
+     * 候选划到底：向引擎再要一批。
+     *
+     * 一次手势只会有一次请求 —— 闩锁放在两个视图里（`CandidateGridView.pullPastEndFired` /
+     * `KawaiiPanelView.endOverscrollFired`，都在 ACTION_DOWN 复位），这里只负责挡住
+     * 「引擎已经说没有了」的空转。手写候选跟方案候选不是一回事，跳过。
+     */
+    private fun requestMoreCandidates() {
+        if (!candidatesHaveMore) return
+        if (handwritingMode || state !is State.Composing) return
+        listener?.onRequestMoreCandidates()
     }
 
-    private fun applyCandidates(list: List<EngineMessage.Candidate>) {
+    override fun setCandidates(list: List<EngineMessage.Candidate>, hasMore: Boolean) {
+        // 手写面板打开期间，方案候选一律不顶栏（两者同一条栏，抢起来会闪）
+        if (handwritingMode) return
+        applyCandidates(list, hasMore)
+    }
+
+    /** 当前展示的候选，用来判断下一次更新是「换了内容」还是「追加了一批」。 */
+    private var currentCandidates: List<EngineMessage.Candidate> = emptyList()
+
+    /** 引擎说还有下一批。false 时划到底也不再要，免得空转。 */
+    private var candidatesHaveMore: Boolean = true
+
+    private fun applyCandidates(
+        list: List<EngineMessage.Candidate>,
+        hasMore: Boolean = true,
+    ) {
         if (!view.isLaidOut) {
-            view.post { applyCandidates(list) }
+            view.post { applyCandidates(list, hasMore) }
             return
         }
+        candidatesHaveMore = hasMore
+        val previous = currentCandidates
+        // 追加：新列表是旧列表的严格超集（字长分组按批取货，只在末尾追加）。
+        // 只有追加才需要保住滚动位置，换了输入码的「新一批」还是要回到开头。
+        val appended = list.size > previous.size &&
+            previous.isNotEmpty() &&
+            list.subList(0, previous.size) == previous
+
         if (list.isEmpty()) {
             view.setExpanded(false)
             view.scrollX = 0f
+            currentCandidates = emptyList()
             if (state !is State.Menu) state = State.Idle
         } else if (state is State.TextEditing) {
             // 编辑态下保持工具栏渲染器，不切换为组字渲染器（右侧入口才正确）
+            currentCandidates = list
             applyStateRender(state)
         } else {
             if (state is State.Copy) state = State.Idle
-            view.scrollX = 0f
+            // 追加时不要复位顶栏的横向位置：用户正划到右边找词，列表一变长就弹回开头会让人
+            // 找不到刚才看到哪。
+            if (!appended) view.scrollX = 0f
             var predictions = true
             list.forEach {
                 if (it.type != Candidate.TYPE_IME_PREDICTION) {
@@ -659,6 +698,7 @@ class KawaiiPanel(
                     return@forEach
                 }
             }
+            currentCandidates = list
             state = if (predictions) {
                 State.Prediction(list)
             } else {

@@ -11,6 +11,13 @@ sealed class EngineMessage {
         val list: List<Candidate>,
         val highlighted: Int,
         val page: Int,
+        /**
+         * 还有下一批可取（候选划到底之后还能继续要）。
+         *
+         * 候选总量刻意不设上限：字长分组每要一批就得各组再往后取一段，取不到时还要向引擎
+         * 多拉一页，没有这个标记前端划到底就不知道该不该再要一次。
+         */
+        val hasMore: Boolean = false,
     ) : EngineMessage() {}
 
     data class Status(val isComposing: Boolean = false) : EngineMessage()

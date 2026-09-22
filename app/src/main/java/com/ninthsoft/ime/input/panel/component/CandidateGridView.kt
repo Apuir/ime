@@ -46,6 +46,14 @@ class CandidateGridView(
     var onDragComplete: ((List<EngineMessage.Candidate>) -> Unit)? = null
     var onWordForget: ((EngineMessage.Candidate, Float, Float) -> Unit)? = null
 
+    /**
+     * 已经划到底、还继续往上拉：这一批看完了，要下一批。
+     *
+     * 判定与顶栏一致 —— 贴到末尾之后**继续**拉够 [REACH_END_PULL_DP] 才回调，
+     * 只是划到底不会触发，免得每划一次都多要一批。
+     */
+    var onReachEnd: (() -> Unit)? = null
+
     private val sidePanelKey = SidePanelKeyView(
         context, colors,
         KeyDef.Appearance.SidePannel(
@@ -85,6 +93,11 @@ class CandidateGridView(
         private val maxFlingVelocity = ViewConfiguration.get(context).scaledMaximumFlingVelocity
         private var velocityTracker: VelocityTracker? = null
         private var scrollOffsetY = 0f
+        private var pullPastEnd = 0f
+
+        /** 本次手势是否已经要过一批：一直拉着不放不该连着要好几批。ACTION_DOWN 复位。 */
+        private var pullPastEndFired = false
+        private val reachEndThreshold = REACH_END_PULL_DP * resources.displayMetrics.density
         private var lastY = 0f
         private var downY = 0f
         private var downIndex = -1
@@ -357,6 +370,7 @@ class CandidateGridView(
                     longPressTriggered = false
                     longPressMoved = false
                     longPressIndex = -1
+                    pullPastEndFired = false
                     invalidate()
                     postDelayed(
                         longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong()
@@ -563,17 +577,43 @@ class CandidateGridView(
                 proposed < 0f -> {
                     scrollOffsetY = 0f
                     stretch = rubberBand(-proposed)
+                    pullPastEnd = 0f
                 }
 
                 proposed > maxScroll -> {
                     scrollOffsetY = maxScroll
                     stretch = -rubberBand(proposed - maxScroll)
+                    accumulatePullPastEnd(deltaY)
                 }
 
                 else -> {
                     scrollOffsetY = proposed
                     stretch = 0f
+                    pullPastEnd = 0f
                 }
+            }
+        }
+
+        /**
+         * 已经在末尾还继续往上拉，累计到阈值就认为这一批看完了。
+         *
+         * 直接用手指位移而不是回弹后的 [stretch]：回弹是饱和的，越拉越不涨，用它做判据会让
+         * 阈值在长列表上变得不可达。
+         *
+         * **候选少到一屏放得下（[maxScroll] 为 0）时同样算数** —— 那正是「单字双字还没挖出来、
+         * 列表只有十来条」的常见情形，此时没有可滚动内容，若还要求「拉过末尾」就永远触发不了，
+         * 用户会觉得划不动也没新东西。一屏放得下时竖直方向本来就没有别的用途，拿来要下一批。
+         */
+        private fun accumulatePullPastEnd(deltaY: Float) {
+            if (pullPastEndFired || deltaY <= 0f) {
+                pullPastEnd = 0f
+                return
+            }
+            pullPastEnd += deltaY
+            if (pullPastEnd >= reachEndThreshold) {
+                pullPastEnd = 0f
+                pullPastEndFired = true
+                this@CandidateGridView.onReachEnd?.invoke()
             }
         }
 
@@ -642,6 +682,7 @@ class CandidateGridView(
             if (!scroller.isFinished) scroller.abortAnimation()
             scrollOffsetY = 0f
             stretch = 0f
+            pullPastEnd = 0f
         }
 
     }
@@ -705,9 +746,19 @@ class CandidateGridView(
     }
 
     fun updateCandidates(list: List<EngineMessage.Candidate>) {
+        // 展开态下 KawaiiPanel 的状态 setter 与本方法会被各调一次；第二次拿到的是同一个列表，
+        // 直接退出，免得把上面刚定好的滚动位置又冲掉。
+        if (list == allCandidates) return
+
+        // 字长分组是「各组各取一段」拼出来的，新的一批**只在末尾追加** —— 所以追加时保留
+        // 当前滚动位置就够了（它上面的内容一条都没动）。换成别的输入码则回到顶部。
+        val appended = list.size > allCandidates.size &&
+            allCandidates.isNotEmpty() &&
+            list.subList(0, allCandidates.size) == allCandidates
+
         allCandidates = list
         gridCanvas.recomputeLayout()
-        gridCanvas.clampScroll()
+        if (appended) gridCanvas.clampScroll() else gridCanvas.resetScroll()
         gridCanvas.invalidate()
     }
 
@@ -741,5 +792,10 @@ class CandidateGridView(
                 )
             })
         }
+    }
+
+    private companion object {
+        /** 划到底之后还要继续往上拉多少 dp，才认为「这一批看完了」。 */
+        const val REACH_END_PULL_DP = 32f
     }
 }

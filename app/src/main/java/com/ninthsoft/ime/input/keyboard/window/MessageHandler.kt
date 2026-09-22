@@ -43,7 +43,7 @@ class MessageHandler(
 
             is EngineMessage.Candidates -> {
                 livePreview?.onCandidates(message.list)
-                window?.setCandidates(message.list)
+                window?.setCandidates(message.list, message.hasMore)
             }
 
             is EngineMessage.Composition -> {

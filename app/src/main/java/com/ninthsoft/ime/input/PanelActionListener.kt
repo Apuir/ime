@@ -138,6 +138,10 @@ class PanelActionListener(
         service.engine?.dismissPrediction()
     }
 
+    override fun onRequestMoreCandidates() {
+        service.engine?.requestMoreCandidates()
+    }
+
     override fun onEnterAddPhraseMode() {
         service.virtualInputConnection.clear()
         service.phraseAddBridgeActive = true

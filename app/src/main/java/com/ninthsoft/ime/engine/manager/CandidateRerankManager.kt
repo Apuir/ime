@@ -19,10 +19,13 @@ import timber.log.Timber
  *    用户统计漂移会让肌肉记忆失效。误选到第 0 个的情况交给引擎侧的原生机制
  *    （万象 `enable_fallback_reorder`：「同码回删再输首次交换」）处理。
  * 2. **保留引擎的位次信息**（[CandidateFeature.rank]），它是一条独立信号，
- *    不能被词长或点击统计整段盖掉。
+ *    不能被点击统计整段盖掉。
  * 3. **语法模型真的接进来**（[gramDb]）—— 改造前调用方恒传 `null`，
  *    导致权重最大的 `baseScore` 项永远为 0。
  * 4. 用户偏好可正可负（[PreferenceScorer]），支持「误选后降权」。
+ * 5. **不传词长**。展示顺序里的字长排序是 [CandidateGrouping] 的职责，它在本类之后执行；
+ *    分组之后同一组里的候选同长，[CandidateFeature.wordLength] 在组内是常量，
+ *    参与打分也不会改变任何一对候选的相对次序。
  */
 class CandidateRerankManager(private val context: Context) {
     private val calculator = PriorityCalculator()
@@ -63,7 +66,6 @@ class CandidateRerankManager(private val context: Context) {
                         now = now,
                     )
                 },
-                wordLength = candidate.text.codePointCount(0, candidate.text.length),
                 rank = offset,
                 rankSpan = span,
             )

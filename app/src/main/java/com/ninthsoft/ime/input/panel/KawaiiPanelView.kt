@@ -26,6 +26,13 @@ class KawaiiPanelView(context: Context) : View(context) {
     var scrollX = 0f
     var onTap: ((KawaiiPanel.TouchResult?) -> Unit)? = null
     var onExpandChanged: ((Boolean, List<EngineMessage.Candidate>) -> Unit)? = null
+
+    /**
+     * 候选条已经划到最右端、还继续往左划：这一批看完了，要下一批。
+     *
+     * 只在贴到右端之后**继续**划才回调（与网格里「划到底再往下拉」一致），光划到末尾不触发。
+     */
+    var onScrollEndReached: (() -> Unit)? = null
     var isExpanded: Boolean = false
         private set
 
@@ -61,6 +68,13 @@ class KawaiiPanelView(context: Context) : View(context) {
     private var lastTouchY = 0f
     private var isScrolling = false
     private val screenDensity = resources.displayMetrics.density
+
+    /** 贴到右端之后继续往左划的累计距离；用来把「划到末尾」和「还要下一批」分开。 */
+    private var endOverscroll = 0f
+    private val endOverscrollThreshold = 32f * screenDensity
+
+    /** 本次手势是否已经要过一批：一直拉着不放不该连着要好几批。ACTION_DOWN 复位。 */
+    private var endOverscrollFired = false
 
     init {
         paints.updateColors(context)
@@ -145,6 +159,28 @@ class KawaiiPanelView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * 顶栏划到最右端之后还继续往左划，就认为这一批看完了。
+     *
+     * 只累计「贴端之后」的那段位移，所以正常的往回划（dx > 0）不会误触发。
+     * 候选少到一屏放得下（[ComposingRenderer.maxScrollX] 为 0）时也算数：那种情况下横向
+     * 本来就没有别的用途，而「列表只有几条、划不动」恰恰是最需要能往下要一批的时候。
+     */
+    private fun trackEndOverscroll(renderer: ComposingRenderer, dx: Float) {
+        if (endOverscrollFired) return
+        val atEnd = renderer.maxScrollX <= 0f || scrollX <= -renderer.maxScrollX
+        if (!atEnd || dx >= 0f) {
+            endOverscroll = 0f
+            return
+        }
+        endOverscroll += -dx
+        if (endOverscroll >= endOverscrollThreshold) {
+            endOverscroll = 0f
+            endOverscrollFired = true
+            onScrollEndReached?.invoke()
+        }
+    }
+
     private fun isRecordingAllowed(result: KawaiiPanel.TouchResult?): Boolean {
         return when (result) {
             is KawaiiPanel.TouchResult.ToolbarAction -> result.action is PanelAction.CloseKeyboard
@@ -184,6 +220,8 @@ class KawaiiPanelView(context: Context) : View(context) {
                 dragTotalY = 0f
                 isScrolling = false
                 expandLongPressed = false
+                endOverscroll = 0f
+                endOverscrollFired = false
                 parent.requestDisallowInterceptTouchEvent(true)
                 if (!recording) longPressHandler.postDelayed(longPressRunnable, 500)
             }
@@ -207,6 +245,7 @@ class KawaiiPanelView(context: Context) : View(context) {
                     isScrolling = true
                     val renderer = currentRenderer as ComposingRenderer
                     scrollX = (scrollX + dx).coerceIn(-renderer.maxScrollX, 0f)
+                    trackEndOverscroll(renderer, dx)
                     invalidate()
                 }
             }

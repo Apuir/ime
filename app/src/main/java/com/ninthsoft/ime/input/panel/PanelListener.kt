@@ -43,6 +43,14 @@ interface PanelListener {
     /** 用户点了联想候选右侧的「叉」，要求取消这次联想。 */
     fun onCancelPrediction() {}
 
+    /**
+     * 候选划到底了，要下一批。
+     *
+     * 候选总量不设上限，但一次只给一批：面板不再自己往引擎里捞，统一交给引擎把各组往后
+     * 再取一段（取不到时再向引擎补拉一页）。
+     */
+    fun onRequestMoreCandidates() {}
+
     fun onEnterAddPhraseMode() {}
 
     fun onAddPhraseSave(text: String) {}
