@@ -177,6 +177,14 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     private val groupingConfig = GroupingConfig()
 
+    /**
+     * 自己维护的「已上屏文本」，只在宿主 App 读不出上下文时兜底。
+     *
+     * 神经联想要的是**一整段**（≈210 汉字），而 `getTextBeforeCursor` 在部分宿主里
+     * 会被截断甚至返回空。输入法本来就知道用户上屏了什么，留一份自己的账最稳。
+     */
+    private val committedText = StringBuilder()
+
     @Volatile
     private var lastSelection: LastSelection? = null
 
@@ -474,6 +482,7 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
             is Action.Commit -> requestCommit(action.text, action.cursorOffset)
             Action.InputCleared -> {
+                forgetCommitted()
                 if (state.predictionVisible) {
                     state.predictionVisible = false
                     clearCandidateState()
@@ -909,9 +918,8 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
 
     private fun requestPrediction(commit: String) {
         // 预测模型基于简体训练；先转成简体再推导，以支持繁体输入下的候选预测。
-        val inputContext = TraditionalConverter.toSimplified(
-            (inputConnection()?.getTextBeforeCursor(20, 0)?.toString() ?: "") + commit
-        )
+        val inputContext = TraditionalConverter.toSimplified(readPredictionContext(commit))
+        rememberCommitted(commit)
         val requestId = ++state.predictionRequestId
         state.latestPredictionRequestId = requestId
         predictionJob?.cancel()
@@ -942,6 +950,37 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
                 throw error
             }
         }
+    }
+
+    /**
+     * 预测用的上下文。
+     *
+     * 从写死的 20 个字符放宽到一整段：20 字连一句话都不到，神经模型和短语索引
+     * （最长 16 字的 key）都吃不到有效上下文。窗口按码点给足 512，真正的截断
+     * 交给 [com.ninthsoft.ime.base.neural.NeuralPrompt] 按句子边界做。
+     */
+    private fun readPredictionContext(commit: String): String {
+        val host = inputConnection()
+            ?.getTextBeforeCursor(PREDICTION_CONTEXT_CHARS, 0)
+            ?.toString()
+            .orEmpty()
+        val base = host.ifEmpty {
+            committedText.toString().takeLast(PREDICTION_CONTEXT_CHARS)
+        }
+        return base + commit
+    }
+
+    /** 记账。**在 [readPredictionContext] 之后调用**，否则本次 commit 会被算两遍。 */
+    private fun rememberCommitted(commit: String) {
+        if (commit.isEmpty()) return
+        committedText.append(commit)
+        if (committedText.length > COMMITTED_BUFFER_CHARS) {
+            committedText.delete(0, committedText.length - COMMITTED_BUFFER_CHARS)
+        }
+    }
+
+    private fun forgetCommitted() {
+        committedText.setLength(0)
     }
 
     override fun reload() {
@@ -994,11 +1033,20 @@ class RimeEngine : IEngine, IBehaviorHost, IRimeJob {
          * 同一个输入码上「自动挖深」最多读多少条候选。
          *
          * 3000 是根据实测定的：四码九键输入要把单字读出来得走到第 2400 多位
-         * （见 9.6.3 的表），再往上留一点余量。划到底会重置这份预算。
+         * （见 9.6.4 的表），再往上留一点余量。划到底会重置这份预算。
          */
         const val POOL_DEEPEN_BUDGET = 3000
 
         /** 挖深时每页多少条（一页一次 native 调用；分页是为了让按键能插队）。 */
         const val POOL_PAGE_SIZE = 500
+
+        /**
+         * 读给预测用的上下文长度（字符）。取 512 是为了覆盖神经模型的 210 汉字预算
+         * 与短语索引 16 字的 key，同时不给宿主的 `getTextBeforeCursor` 太大压力。
+         */
+        const val PREDICTION_CONTEXT_CHARS = 512
+
+        /** 自维护缓冲区的上限，防止长时间输入把它撑大。 */
+        const val COMMITTED_BUFFER_CHARS = 512
     }
 }

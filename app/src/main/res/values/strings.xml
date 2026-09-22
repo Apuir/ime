@@ -393,6 +393,17 @@
     <string name="model_prediction">候选词预测</string>
     <string name="menu_candidate_comment">候选词注释</string>
     <string name="model_prediction_enable">启用预测</string>
+    <string name="model_neural_prediction">神经联想</string>
+    <string name="model_phrase_completion">成语 / 诗句补全</string>
+    <string name="neural_model_group">神经联想模型</string>
+    <string name="neural_model_ready">已就绪 · %1$s</string>
+    <string name="neural_model_not_installed">未安装模型</string>
+    <string name="neural_model_invalid">模型文件校验失败</string>
+    <string name="neural_model_unavailable">当前设备不可用</string>
+    <string name="neural_model_tripped">连续超时，本次已停用</string>
+    <string name="neural_model_load">校验并加载</string>
+    <string name="neural_model_delete">删除模型</string>
+    <string name="neural_model_delete_confirm">删除后神经联想将不可用，需要重新获取模型。</string>
     <string name="menu_traditional_chinese">繁体输入</string>
     <string name="menu_emoji_input">表情输入</string>
     <string name="menu_ascii_mode">英文输入</string>

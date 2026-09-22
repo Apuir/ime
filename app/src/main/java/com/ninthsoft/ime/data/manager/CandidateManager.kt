@@ -10,6 +10,8 @@ object CandidateManager {
     const val KEY_ASCII_MODE_ENABLED = "ascii_mode_enabled"
     const val KEY_ABBREVIATION_ENABLED = "abbreviation_enabled"
     const val KEY_PREDICTION_ENABLED = "prediction_enabled"
+    const val KEY_NEURAL_PREDICTION_ENABLED = "neural_prediction_enabled"
+    const val KEY_PHRASE_COMPLETION_ENABLED = "phrase_completion_enabled"
     const val KEY_RERANK_ENABLED = "rerank_enabled"
     const val KEY_SHOW_INDEX = "show_index"
     const val KEY_SHOW_COMMENT = "show_comment"
@@ -35,6 +37,34 @@ object CandidateManager {
     fun setPredictionEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
             putBoolean(KEY_PREDICTION_ENABLED, enabled)
+        }
+    }
+
+    /**
+     * 神经下一词联想。**默认关**：它要先下载约 130 MB 的模型才有意义，
+     * 没装模型时开着也只会白跑一遍「清单缺失」的判断，所以让用户在装好模型后再显式开启。
+     */
+    fun isNeuralPredictionEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NEURAL_PREDICTION_ENABLED, false)
+
+    fun setNeuralPredictionEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putBoolean(KEY_NEURAL_PREDICTION_ENABLED, enabled)
+        }
+    }
+
+    /**
+     * 成语 / 歇后语 / 诗句的短语补全。**默认开**：索引进包、纯精确匹配、
+     * 微秒级且零功耗，没有需要用户权衡的成本。
+     */
+    fun isPhraseCompletionEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PHRASE_COMPLETION_ENABLED, true)
+
+    fun setPhraseCompletionEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putBoolean(KEY_PHRASE_COMPLETION_ENABLED, enabled)
         }
     }
 

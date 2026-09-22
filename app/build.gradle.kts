@@ -54,6 +54,11 @@ val releaseStoreFile: String? = signingProp("storeFile", "IME_STORE_FILE")
     // 手写模型是 7 MB 的 onnx：不压缩（deflate 只省 3%，却要多一次安装期解压）
     androidResources {
         noCompress += "onnx"
+        // 短语索引资产是 gz。实测 aapt2 会把 `.gz` 资产**解压并去掉后缀**（连 noCompress 也拦不住，
+        // 因为规则匹配的是后缀），所以这一条对当前产物其实是空转；
+        // 留着是为了「哪天 AGP 不再改写名字」时不至于又被 deflate 一遍。
+        // 端侧两种形态都能读：见 base/phrase/AssetCompression.kt。
+        noCompress += "gz"
     }
 
     signingConfigs {

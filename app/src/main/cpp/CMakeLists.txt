@@ -116,3 +116,9 @@ add_subdirectory(libmarisa_jni)
 # 模型走 assets/handwriting/（ochwpro）。
 # 早先曾在此 vendor zinnia 并自行编译，已因准确率过低整块移除。
 add_subdirectory(handwriting_jni)
+
+# 神经下一词预测（ONNX Runtime C API）的 JNI 桥。与手写同样的做法：
+# 运行时 dlopen 复用 APK 里那份 libonnxruntime.so，不新增 native 依赖。
+# 不同之处是它要维护 KV cache（整段上下文的前向结果），
+# 缓存放在 native 侧、由 JNI 显式 prefill/truncate/reset。
+add_subdirectory(neural_jni)

@@ -90,6 +90,8 @@ object SettingsBackupSpec {
         ),
         CandidateManager.PREFS_NAME to listOf(
             SettingKey(CandidateManager.KEY_PREDICTION_ENABLED, B),
+            SettingKey(CandidateManager.KEY_NEURAL_PREDICTION_ENABLED, B),
+            SettingKey(CandidateManager.KEY_PHRASE_COMPLETION_ENABLED, B),
             SettingKey(CandidateManager.KEY_TRADITIONAL_ENABLED, B),
             SettingKey(CandidateManager.KEY_EMOJI_ENABLED, B),
             SettingKey(CandidateManager.KEY_ASCII_MODE_ENABLED, B),
