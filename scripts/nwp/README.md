@@ -385,6 +385,10 @@ $PY scripts/nwp/export_onnx.py --eval-limit 512
 | `--no-int8` / `--fp16` | `nwp.fp16.onnx` | `onnx-fp16` | **250.7 MB** |
 | `--fp32` | `nwp.onnx` | `onnx-fp32` | 500.9 MB |
 
+`--also-fp16` 在默认 int8 之外**再落一份 fp16**（`manifest` 仍指向 int8），用于在同一个
+manifest 语境下对两种量化的掉点：int8 与 fp16 写的是同一个 `manifest.json`，
+所以**分别跑 `--fp16` 和默认两次会互相覆盖清单**，要同时拿到两个文件只能用这个开关。
+
 fp16 那条路是**文档承诺的退化方案**，之前代码里并不存在（`--no-int8` 实际只留 fp32 的 500 MB，
 顶爆 300 MB 预算）。实现是「初始化器降精度 + 图两端补 Cast」，
 用 `onnx` 原生 API 完成，**不依赖 onnxconverter_common**（离线机器上不一定装得上）；
@@ -475,6 +479,75 @@ $PY scripts/nwp/export_onnx.py --work .nwp-work/nwp \
   `logit_absmax` / `relative_diff` 一起写进 `results/export_report.json`。
   如果真实 int8 掉点明显，退路是 **fp16（约 260 MB，仍在 300 MB 内）**，
   这也是 spec §8 的检查点 3。
+
+## 训好的模型（step 8000）上的实测
+
+`ckpt/last.pt` = step 8000（LoRA 合并后 125.7M），测试集 `.nwp-work/nwp/samples/test.jsonl`
+**顺序取前 N 条**（这个测试集与训练集同源，去重覆盖只有 3.1%，绝对值偏乐观；相对比较仍公平）。
+
+| 被测对象 | n | top-1 | top-5 | MRR | BPB |
+|---|---|---|---|---|---|
+| PyTorch checkpoint（基准） | 200000 | **19.42 %** | 35.93 % | 0.2552 | 1.1961 |
+| `nwp.fp16.onnx`（GPU，batch 16，613 s） | 200000 | **19.42 %** | 35.93 % | 0.2552 | 1.1961 |
+| `nwp.int8.onnx`（**per-channel**，默认；8 行对拍 top-1 100 %） | 2000 | **17.10 %** | 32.20 % | 0.2252 | 1.2721 |
+| `nwp.int8.onnx`（per-tensor，旧默认） | 200000 | 18.41 % | 34.50 % | 0.2434 | 1.2226 |
+| `nwp.int8.onnx`（per-tensor，同 2000 条） | 2000 | 16.15 % | — | — | — |
+| `nwp.fp16.onnx`（同 2000 条） | 2000 | 17.05 % | — | — | — |
+| n-gram 基线 | 200000 | 0.66 % | 2.21 % | 0.012 | — |
+| unigram 基线 | 200000 | 0.11 % | 0.66 % | 0.003 | — |
+
+- **per-channel 是默认，且是严格更优**：同一 2000 条上它 17.10 %，fp16 17.05 %（差 1 个样本），
+  而 per-tensor 只有 16.15 %（−0.90 pp，与它在 20 万条上的 −1.01 pp 吻合）。
+  8 行对拍也从 top-1 87.5 % / 相对误差 12.9 % 变成 **100 % / 3.6 %**。
+  体积只多 0.45 MB（126.8 vs 126.2 MB）、速度不变（同一批 kernel）。
+  **`--int8-per-tensor` 只用于复现旧数字，别用来交付。**
+- ⚠️ per-channel 的 **20 万条复核还没跑**（上面那行是 2000 条）。要写进对外结论前补一次：
+  `eval.py run --onnx onnx/nwp.int8.onnx --limit 200000 --batch-size 16 --onnx-provider cuda`。
+
+**速度：同一个模型在 GPU 与 CPU 上快慢是反的**（同一份测试集、2000 条、batch 16，
+`bench_quant_speed.sh` 一次跑完）：
+
+| 量化 | GPU（CUDA EP） | CPU | 单条（GPU） |
+|---|---|---|---|
+| fp16 | **7.7 s** | 339.2 s | 3.86 ms |
+| int8 | 108.3 s | **105.7 s** | 54.14 ms |
+
+- **int8 在 GPU 与 CPU 上耗时几乎相同（108.3 vs 105.7 s）**：说明 CUDA EP 上那些动态量化算子
+  （`DynamicQuantizeLinear` / `MatMulInteger`）**根本没被 GPU 加速，实际还在 CPU 上算**。
+  GPU 上 fp16 比 int8 快 **14×**，CPU 上 int8 比 fp16 快 **3.2×**。
+- ⇒ **不要拿桌面 GPU 的耗时去推端侧**：端侧走的是 XNNPACK CPU，方向与桌面 GPU 相反。
+  真机实测（同一段输入、`NeuralPredictor` 的 `ms=`）：**int8 10–17 ms、fp16 35–53 ms**，
+  即**手机上是 int8 快 3–4 倍**，与桌面 GPU 的 14× 正好反过来。两者都远在 450 ms 预算内。
+
+**结论：交付 `nwp.int8.onnx`（per-channel）**。它在手机上快 3–4 倍、体积省一半、精度与 fp16 等价；
+`nwp.fp16.onnx` 作为「精度优先」的备选保留（零掉点，250.7 MB）。真机换模型的验证方式见
+仓库根 `.research/交接-神经联想.md` §5.2（两份模型都推上去，换 `manifest.json` 后重载）。
+
+```bash
+# 宿主机 GPU 上（需要 onnxruntime-gpu；容器里只有 CPU 版）
+$PY scripts/nwp/eval.py run --onnx .nwp-work/nwp/onnx/nwp.int8.onnx --limit 200000 \
+  --batch-size 16 --onnx-provider cuda
+$PY scripts/nwp/eval.py run --onnx .nwp-work/nwp/onnx-fp16-new/nwp.fp16.onnx --limit 200000 \
+  --batch-size 16 --onnx-provider cuda
+```
+
+**没有 onnxruntime-gpu 就用 `setup-gpu-venv.sh` 建一个只跑评测的 venv**（不动训练用的
+`.nwp-work/venv`）。脚本会看驱动版本选路线：>= 580 装 CUDA 13 版（ORT 1.30 + `nvidia-cudnn-cu13`），
+否则装 CUDA 12 版（ORT 1.22 + `nvidia-*-cu12`，并生成 `ld_library_path.env`）：
+
+```bash
+bash scripts/nwp/setup-gpu-venv.sh --dry-run   # 先看要装什么
+bash scripts/nwp/setup-gpu-venv.sh             # 真装（onnxruntime-gpu 约 280 MB + CUDA 运行库约 1.5 GB）
+.nwp-work/venv-gpu/bin/python -c "import onnxruntime as ort; print(ort.get_available_providers())"
+```
+
+只看到 `CPUExecutionProvider` 说明 GPU 路线没成：先 `nvidia-smi` 看驱动，再看 pip 装
+`onnxruntime-gpu` 时是否提示缺 `.so`。光看 provider 列表还不够——缺 `.so` 是在**建会话**那一步
+才炸（[onnxruntime#25609](https://github.com/microsoft/onnxruntime/issues/25609)），所以脚本里
+用真实模型建了一次 session 来验。
+
+ONNX 评测是**流式**的：边跑边写 `<out>.json.partial`（默认每 `--progress-every 20000` 条刷新），
+长时间任务中途被 kill 也能看出跑到第几条，不会「跑完才落盘、一 kill 全白跑」。
 
 ## 验收证据（本机实跑，CPU）
 

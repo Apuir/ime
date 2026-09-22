@@ -1,5 +1,6 @@
 package com.ninthsoft.ime.base.neural
 
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -36,6 +37,15 @@ object NeuralPredictor {
     private var cachedText = ""
     private var cachedLogits: FloatArray? = null
     private var resetNeeded = false
+
+    /**
+     * 上一次前向的耗时（毫秒），`null` 表示**这一步没跑前向**（上下文没变、直接复用缓存）。
+     *
+     * 为什么单独记账：450 ms 是硬预算，而 logcat 的行时间戳只到毫秒、还混着别的日志，
+     * 光看时间戳估不出真实延迟；量化选型（int8 vs fp16）也要求两类模型的数字能直接对拍。
+     * 用可空而不是 0：0 毫秒是一次很快的前向，和「压根没算」是两件事。
+     */
+    private var lastPrefillMs: Long? = null
 
     @Volatile
     private var loadError: String? = null
@@ -240,7 +250,8 @@ object NeuralPredictor {
 
         if (Timber.treeCount > 0) {
             Timber.d(
-                "神经预测 input=%s top=%s",
+                "神经预测 ms=%s input=%s top=%s",
+                lastPrefillMs?.toString() ?: "复用",
                 prompt,
                 candidates.take(5).joinToString(" ") { "${it.word}(${"%.3f".format(it.probability)})" },
             )
@@ -271,7 +282,12 @@ object NeuralPredictor {
         // 模型的位置编码预算是有限的：先按实际字符预算截尾
         val effective = takeLastCodePoints(prompt, current.promptBudget)
 
-        if (effective == cachedText && cachedLogits != null) return
+        if (effective == cachedText && cachedLogits != null) {
+            lastPrefillMs = null // 上下文没变：这一步没跑前向，延迟里不该算它
+            return
+        }
+
+        val startedAt = SystemClock.elapsedRealtimeNanos()
 
         val effectiveCodePoints = effective.codePointCount(0, effective.length)
         val cachedCodePoints = cachedText.codePointCount(0, cachedText.length)
@@ -317,6 +333,8 @@ object NeuralPredictor {
             throw IllegalStateException("读取 logits 失败：$reason")
         }
         cachedLogits = logits
+        // 计时把 nativePrefill + nativeLogits 都算进来：两者都在缓存未命中时才会跑
+        lastPrefillMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / 1_000_000
     }
 
     /** 缓存不再可信：下次前向从零开始。**调用前必须已持有 [mutex]。** */
