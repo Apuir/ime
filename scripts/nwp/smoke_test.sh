@@ -50,18 +50,21 @@ MAX_CONTEXT_IDS="${MAX_CONTEXT_IDS:-48}"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 
-step "0/7 py_compile 全部脚本"
+step "0/8 py_compile 全部脚本"
 "$PY" -m py_compile "$ROOT"/scripts/nwp/*.py
 ok "scripts/nwp/*.py 全部编译通过"
 
-step "1/7 合成语料（离线，$N_DOCS 条，含刻意注入的跨分片重复）"
+step "0.5/8 回归测试（分片文件名唯一/磁盘行数==报告条数、fp16 骨干前向、ONNX 强制 float32 I/O、去重覆盖率）"
+PYTHONPATH="$ROOT/scripts/nwp" "$PY" "$ROOT/scripts/nwp/test_nwp_pipeline.py"
+
+step "1/8 合成语料（离线，$N_DOCS 条，含刻意注入的跨分片重复）"
 "$PY" "$ROOT/scripts/nwp/fetch_corpus.py" --work "$WORK" --dataset synthetic --limit "$N_DOCS"
 
-step "2/7 词表：char2id（corpus 模式，冒烟骨干没有预训练字表）+ word_vocab"
+step "2/8 词表：char2id（corpus 模式，冒烟骨干没有预训练字表）+ word_vocab"
 "$PY" "$ROOT/scripts/nwp/build_vocab.py" --work "$WORK" \
   --char-source corpus --vocab-source synthetic --size 400
 
-step "3/7 滑窗样本 + ≥8 字 n-gram 去重（含边界自检）"
+step "3/8 滑窗样本 + ≥8 字 n-gram 去重（含边界自检）"
 "$PY" "$ROOT/scripts/nwp/build_samples.py" --dedup-selftest
 "$PY" "$ROOT/scripts/nwp/build_samples.py" --work "$WORK" \
   --context-words 32 --min-context-words 4 --valid-ratio 0.05 --test-ratio 0.1 \
@@ -83,18 +86,18 @@ print(f"[PASS] --max-context-ids={rep['max_context_ids']}：截尾 {tr} 条，"
       f"截尾前最长 {rep['max_ids_seen']} 个 id（context_words={rep['context_words']}，仅采样规则）")
 EOF
 
-step "4/7 冒烟训练（随机小骨干，CPU，$STEPS 步，含逐步解冻 + LoRA）"
+step "4/8 冒烟训练（随机小骨干，CPU，$STEPS 步，含逐步解冻 + LoRA）"
 "$PY" "$ROOT/scripts/nwp/train.py" --work "$WORK" --smoke --max-steps "$STEPS" \
   --batch-size 8 --log-every 10 --eval-every 20 --lora-rank 4
 
-step "5/7 评测：checkpoint + unigram + n-gram 基线"
+step "5/8 评测：checkpoint + unigram + n-gram 基线"
 "$PY" "$ROOT/scripts/nwp/eval.py" run --work "$WORK" \
   --checkpoint "$WORK/ckpt/best.pt" --baseline all --limit 200 --name smoke-ckpt
 
-step "6/7 导出 ONNX（fp32 + 动态范围 int8）+ manifest + top-k / KV cache 对拍"
+step "6/8 导出 ONNX（fp32 + 动态范围 int8）+ manifest + top-k / KV cache 对拍"
 "$PY" "$ROOT/scripts/nwp/export_onnx.py" --work "$WORK" --eval-limit 128 --parity-rows 8
 
-step "7/7 校验产物"
+step "7/8 校验产物"
 PYTHONPATH="$ROOT/scripts/nwp" "$PY" - "$WORK" <<'EOF'
 import json, sys, os
 work = sys.argv[1]

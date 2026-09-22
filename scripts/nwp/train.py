@@ -128,8 +128,12 @@ def apply_lr(optimizer, schedules: dict[str, GroupSchedule], step: int, total: i
 
 
 @torch.no_grad()
-def quick_metric(model, dataset, limit: int, batch_size: int, device: str) -> dict:
+def quick_metric(model, dataset, limit: int, batch_size: int, device: str, amp_dtype=None) -> dict:
+    """训练内验证。**必须和训练用同一套 autocast**：否则 fp16 骨干在验证时走另一条精度路径，
+    量出来的分和训练时的行为对不上（而且 wenzhong 那种 fp16 存储的骨干以前会直接在这里崩）。"""
     model.eval()
+    # CPU 的 autocast 只支持 bfloat16：device=cpu 时 fp16 autocast 会抛错，直接关掉
+    amp_enabled = amp_dtype is not None and (device == "cuda" or amp_dtype != torch.float16)
     n = min(limit, len(dataset))
     hits1 = hits5 = 0
     rr = 0.0
@@ -138,7 +142,10 @@ def quick_metric(model, dataset, limit: int, batch_size: int, device: str) -> di
         chunk = [dataset[i] for i in range(start, min(start + batch_size, n))]
         ids, mask, pos, labels = collate(chunk)
         ids, mask, pos = ids.to(device), mask.to(device), pos.to(device)
-        logits, _ = model(ids, mask, pos)
+        with torch.autocast(device_type="cuda" if device == "cuda" else "cpu",
+                            dtype=amp_dtype, enabled=amp_enabled):
+            logits, _ = model(ids, mask, pos)
+        logits = logits.float()
         top5 = torch.topk(logits, k=min(5, logits.shape[-1]), dim=-1).indices.cpu()
         for row, label in enumerate(labels.tolist()):
             total += 1
@@ -371,7 +378,7 @@ def main() -> int:
                 running, running_n = 0.0, 0
 
             if args.eval_every and step % args.eval_every == 0:
-                metrics = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device)
+                metrics = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device, amp_dtype)
                 metrics["step"] = step
                 history.append(metrics)
                 log(f"  valid@{step}: top1={metrics['top1']:.4f} top5={metrics['top5']:.4f} mrr={metrics['mrr']:.4f}")
@@ -386,7 +393,7 @@ def main() -> int:
                     "history": history, "args": vars(args) | {"samples": str(samples_dir)},
                 })
 
-    final = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device)
+    final = quick_metric(model, valid_set, args.eval_limit, args.batch_size, device, amp_dtype)
     if final["top1"] >= best.get("top1", -1):
         best = final | {"step": step}
         save_checkpoint(out_dir / "best.pt", model, {"step": step, "metrics": best,

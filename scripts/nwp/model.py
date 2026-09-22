@@ -149,7 +149,14 @@ class NWPModel(nn.Module):
             return_dict=True,
         )
         hidden = out.last_hidden_state[:, -1, :]
-        logits = self.word_head(hidden)
+        # 骨干的存储精度由底座决定，不归我们管：`IDEA-CCNL/Wenzhong-GPT2-110M` 的权重是
+        # **fp16 落盘**的，加载出来骨干参数是 Half，而新建的 word_head 是 Float。
+        # 在 autocast 之外（quick_metric / eval / ONNX 导出 / KV cache 路径）做
+        # `Float × Half` 会直接抛 "mat1 and mat2 must have the same dtype"，
+        # 而且只在第一次 eval 时才炸——200 步训练白跑。
+        # 在头前面按**头的** dtype 对齐：头必须留在 fp32（它是要用 AdamW 学的部分，
+        # 也是 fp16 主权重不稳的地方），autocast 打开时 Linear 自己会降精度。
+        logits = self.word_head(hidden.to(self.word_head.weight.dtype))
         return logits, cache_to_legacy(out.past_key_values)
 
     @torch.no_grad()
@@ -301,6 +308,9 @@ def load_checkpoint(path: Path, map_location="cpu", merge: bool = False) -> NWPM
     model.eval()
     if merge:
         merge_lora(model)
+    # 推理与导出统一到 fp32：契约里 past/present/logits 都是 float32，且 CPU 上 fp16
+    # 的 matmul 既慢又可能没有内核。fp16 只属于训练循环里的 autocast。
+    model.float()
     return model
 
 
@@ -389,6 +399,11 @@ def export_onnx(model: NWPModel, path: Path, opset: int = 17, seq: int = 8, past
     而 `dynamo=True` 需要额外装 onnxscript、且输出名会被重排成 `output_0…`，
     与契约要求的 `present.{i}.key` 对不上。扁平形式两个坑都没有。
     """
+    # 契约声明 past/present 是 float32，而 `IDEA-CCNL/Wenzhong-GPT2-110M` 的骨干权重是
+    # **fp16 落盘**的：不先统一到 fp32，dummy 的 float32 past 与 fp16 权重在 concat 处会抛
+    # "expected scalar type Float but found Half"（导出阶段就崩）；就算能导出，
+    # I/O 也会变成 float16，端侧按 float32 建 session 直接不匹配。
+    model.float()
     wrapper, dummy, in_names, out_names, dyn = onnx_io_contract(model, seq=seq, past=past)
     flat = dict(dyn["inputs"])
     flat.update(dyn["outputs"])

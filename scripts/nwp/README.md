@@ -22,6 +22,8 @@
 | word_vocab 30k（resource.zip 抽取） | ✅ **实跑过** | jichu 142.5 万 + lianxiang 16.3 万 + shici 33.5 万词 + 强制成语/名句 |
 | 滑窗样本 + ≥8 字 n-gram 去重 | ✅ **实跑过** | 含边界自检（8 字命中 / 7 字放过）与 hash≈exact 一致性 |
 | 训练管线（LoRA + 判别式 LR + 逐步解冻 + 断点续训） | ✅ **实跑过** | 随机小骨干 CPU 40 步；**真实底座 125.7M 也实跑过 3 步**（LoRA 解冻生效，1.9–2.4 s/步 @batch 2×2） |
+| **Phase 1 质量探针（用户 4060 主机）** | ✅ **跑过** | cluecorpus 4000 步：top-1 **13.51%** vs unigram 0.06% / n-gram 0.57%（见「Phase 1 探针实测」） |
+| 正式训练（全量语料 + 完整步数） | ⚠️ 用户主机进行中 | 语料被 `ShardWriter` 的 bug 砍到 187 MB，已修；那批数字是**下限** |
 | ONNX 导出 + int8 + manifest（**真实 125.7M**） | ✅ **实跑过** | fp32 图 2353 节点、对拍 100%；int8 **126.2 MB**；KV cache 对拍通过 |
 | C++ n-gram 基线（marisa） | ✅ **实跑过** | 795 万条键全量枚举 1.2 s |
 | **110M 正式微调的质量数字** | ❌ **没做** | 需要用户的 4060。本目录给出的 4060 时间/显存都是**估算**，不是实测 |
@@ -33,6 +35,34 @@
 ```bash
 bash scripts/nwp/smoke_test.sh          # CPU、离线、约 1 分钟，退出码 0 才算通过
 ```
+
+## Phase 1 质量探针实测（用户 4060 主机）
+
+两个底座、同数据、同步数、同评测集（`probe.py` 的产出格式）：
+
+| 底座 | top-1 | top-5 | MRR | 说明 |
+|---|---|---|---|---|
+| `uer/gpt2-chinese-cluecorpussmall` | **13.51 %** | **25.03 %** | **0.1771** | 4000 步，评测 `--limit 200000` |
+| 基线 unigram（词频） | 0.06 % | — | — | 神经模型的 **225×** |
+| 基线 n-gram（`predict.marisa`） | 0.57 % | — | — | 神经模型的 **~24×** |
+| `IDEA-CCNL/Wenzhong-GPT2-110M` | — | — | — | **没能评出来**：先撞上 fp16 骨干的 dtype 崩溃（Bug 2，已修），随后又发现它的 tokenizer 根本不适合字级输入（见下） |
+
+**结论：用 `uer/gpt2-chinese-cluecorpussmall`。** 它明显打得过两个基线——
+实施 prompt §4 说的「打不过词频基线就是早期告警」，这里没有触发。
+
+两条必须一起看的前提：
+
+1. **这个 13.51 % 是下限，不是最终数字。** 它是在**被 `ShardWriter` bug 截断过的语料**上训的
+   （见「修过的真实 bug」）：磁盘上只有 187 MB / 11.9 万文档，而报告说保住了 152 万文档。
+   修好之后重训应当更高。
+2. **Wenzhong 不能用字级输入**，这不是调参问题：它的 tokenizer 是**字节级 BPE**
+   （`今` → `[20015, 232]`，两个 token 才拼出一个汉字），能「一个字 = 一个 token」的只有
+   **137 个字**，真实语料里 **77 %–86 % 的字会变成 `<unk>`**。
+   而端侧是纯字级输入，`bert`/字表型 tokenizer 才匹配：
+   `uer/gpt2-chinese-cluecorpussmall` 的 `vocab.txt` 每行正好一个字，实测未知字率 **1.5 %**。
+   `build_vocab.py` 现在会在覆盖率 < 80 % 时**直接报错退出**（`--min-char-coverage`，
+   要用 Wenzhong 得显式 `--allow-low-char-coverage`，或改用
+   `--char-source file:<cluecorpus 的 char2id.json>` 明确表示「只借 id 行号」）。
 
 ## 磁盘布局
 
@@ -194,12 +224,36 @@ train 47398 条里截尾 **8620** 条、valid 49 条里截尾 231 条、test 67 
 $PY scripts/nwp/build_samples.py --dedup-selftest     # 8 字命中 / 7 字放过的边界自检
 ```
 
-本机实测（370 KB 语料）：train 47398 条、valid 49 条（丢 92.5%）、test 67 条（丢 92.6%）。
-**丢弃率这么高是小语料 + 同源评测的必然结果**：语料只有 37 万字符，8-gram 宇宙本来就小，
-train 覆盖了其中大部分，于是同源的测试样本几乎都带重叠。真实场景的正确做法是
-**让测试集来自不同语体**（例如训练用 wiki+新闻、测试用 lccc），或把 `--dedup-min-match`
-提到 2–4（要求多条 n-gram 同时命中）；脚本两者都支持，并会把丢弃率写进
-`samples/report.json`。
+实测丢弃率：
+
+| 语料 | valid | test |
+|---|---|---|
+| 本机 370 KB 小样本 | 92.5% | 92.6% |
+| **用户主机 1.5 M 文档（约 1.9 GB）** | **52.21%** | **50.82%** |
+
+**这不是小语料的假象**——1.5 M 文档的语料上仍然丢掉一半。这就是同源评测集在真实规模上的样子：
+只要测试样本与训练文本同源，约一半会带 ≥8 字连续重合。所以**这是去重在正常工作**，
+不是需要调参调掉的噪声；它同时说明：同源测试集的分数天然被高估，
+要一个可信的数字就得**让测试集换语体**（例如训练用 wiki+新闻、测试用 lccc），
+或把 `--dedup-min-match` 提到 2–4（要求多条 n-gram 同时命中，容忍常见套话）。
+脚本两者都支持，并把丢弃率写进 `samples/report.json`。
+
+**索引上限与覆盖率**：`--dedup-max-ngrams`（默认 2000 万）是内存护栏，撞上之后索引不再增长、
+后面的样本只能在**不完整**的索引上检查。脚本会把这件事报成可判断的数字，而不是一句
+「覆盖不完整」：
+
+```
+⚠ 去重索引撞到 --dedup-max-ngrams=20,000,000 后不再增长（覆盖不完整）：
+    候选 n-gram 320,000,000 条，入索引 20,000,000 条 → 覆盖率 6.2%（distinct 20,000,000）；
+    第 20,000,001 条候选时撞上限。
+    valid 12,345/100,000 条在索引完整时检查；test 20,000/120,000 条在索引完整时检查。
+    要把覆盖做到 100%，上限至少要到候选条数级别（Python set ≈50 B/条，320,000,000 条 ≈ 14.9 GB 内存，通常不现实）；
+    更实际的做法是换异源测试集，或减小 --dedup-window / 提高 --dedup-min-match。
+```
+
+`samples/report.json` 的 `dedup.coverage` 里有同一份数字（`coverage_rate` /
+`cap_hit_at_occurrence` / `distinct_indexed`），每个分片还记了
+`dedup_checked_with_complete_index` 与 `dedup_checked_with_partial_index`。
 
 ### 4. 训练
 
@@ -389,6 +443,20 @@ $PY scripts/nwp/export_onnx.py --work .nwp-work/nwp \
 > 真实 110M 的 int8 掉点必须在用户的机器上重测——**int8 是否掉分只能用真实模型说话**
 > （见 `results/export_report.json` 的 `parity_int8` 与 `eval_int8`）。
 
+## 修过的真实 bug（都在用户首次全量跑的时候暴露，都已修 + 加了回归测试）
+
+| # | 症状 | 根因 | 现在怎么防 |
+|---|---|---|---|
+| 1 | 语料 **静默缩水**：manifest 说 wiki 保留 254,546 条，磁盘上只有 54,546 条；三个数据集合计 187 MB / 11.9 万文档，而不是约 1.9 GB / 152 万文档 | `ShardWriter._open()` 用了 `_shard_index` **却从不自增**，于是每一片都叫 `-000.txt` 并以 `"w"` 打开，**每一片都把上一片截断** | 分片号自增 + 「分片名不得重复」断言 + 每次 fetch 前清掉同名旧分片 + 收尾时断言 `磁盘行数 == kept_docs`。回归测试 `test_shards_are_distinct` / `test_manifest_count_matches_disk` |
+| 2 | Wenzhong 探针在**第 200 步的第一次验证**崩：`mat1 and mat2 must have the same dtype, but got Half and Float`（导出阶段同样会崩在 concat） | Wenzhong 的权重是 **fp16 落盘**的（骨干 Half），而新建的词头是 Float；训练循环里有 autocast 所以没事，`quick_metric` / `eval` / ONNX 导出都没有 | `NWPModel.forward` 在词头前把 hidden 对齐到**词头**的 dtype（头保持 fp32）；`load_checkpoint` 与 `export_onnx` 统一转 fp32（契约里 past/present/logits 都是 float32）；`quick_metric` 与训练用同一个 autocast。回归测试 `test_fp16_backbone_forward` / `test_export_forces_float32_io` |
+| 3 | 词表构建中途崩在 `http.client.IncompleteRead`，并可能把**半截成语表**当缓存留下（下次运行看到「存在且非空」就直接用） | `download_cached` 直接 `write_bytes(dest)`，且 `except` 只抓 `URLError/OSError`——`IncompleteRead` 不在里面 | 先写 `.part` 成功后再原子改名；任何下载异常都只降级到本地退路（jichu 四字高频词 / shici 名句），不再让 160 KB 的词表拖垮整次构建 |
+
+回归测试在 `scripts/nwp/test_nwp_pipeline.py`，已接进 `smoke_test.sh` 的第 0.5 步：
+
+```bash
+.nwp-work/venv/bin/python scripts/nwp/test_nwp_pipeline.py   # 不需要 pytest、不需要 GPU/网络
+```
+
 ## 目录里每个文件的职责
 
 | 文件 | 作用 |
@@ -404,15 +472,18 @@ $PY scripts/nwp/export_onnx.py --work .nwp-work/nwp \
 | `eval.py` | top-1/top-5/MRR/BPB，评 checkpoint / ONNX / 基线，出 JSON + markdown |
 | `probe.py` | Phase 1：两个底座同步数对比 + 基线 + 结论 |
 | `export_onnx.py` | 导出 fp32/int8、扫图断言无 TopK、top-k 与 KV cache 对拍、写 manifest |
-| `smoke_test.sh` | 一条命令跑通全链路并在 CPU 上做完全部断言 |
+| `test_nwp_pipeline.py` | 回归测试：分片名唯一/磁盘行数==报告条数、fp16 骨干前向、ONNX 强制 float32 I/O、去重覆盖率 |
+| `smoke_test.sh` | 一条命令跑通全链路并在 CPU 上做完全部断言（含上面的回归测试） |
 
 ## 已知边界与未完成项
 
 1. **110M 正式微调的质量数字没有**（本机无 GPU）。`probe.py` 已就绪，命令见上；
    跑完把 `probe/report.md` 填进 `.research/`。
 2. **4060 的时间/显存是估算**（来自 spec 的 FLOPs 模型），不是实测。
-3. **去重在自建小语料上丢弃率 90%+**，这是同源评测的必然结果；真实训练请让测试集换语体，
-   或提高 `--dedup-min-match`。脚本会如实报数，不会偷偷放宽。
+3. **同源测试集会有一半样本被去重丢掉**（用户 1.5 M 文档实测 valid 52.21 % / test 50.82 %）——
+   这是去重在正常工作，不是小语料假象。要一个可信的评测数字请让测试集换语体，
+   或提高 `--dedup-min-match`。去重索引撞到 2000 万上限时，脚本会把**覆盖率**和
+   「多少条样本是在索引完整时检查的」一起报出来（`samples/report.json` 的 `dedup.coverage`）。
 4. **int8 掉分未在真实模型上验证**；小骨干上 top-1 一致率 100%，但那只说明量化链路是通的。
 5. **`scripts/phrase-index/`（路径 1，成语/诗句前缀补全）不由本目录负责**，
    `build_vocab.py` 只在它存在时顺手吸收其清单，不依赖。

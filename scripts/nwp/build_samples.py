@@ -108,20 +108,40 @@ class Deduper:
         self.min_match = min_match
         self.seen: set = set()
         self.truncated = False
-        self.added = 0
+        self.candidates = 0      # 生成过的 n-gram 条数（覆盖率的分母）
+        self.inserted = 0        # 真正进了索引的条数（分子）
+        self.cap_hit_at = None   # 在第几条候选上撞到上限
 
     def add_text(self, text: str) -> None:
-        if self.mode == "exact":
-            for gram in ngram_strings(text, self.n):
-                self.seen.add(gram)
-                self.added += 1
-            return
-        for gram in ngram_hashes(text, self.n):
+        grams = ngram_strings(text, self.n) if self.mode == "exact" else ngram_hashes(text, self.n)
+        for gram in grams:
+            # 撞上限之后**继续数分母**（只剩一次 hash，很便宜）：否则报告里的覆盖率
+            # 分母会缩水，读者会误以为「索引一直是满的」。
+            self.candidates += 1
+            if self.truncated:
+                continue
             if len(self.seen) >= self.cap:
                 self.truncated = True
-                return
+                self.cap_hit_at = self.candidates
+                continue
             self.seen.add(gram)
-            self.added += 1
+            self.inserted += 1
+
+    def coverage(self) -> dict:
+        """索引覆盖率：命中上限后，后面的 n-gram 根本没进集合。
+
+        不报这个数，`去重覆盖不完整` 就只是一句没法判断风险的话。
+        """
+        return {
+            "mode": self.mode,
+            "cap": self.cap,
+            "cap_hit": self.truncated,
+            "cap_hit_at_occurrence": self.cap_hit_at,
+            "ngram_occurrences": self.candidates,
+            "ngram_indexed": self.inserted,
+            "coverage_rate": (self.inserted / self.candidates) if self.candidates else 1.0,
+            "distinct_indexed": len(self.seen),
+        }
 
     def overlap_count(self, text: str) -> int:
         """命中多少个**不同**的 n-gram。"""
@@ -238,6 +258,8 @@ def main() -> int:
         skipped_short = 0
         stop = False
         stats: dict = {}
+        checked_complete = 0   # 在索引仍完整时做过重叠判断的样本数
+        checked_partial = 0    # 索引已不完整之后才判断的样本数
         with out.open("w", encoding="utf-8") as fh:
             for doc in docs[split]:
                 if stop:
@@ -250,9 +272,19 @@ def main() -> int:
                 ):
                     wrote_any = True
                     # valid/test 先查重叠再入库；train 只负责建集合
-                    if split != "train" and deduper.overlaps(sample["ctx"]):
-                        dropped += 1
-                        continue
+                    if split != "train":
+                        complete = not deduper.truncated
+                        if deduper.overlaps(sample["ctx"]):
+                            dropped += 1
+                            if complete:
+                                checked_complete += 1
+                            else:
+                                checked_partial += 1
+                            continue
+                        if complete:
+                            checked_complete += 1
+                        else:
+                            checked_partial += 1
                     if args.max_samples and kept >= args.max_samples:
                         stop = True
                         break
@@ -270,6 +302,8 @@ def main() -> int:
             "dropped_rate": rate,
             "docs_too_short": skipped_short,
             "truncated_by_max_context_ids": stats.get("truncated", 0),
+            "dedup_checked_with_complete_index": checked_complete,
+            "dedup_checked_with_partial_index": checked_partial,
         }
         max_ids_seen = max(max_ids_seen, stats.get("max_ids_seen", 0))
         log(f"{split}: {kept} 条，去重丢弃 {dropped} 条（{rate * 100:.2f}%），"
@@ -280,11 +314,25 @@ def main() -> int:
     report["max_ids_seen"] = max_ids_seen
     report["dedup"]["ngrams_indexed"] = len(deduper.seen)
     report["dedup"]["truncated"] = deduper.truncated
+    report["dedup"]["coverage"] = deduper.coverage()
     report["elapsed_sec"] = round(time.time() - t0, 1)
     write_json(lay.samples / "report.json", report)
     print(json.dumps(report["splits"], ensure_ascii=False, indent=2))
     if deduper.truncated:
-        log("⚠ n-gram 指纹集合达到 --dedup-max-ngrams 上限，去重覆盖不完整")
+        cov = deduper.coverage()
+        ev = "；".join(
+            f"{sp} {v['dedup_checked_with_complete_index']}/{v['dedup_checked_with_complete_index'] + v['dedup_checked_with_partial_index']}"
+            f" 条在索引完整时检查"
+            for sp, v in report["splits"].items() if sp != "train"
+        )
+        log(f"⚠ 去重索引撞到 --dedup-max-ngrams={cov['cap']:,} 后不再增长（覆盖不完整）：\n"
+            f"    候选 n-gram {cov['ngram_occurrences']:,} 条，入索引 {cov['ngram_indexed']:,} 条 "
+            f"→ 覆盖率 {cov['coverage_rate'] * 100:.1f}%（distinct {cov['distinct_indexed']:,}）；"
+            f"第 {cov['cap_hit_at_occurrence']:,} 条候选时撞上限。\n"
+            f"    {ev}。\n"
+            f"    要把覆盖做到 100%，上限至少要到候选条数级别（Python set ≈50 B/条，"
+            f"{cov['ngram_occurrences']:,} 条 ≈ {cov['ngram_occurrences'] * 50 / 2**30:.1f} GB 内存，通常不现实）；"
+            f"更实际的做法是换异源测试集，或减小 --dedup-window / 提高 --dedup-min-match。")
     return 0
 
 

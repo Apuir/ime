@@ -104,9 +104,9 @@ SYNTH_TEMPLATES = [
 ]
 
 
-def http_chunks(url: str, chunk: int = 1 << 20, max_bytes: int | None = None):
+def http_chunks(url: str, chunk: int = 1 << 20, max_bytes: int | None = None, timeout: float = 120.0):
     req = urllib.request.Request(url, headers={"User-Agent": "ime-nwp/1.0"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         got = 0
         while True:
             data = resp.read(chunk)
@@ -118,7 +118,7 @@ def http_chunks(url: str, chunk: int = 1 << 20, max_bytes: int | None = None):
                 return
 
 
-def stream_json_array(url: str, limit: int, max_bytes: int | None = None):
+def stream_json_array(url: str, limit: int, max_bytes: int | None = None, timeout: float = 120.0):
     """流式读 JSON 数组，读够 limit 条就把连接掐掉。
 
     这样 `--limit 200` 只需要下几 MB，而不是 524 MB——冒烟验证的关键。
@@ -129,7 +129,7 @@ def stream_json_array(url: str, limit: int, max_bytes: int | None = None):
     idx = 0
     started = False
     count = 0
-    for raw in http_chunks(url, max_bytes=max_bytes):
+    for raw in http_chunks(url, max_bytes=max_bytes, timeout=timeout):
         buf += inc.decode(raw)
         if not started:
             pos = buf.find("[")
@@ -156,11 +156,12 @@ def stream_json_array(url: str, limit: int, max_bytes: int | None = None):
             idx = 0
 
 
-def stream_lines(url: str, gz: bool = False, max_bytes: int | None = None, chunk: int = 1 << 20):
+def stream_lines(url: str, gz: bool = False, max_bytes: int | None = None, chunk: int = 1 << 20,
+                 timeout: float = 120.0):
     inc = codecs.getincrementaldecoder("utf-8")("ignore")
     dec = zlib.decompressobj(31) if gz else None
     buf = ""
-    for raw in http_chunks(url, chunk=chunk, max_bytes=max_bytes):
+    for raw in http_chunks(url, chunk=chunk, max_bytes=max_bytes, timeout=timeout):
         data = dec.decompress(raw) if gz else raw
         buf += inc.decode(data)
         while True:
@@ -184,9 +185,19 @@ class ShardWriter:
         self._fh = None
         self._in_shard = 0
         self._shard_index = 0
+        # 重跑前先清掉同名旧分片：否则上一轮多出来的分片会留在地板上，
+        # manifest 只记这一轮写的文件，语料目录却混着两轮的内容。
+        for stale in sorted(self.lay.corpus.glob(f"{dataset}-*.txt")):
+            stale.unlink()
 
     def _open(self) -> None:
+        # 分片号必须自增。曾经漏了这一句：每片都叫 -000.txt 且以 "w" 打开，
+        # 于是每开新片就把上一片截断——报告说保留 25 万条、磁盘上只剩 5 万条，
+        # 而且全程静默。所以这里既自增，又断言文件名不重复。
         path = self.lay.corpus / f"{self.dataset}-{self._shard_index:03d}.txt"
+        self._shard_index += 1
+        if path.name in self.files:
+            raise RuntimeError(f"分片文件名重复：{path.name}（分片号没有自增，会导致静默覆盖）")
         self.files.append(path.name)
         self._fh = path.open("w", encoding="utf-8")
         self._in_shard = 0
@@ -205,6 +216,13 @@ class ShardWriter:
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+        if len(set(self.files)) != len(self.files):
+            raise RuntimeError(f"分片列表里有重名：{self.files}")
+
+    @property
+    def shard_summary(self) -> str:
+        head = ", ".join(self.files[:3]) + ("…" if len(self.files) > 3 else "")
+        return f"{len(set(self.files))} 个分片（{head}）"
 
     @property
     def full(self) -> bool:
@@ -223,7 +241,7 @@ def fetch_wiki(args, lay: Layout, writer: ShardWriter) -> None:
     # lccc 是 gz，wiki 不是；downloads 有上限，避免误下全量
     cap = args.max_bytes or (args.shards * args.shard_bytes if args.shards else None)
     log(f"wiki: {url} (limit={args.limit} docs, cap={cap} bytes)")
-    for obj in stream_json_array(url, limit=args.limit, max_bytes=cap):
+    for obj in stream_json_array(url, limit=args.limit, max_bytes=cap, timeout=args.timeout):
         if writer.full:
             break
         text = obj.get(cfg["text_key"]) or obj.get("text") or ""
@@ -257,7 +275,7 @@ def fetch_thucnews(args, lay: Layout, writer: ShardWriter) -> None:
             cat_limit = min(cat_limit if cat_limit is not None else room, room)
         got = 0
         try:
-            for line in stream_lines(url, gz=False, max_bytes=args.max_bytes):
+            for line in stream_lines(url, gz=False, max_bytes=args.max_bytes, timeout=args.timeout):
                 if cat_limit is not None and got >= cat_limit:
                     break
                 try:
@@ -281,7 +299,7 @@ def fetch_lccc(args, lay: Layout, writer: ShardWriter) -> None:
     cap = args.max_bytes or (args.shards * args.shard_bytes if args.shards else None)
     log(f"lccc: {url} (limit={args.limit} docs, cap={cap} bytes)")
     got = 0
-    for line in stream_lines(url, gz=True, max_bytes=cap):
+    for line in stream_lines(url, gz=True, max_bytes=cap, timeout=args.timeout):
         if writer.full or got >= args.limit:
             break
         try:
@@ -371,6 +389,8 @@ def main() -> int:
     ap.add_argument("--shard-docs", type=int, default=100_000, help="每个输出文件最多多少条文档")
     ap.add_argument("--min-cjk", type=int, default=20, help="少于这么多汉字的文档丢弃")
     ap.add_argument("--max-chars", type=int, default=2000, help="单文档字符上限（按标点就近截断）")
+    ap.add_argument("--timeout", type=float, default=120.0,
+                    help="单个 HTTP 读的超时秒数；镜像慢时可以调大（默认 120）")
     ap.add_argument("--seed", type=int, default=20260921)
     ap.add_argument("--verbose", action="store_true")
     add_work_arg(ap)
@@ -382,20 +402,44 @@ def main() -> int:
     lay.make("corpus")
     # `all` 只指三个真实数据集；synthetic 是冒烟用的，必须显式点名，免得混进真实语料
     names = list(DATASETS) if args.dataset == "all" else [args.dataset]
+    failures: dict[str, str] = {}
     for name in names:
         if name not in list(DATASETS) + ["synthetic"]:
             raise SystemExit(f"未知 --dataset {name}")
         writer = ShardWriter(lay, name, args.shard_docs, args.limit)
-        if name == "wiki":
-            fetch_wiki(args, lay, writer)
-        elif name == "thucnews":
-            fetch_thucnews(args, lay, writer)
-        elif name == "lccc":
-            fetch_lccc(args, lay, writer)
+        entry: dict = {}
+        try:
+            if name == "wiki":
+                fetch_wiki(args, lay, writer)
+            elif name == "thucnews":
+                fetch_thucnews(args, lay, writer)
+            elif name == "lccc":
+                fetch_lccc(args, lay, writer)
+            else:
+                fetch_synthetic(args, lay, writer)
+            writer.close()
+        except Exception as e:  # noqa: BLE001 抓取失败必须留下记录，且不能留下一地半截分片
+            writer.close()
+            failures[name] = f"{type(e).__name__}: {e}"
+            # 半截语料比没有语料更危险（会被下游当成完整语料拿去训），所以整片删掉。
+            # manifest 仍要写这一条（kept_docs=0 + failed=原因），否则目录里空空如也却查不出为什么。
+            for stale in lay.corpus.glob(f"{name}-*.txt"):
+                stale.unlink()
+            log(f"✗ {name} 抓取失败，已删除半截分片：{failures[name]}")
+            entry = {"kept_docs": 0, "raw_docs": writer.total_raw, "shards": [], "failed": failures[name]}
         else:
-            fetch_synthetic(args, lay, writer)
-        writer.close()
-        log(f"{name}: 原始 {writer.total_raw} 条 → 保留 {writer.total_kept} 条 → {writer.files}")
+            log(f"{name}: 原始 {writer.total_raw} 条 → 保留 {writer.total_kept} 条 → {writer.shard_summary}")
+            # 报告条数与磁盘行数必须一致：分片覆盖/清空出问题时，这条断言是唯一的护栏
+            on_disk = 0
+            for shard in writer.files:
+                with (lay.corpus / shard).open("r", encoding="utf-8") as fh:
+                    on_disk += sum(1 for line in fh if line.strip())
+            if on_disk != writer.total_kept:
+                raise RuntimeError(f"{name}: manifest 记录 {writer.total_kept} 条，磁盘上只有 {on_disk} 条"
+                                   "（分片写入被截断或分片被覆盖）")
+            entry = {"kept_docs": writer.total_kept, "raw_docs": writer.total_raw,
+                     "shards": writer.files, "failed": failures.get(name)}
+
         manifest_path = lay.corpus / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
         cfg = DATASETS.get(name, {})
@@ -405,14 +449,17 @@ def main() -> int:
             "license": cfg.get("license", "n/a (generated)"),
             "full_bytes": cfg.get("bytes", 0),
             "note": cfg.get("note", "离线合成，冒烟用"),
-            "kept_docs": writer.total_kept,
-            "raw_docs": writer.total_raw,
-            "shards": writer.files,
             "limit": args.limit,
             "categories": args.categories or None,
-        }
+        } | entry
         write_json(manifest_path, manifest)
 
+    if failures:
+        log("以下数据集抓取失败（manifest 里已记 failed，半截分片已删除）：")
+        for name, reason in failures.items():
+            log(f"  - {name}: {reason}")
+        print(f"语料目录：{lay.corpus}（{len(failures)} 个数据集失败，退出码 1）")
+        return 1
     print(f"语料目录：{lay.corpus}")
     return 0
 

@@ -108,16 +108,56 @@ def parse_dict_yaml(path: Path) -> dict[str, int]:
     return freq
 
 
-def download_cached(url: str, dest: Path) -> Path | None:
-    if dest.exists() and dest.stat().st_size > 0:
+def char_coverage_failure(oov_char_rate: float, min_coverage: float) -> str | None:
+    """字符覆盖率不够时返回一句可执行的错误说明，够则返回 None。
+
+    为什么要有这道闸：`IDEA-CCNL/Wenzhong-GPT2-110M` 的 tokenizer 是**字节级 BPE**
+    （`今` → `[20015, 232]`，两个 token 才拼出一个字），于是「一个字恰好一个 token」的
+    映射只剩 137 个字，真实语料上 **77%–86% 的字变成 `<unk>`**。
+    不拦的话，词表照样生成、训练照样跑、loss 照样降——只是模型的输入几乎全是 `<unk>`，
+    4000 步全白跑。这条只能靠覆盖率断言挡，肉眼看不出来。
+    抽成纯函数是为了能单测（不依赖网络与 tokenizer）。
+    """
+    if oov_char_rate <= 1.0 - min_coverage:
+        return None
+    return (
+        f"字符覆盖率不足：真实语料里有 {oov_char_rate * 100:.1f}% 的字无法映射到单个 token"
+        f"（要求 ≤ {(1 - min_coverage) * 100:.1f}%）。\n"
+        "    常见原因是底座 tokenizer 是**字节级 BPE**（例如 IDEA-CCNL/Wenzhong-GPT2-110M，"
+        "`今` 要两个 token），而端侧是纯字级输入。\n"
+        "    选择：①换字表型底座（uer/gpt2-chinese-cluecorpussmall 的 vocab.txt 每行一个字）；"
+        "②沿用另一个底座的 char2id（`--char-source file:<path/to/char2id.json>`，"
+        "但那样 id 只表示嵌入行号，不是该底座的真实字表）；"
+        "③确实要用这个底座就得改成 BPE 输入，那是换架构，不在本脚本范围内。\n"
+        "    （确认要这么做就加 --allow-low-char-coverage）"
+    )
+
+
+def download_cached(url: str, dest: Path, min_bytes: int = 1024) -> Path | None:
+    """先写 `<dest>.part`，成功后再原子改名。
+
+    为什么不直接 `write_bytes(dest)`：网络中断会抛 `http.client.IncompleteRead`——
+    它既不是 `URLError` 也不是 `OSError`，不在原来的 except 里；于是**半截文件留在地板上**，
+    下次运行看到「存在且非空」就当缓存用，词表会静默少掉一批成语/名句。
+    原子改名 + 宽 except 保证「要么完整，要么什么都没有」；下载失败只降级走本地退路
+    （不能因为一个 160 KB 的词表把整次构建弄崩）。
+    """
+    if dest.exists() and dest.stat().st_size >= min_bytes:
         return dest
+    tmp = dest.with_name(dest.name + ".part")
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ime-nwp/1.0"})
         with urllib.request.urlopen(req, timeout=60) as resp:
-            dest.write_bytes(resp.read())
+            data = resp.read()
+        if len(data) < min_bytes:
+            raise ValueError(f"只拿到 {len(data)} 字节，疑似被截断")
+        tmp.write_bytes(data)
+        tmp.replace(dest)
         return dest
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        log(f"下载失败 {url}: {e}")
+    except Exception as e:  # noqa: BLE001 任何下载问题都只降级，不拖垮整次构建
+        log(f"下载失败（改用本地退路）{url}: {type(e).__name__}: {e}")
+        tmp.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
         return None
 
 
@@ -449,6 +489,11 @@ def main() -> int:
                     default=Path(__file__).resolve().parents[2] / "app/src/main/assets/resource.zip")
     ap.add_argument("--assert-agreement", action="store_true", default=True,
                     help="在真实语料上断言 char2id 与 tokenizer 编码一致（默认开）")
+    ap.add_argument("--min-char-coverage", type=float, default=0.80,
+                    help="语料字符必须能被 char2id 表示的最低比例；默认 0.8。"
+                         "字节级 BPE 底座（Wenzhong）在这里只有 ~0.23，必须拦下来")
+    ap.add_argument("--allow-low-char-coverage", action="store_true",
+                    help="明知道覆盖率低还要继续（训练会几乎全程喂 <unk>，慎用）")
     ap.add_argument("--strict-agreement", action="store_true",
                     help="不一致就退出非零（纯单字表的底座应能过）")
     ap.add_argument("--offline", action="store_true", help="不下载成语/名句表，只用本地退路")
@@ -484,6 +529,15 @@ def main() -> int:
         raise SystemExit(f"未知 --char-source {args.char_source}")
 
     log(f"char2id：{len(char2id)} 项（{char_meta['source']}）")
+
+    total_chars = max(1, sum(char_freq.values()))
+    oov_char_rate = sum(v for ch, v in char_freq.items() if char2id.get(ch, 0) <= 1) / total_chars
+    failure = char_coverage_failure(oov_char_rate, args.min_char_coverage)
+    if failure:
+        if args.allow_low_char_coverage:
+            log(f"⚠ {failure}\n    （已用 --allow-low-char-coverage 放行）")
+        else:
+            raise SystemExit(failure)
 
     words, extra = build_word_vocab(args, freq, forced, char2id)
     freq_out, word_stats = extra["freq"], extra["stats"]
@@ -528,9 +582,8 @@ def main() -> int:
         "vocab_stats": vocab_stats,
         "word_stats": word_stats,
         "agreement": agreement,
-        "corpus_oov_char_rate": (
-            sum(v for ch, v in char_freq.items() if ordered.get(ch, 0) <= 1) / max(1, sum(char_freq.values()))
-        ),
+        "corpus_oov_char_rate": oov_char_rate,
+        "min_char_coverage": args.min_char_coverage,
     }
     write_json(lay.vocab / "vocab_manifest.json", manifest)
     print(json.dumps({k: manifest[k] for k in ("char_vocab_size", "word_vocab_size", "agreement")},
