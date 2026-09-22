@@ -860,16 +860,21 @@ speller:
 | L1 | **Rime 自己的排序**（词库权重 + `enable_user_dict` 用户词典） | 作为「位次先验」参与打分，见 `CandidateFeature.rank` |
 | L2 | **语法模型**（`.gram` / octagram） | `PredictionManager.gramDb` → 传给重排的 `baseScore` |
 | L3 | **app 侧用户反馈**（正向点击 / 负向误选，带时间衰减） | `candidate_prefers` 表 + `base/priority/PreferenceScorer.kt` |
-| L4 | **字长分组 + 分批展示**（改的是「看到什么顺序、一次看到多少」） | `engine/manager/CandidateGrouping.kt`，见 [9.6.3](#963-候选的字长分组与分批加载) |
+| L4 | **字长分组 + 分批展示**（改的是「看到什么顺序、一次看到多少」） | `engine/manager/CandidateGrouping.kt`，见 [9.6.4](#964-候选的字长分组与分批加载) |
+
+> **2026-09 起这条链路上多了两路来源**：神经下一词联想（ONNX，吃一整段上下文）
+> 与成语/歇后语/诗句的短语补全（精确匹配）。它们**不改变上面三层的关系**，
+> 而是各自作为一路新特征进入同一个加权求和。完整的来源分工、ONNX 契约、
+> 降级路径与踩过的坑见 [9.6.3](#963-神经联想nwp与短语补全路径-1)。
 
 | 需求 | 位置 |
 |------|------|
 | 打分权重 | `base/priority/PriorityCalculator.kt` → `WeightConfig`：`baseScore .20` / `preference .30` / `rankPrior .40` / `wordLength .10`。取向是**引擎排序为主**（`rankPrior` 最大），用户偏好可以撼动它，语法与词长只做微调 |
 | 用户偏好净分（可正可负 + 时间衰减） | `base/priority/PreferenceScorer.kt`（纯函数，半衰期 24 h；正向用 `ln1p` 软压，负向线性见效） |
 | 下一词预测 | `engine/manager/PredictionManager.kt` + `base/marisa/Prediction.kt`（`TOP_K=100`，`ln(1+count)` 加权）；语法模型实例由它持有并对外只读暴露 |
-| 候选重排 | `engine/manager/CandidateRerankManager.kt`（只重排第 1–24 位，**第 0 个固定**；同分按引擎原始位次兜底；**不传 `wordLength`**，理由见 9.6.3） |
+| 候选重排 | `engine/manager/CandidateRerankManager.kt`（只重排第 1–24 位，**第 0 个固定**；同分按引擎原始位次兜底；**不传 `wordLength`**，理由见 9.6.4） |
 | 展示顺序 / 一次给几条 | `engine/manager/CandidateGrouping.kt`（每批凑够 50 条：首选 + 4 字×6 + 5 字以上×3 + 3 字×6 + 2 字×6 + 单字补齐；所以整批严格「字多的在前」） |
-| 候选总数「无上限」 | native `Rime.getCandidates(start, limit)`（按**全局位次**取任意一段）+ `RimeEngine.schedulePoolDeepening()`：**异步分块**往深里读，读完一页就把下一页投回队列尾部（按键可插队，页面按 `candidateGeneration` 校验作废）。为什么必须挖深见 9.6.3 |
+| 候选总数「无上限」 | native `Rime.getCandidates(start, limit)`（按**全局位次**取任意一段）+ `RimeEngine.schedulePoolDeepening()`：**异步分块**往深里读，读完一页就把下一页投回队列尾部（按键可插队，页面按 `candidateGeneration` 校验作废）。为什么必须挖深见 9.6.4 |
 | 误选降权（负反馈） | `engine/RimeEngine.kt`：`lastSelection` / `handleBackspace` → `onTextDeleted` → `demoteCandidate`；写库走 `CandidatePreferDao.demote` |
 | 引擎侧兜底（同码回删再输首次交换） | 万象 `context_reorder/enable_fallback_reorder: true`（由 `scripts/build-rime-resource.py` 注入） |
 | 重置学习数据 | `ui/screen/CandidateSettingsScreen.kt` →「学习数据」分组（清 `candidate_prefers`） |
@@ -1127,7 +1132,178 @@ zjhmydqpy → 1. 这句话没有打全拼音     ← 命中
 按键耗时：九键 ≤4 位输入 ≤50ms、>4 位退回全拼后与原行为持平（开发机实测）
 ```
 
-### 9.6.3 候选的字长分组与分批加载
+### 9.6.3 神经联想（NWP）与短语补全（路径 1）
+
+9.6 开头那张「三层信号」表在这一次之后变成了**五路来源**。它们的技术手段完全不同，
+**不要混成一件事**（这是 `.research/联想升级-方案选型.md` §2 的核心结论）：
+
+| # | 能力 | 手段 | 为什么不能用同一种办法 |
+|---|------|------|------------------------|
+| 1 | 下一个**字/词**（短上下文） | n-gram：`predict.marisa` | 微秒级查表，覆盖面最广，**兜底** |
+| 1b | 下一个**字/词**（一整段） | 神经 NWP：ONNX 词级 LM | n-gram 的上下文上限只有 4–5 个词，吃不到 3–4 句 |
+| 2 | **成语 / 歇后语 / 诗句** | 短语索引：精确后缀匹配 | 固定长短语，前缀匹配 100% 准确、微秒级、零功耗；交给模型只会更差更慢 |
+| 3 | 冷门长词 / 专名 | `lianxiang` 等词库 | 词表召回 |
+
+**打分只有一套。** 没有「AI 候选栏」：神经概率与短语命中各自作为
+[`CandidateFeature`](../app/src/main/java/com/ninthsoft/ime/base/priority/PriorityCalculator.kt)
+的一路特征融进既有权重求和，与语法分 / 用户偏好 / 位次先验同一个公式。
+FUTO 把 LM 概率映射成词典同量纲的 score、Gboard 把 NN-LM 输出转成 FST 权重，两家都是这么做的。
+
+| 环节 | 位置 |
+|------|------|
+| 上下文准备（截尾 + 句边界对齐 + 清垃圾串） | `base/neural/NeuralPrompt.kt`（纯函数） |
+| 超时熔断（450 ms / 连续 5 次） | `base/neural/NeuralCircuitBreaker.kt`（纯状态机） |
+| logits → 概率 / top-k | `base/neural/NeuralDistribution.kt`、`NeuralTopK.kt`（纯函数） |
+| 推理编排（加载、增量、回滚、降级） | `base/neural/NeuralPredictor.kt`（**进程内单例**） |
+| 模型目录与 sha256 校验 | `base/neural/NeuralModelStore.kt` |
+| 模型下载（读清单决定下什么） | `base/neural/NeuralModelDownloader.kt` |
+| JNI（KV cache 在 native 侧） | `app/src/main/cpp/neural_jni/` |
+| 短语索引查询 | `base/phrase/PhraseIndex.kt`（mmap + 偏移表二分） |
+| 短语索引装载 | `base/phrase/PhraseIndexStore.kt` |
+| 三路合并 | `engine/manager/PredictionManager.kt` |
+| 上下文读取（20 字 → 一整段） | `engine/RimeEngine.kt` 的 `readPredictionContext()` |
+| 训练/导出脚本 | `scripts/nwp/`（见该目录 README） |
+| 短语索引构建脚本 | `scripts/phrase-index/`（见该目录 README） |
+
+#### 三件必须知道的事（都是踩过或算过的）
+
+1. **KV cache 放在 C++ 侧，回滚是 O(1)。** 缓存是
+   `层数 × [1, heads, len, dim] × K/V` 的连续缓冲，prefill 按位置追加。
+   用户继续打字要丢弃上一轮候选时，只需把**长度计数器**退回去
+   （`nativeTruncate`）—— 注意力只读 `[0, len)`，后面的残留值永远读不到，
+   所以不必清空重算。**这就是「350 ms → 十几毫秒」和「取消要能回滚」两条的落点。**
+   注意 native 前向是不可中断的（C 函数没有取消点），所以「取消」只能是
+   **丢弃结果 + 把缓存标记为不可信**，下次前向从头来。
+
+2. **`position_ids` 必须是显式输入。** 带 KV cache 时若不传位置，新 token 会被
+   当成从 0 开始编号：第 1 次增量起结果就全错，而且**不会报错，只是预测变差**。
+   同理，只要上下文有变化就必须重新前向一次才能拿到 logits ——
+   缓存里那份对应的是上一次上下文的最后一个位置（见 `NeuralPredictor.prefillLocked`）。
+
+3. **短语索引不能用 `HashMap` 装。** 实测 64 万条记录，装 `HashMap<String, List<Entry>>`
+   光容器与对象头就是**上百 MB 堆**，输入法常驻进程扛不住。现在是
+   「解压到 `filesDir/phrase/` 后**只读 mmap** + 一张 `IntArray` 偏移表（≈2.6 MB）」，
+   查询对偏移表二分、按字节比 key。成立的前提是构建侧**确实按 key 升序输出**
+   （UTF-8 字节序 == 码点序），`PhraseIndexRealDataTest.keysAreSortedSoBinarySearchIsValid`
+   会在真实资产上核对这一点 —— 排序一改，端侧只会**静默地查不到**，不会报错。
+
+#### ONNX 契约（与 `scripts/nwp/model.py` 一一对应，改一侧必须改另一侧）
+
+```
+inputs : input_ids[1,S] int64, attention_mask[1,P+S] int64, position_ids[1,S] int64,
+         past_key_values.{i}.key / .value [1,H,P,D] float32
+outputs: logits[1,V] float32（**只有最后一个位置**）, present.{i}.key / .value [1,H,P+S,D]
+```
+
+- `dynamic_axes` 在 batch / seq / past 长度上；档位 ③（133 M + KV cache）**只能走 XNNPACK CPU**。
+- **top-k 在 Kotlin 侧做**，图里不放 TopK/ArgMax：末位 logits 只有 120 KB，直接返回即可。
+- 量化只用**动态范围 int8**，不做静态校准（静态定点 int8 在小模型上是抽奖）。
+- `past` 长度为 0 是合法的（首次整段预填）。这条**实测确认过**：ORT 支持零长度输入，
+  `Concat(past, new)` 会正确把长度从 0 涨到 1（探针见 `.research/` 的调研记录）。
+- 层数 / 头数 / 词表大小在 `nativeLoad` 时**从会话自身读出来**，不信 manifest ——
+  manifest 只决定「要不要下载、下对没有」。
+
+**上下文预算是「训练与端侧必须配对」的一个数**，链路上出现三次，改一处要想到另外两处：
+
+| 位置 | 含义 |
+|------|------|
+| `build_samples.py --max-context-ids` | 训练样本的输入 id 上限（= 字数）。超长样本取**尾部**截断，与端侧「取已上屏文本最后 N 个码点」同语义 |
+| `manifest.context_tokens` | 由上一项写入。导出时会断言它不小于样本实际最大长度 —— **低报会让端侧少喂上下文，而且不报错、只是悄悄变差**（这个坑踩过一次：字段曾被当成「词数」写成 128） |
+| `NeuralPrompt.MAX_CHARS` | 端侧上限（210）。实际预算 = `min(manifest.context_tokens, MAX_CHARS)`，所以 **manifest 是权威，改训练预算不需要动 Kotlin** |
+
+实测**全量 1200 万条**训练样本的输入长度：min/p50/mean/p90/max = **16 / 231 / 209.0 / 256 / 256**。
+也就是**均值 209 正好落在设计说的「≈210 汉字」上**，端侧上限 210 与训练分布是**配对的，不存在错位**。
+
+> ⚠️ **不要用抽样估这个分布。** 曾经只抽 `train.jsonl` 前 20 万行，得到 mean≈100、p50≈47，
+> 于是误判成「训练均值只有 100 字、端侧却喂 210」。真相是样本按文档顺序生成，
+> **每个文档开头的「起步样本」上下文很短**，前 20 万行几乎全是这一类，比全量短一倍。
+> 要估就必须全量扫（脚本里已有 `load_lengths` 长度缓存，19.5 GB 扫一次约 100 s，之后秒级）。
+
+调整 `--max-context-ids` 是纯粹的速度/上下文取舍，**必须同时改端侧预算**（manifest 会带着走）：
+
+| cap | 相对步时 | 说明 |
+|---|---|---|
+| 256 | 1.00× | 现状，p90 样本已到顶 |
+| 192 | 0.83× | 截掉约一成样本的尾部 |
+| 160 | 0.71× | |
+| 128 | 0.58× | 上下文降到「1–2 句」，**不是无损**：一半以上样本被截 |
+
+padding 之外还有两处与 cap 无关的算力浪费，见 `scripts/nwp/README.md`：
+按长度分桶组批（随机组批有 **17.9%** 的算力花在填充上，分桶后 **0.1%**），
+以及一次前向监督多个词边界（原实现一次前向只产出一个标签）。
+
+#### 模型怎么来的（当前状态：权重已产出，落地方案待定）
+
+模型不随包（int8 约 130 MB），由 `scripts/nwp/` 在开发机产出。放进设备有两条路：
+
+```bash
+# 手工（开发期）
+adb push nwp.int8.onnx word_vocab.txt char2id.json manifest.json \
+  /sdcard/Android/data/com.ninthsoft.ime/files/model/neural/
+```
+
+另一条是设置页的「下载」——它由 `NeuralModelDownloader` 完成，**但需要先填
+`MODEL_BASE_URL`**（发布地址）；留空时设置页不显示「下载」按钮，
+免得给用户一个必然失败的入口。
+
+两种量化都在 300 MB 预算内，**`--also-fp16` 一次导出同时落两份**，方便在同一测试集上比掉点：
+
+| 格式 | 体积 | 实测 |
+|---|---|---|
+| `nwp.int8.onnx`（**默认交付，per-channel**） | 126.8 MB | 2000 条 top-1 17.10 %（同子集 fp16 17.05 %，**等价**）；8 行对拍 top-1 100 %、相对误差 3.6 % |
+| `nwp.fp16.onnx`（`--also-fp16`，精度优先备选） | 250.7 MB | 20 万条 top-1 **19.42 %、与 PyTorch 基准逐位相同（零掉点）** |
+
+int8 与 fp16 写的是同一个 `manifest.json`，主交付只能有一个；`--fp16`（= `--no-int8`）
+是「不要 int8、只交 fp16」，`--also-fp16` 才是「主交付 int8，另存 fp16 供对比」。
+
+**为什么是 per-channel**：per-tensor（每张量一组 scale）会把小权重压没，20 万条掉 1.01 pp、
+相对 logits 失真 12.9 %；按输出通道分组后，同子集上与 fp16 的差只剩 1 个样本（0.05 pp），
+对拍 top-1 100 %。体积只多 0.45 MB、内核相同所以速度不变。
+`--int8-per-tensor` 只为复现旧数字存在，**不要用来交付**。
+
+**为什么最终选 int8 而不是 fp16**：真机（同一段输入，`神经预测 ms=`）**int8 10–17 ms、fp16 35–53 ms**，
+手机上是 int8 快 3–4 倍（XNNPACK 走 DP4A，fp16 在 CPU 上要转 fp32），
+与桌面 GPU 的 14× 正好相反。两者都在 450 ms 预算内，但 int8 同时省一半体积。
+
+**桌面 GPU 上的快慢与手机相反**：CUDA EP 上 int8 反而慢 14×（动态量化算子没有好 kernel、
+实际还算在 CPU 上），手机上 int8 快 3–4×。所以**别拿桌面 GPU 的耗时推端侧**。
+评测用 `--onnx-provider cuda`（宿主机 GPU）跑。**`torch` 有 CUDA 不等于 `onnxruntime` 有 CUDA**：
+两个独立的包，只有后者装了 `onnxruntime-gpu` 时才能用 CUDAExecutionProvider（见 `scripts/nwp/README.md`）。
+
+⚠️ **`assets/phrase/phrase_index.tsv.gz` 是随包的**（仓库里 10 MiB gz / 解压后 24 MiB / 64 万条）。
+它由 `scripts/phrase-index/build_phrase_index.py --out-dir-asset app/src/main/assets/phrase` 产出。
+默认 24 MiB 预算下 `shici` / `lianxiang` 会被整份剪掉（与诗句配对互斥），这是有意的：
+`wanxiang.dict.yaml` 本来就 import 了 `dicts/shici`，单句补全走既有候选链路已有。
+要带上它们需把 `--max-bytes` 提到 ~70–90 MiB。
+
+> **aapt2 会改写 `.gz` 资产（实测）**：仓库里是 `phrase_index.tsv.gz`，
+> 打出来的 APK 里条目却是 **`assets/phrase/phrase_index.tsv`、内容已经是明文 TSV**
+> （`noCompress += "gz"` 拦不住它 —— 后缀被去掉之后规则就匹配不上了）。
+> 后果有两个，都已处理：
+> 1. 资产名不可预测 → `PhraseIndexStore` 把两个候选名都试一遍；
+> 2. 内容可能已解压 → `AssetCompression.wrapIfGzip()` **按头两个字节**判断要不要 gunzip，
+>    不赌任何一种打包行为。这条判断错了的表现是**短语补全整体静默失效**（查询返回空、不报错），
+>    所以它有独立的单测。
+>
+> APK 体积上这也是笔账：明文 24 MiB 被 deflate 到约 15 MB（gzip 那份是 10 MiB）。
+> 想省回这 5 MB，就得让资产名不以 `.gz` 结尾（aapt2 只对 `.gz` 做这个改写），
+> 代价是仓库里的文件名不再自解释 —— 目前选择保留可读性。
+
+#### 降级与兜底（每一层都能单独失效）
+
+- `libonnxruntime.so` 加载失败 → 神经联想整体不可用，n-gram 与短语补全照常；
+- 模型未装 / sha256 不过 → 同上，设置页显示「未安装」或「校验失败」；
+- 连续 5 次超时 → **本次会话**停用，回落 n-gram（重开开关或重载模型才恢复）；
+- 短语索引资产缺失 → 只是没有短语候选，其余不变；
+- 两个开关都关 → `PredictionManager.legacyPredictions()` 原样返回，**与引入本功能前逐位一致**。
+
+> 排障：debug 构建里 `PredictionManager` 会打一行
+> `prediction-merged input=… phrase=N neural=N ngram=N top=…`，
+> 一眼看出候选是哪一路来的；`NeuralPredictor` 另有
+> `神经预测 ms=… input=… top=…`，`ms` 是这一步真正花在前向（prefill + 读 logits）上的毫秒数，
+> 打 `复用` 表示上下文没变、这一步没跑前向 —— **450 ms 硬预算的验收就看这个数**。
+> 两者都用 `Timber.treeCount > 0` 兜住，release 零开销。
+### 9.6.4 候选的字长分组与分批加载
 
 **要解决的问题**：九键打 `h h h h`（输入码 `4444`）时引擎给回的是一整串按分数排好的候选，
 四个字、三个字、两个字、单字混在一起，而且长词霸榜。目标是：**字多的在前、字少的在后，
@@ -1446,6 +1622,8 @@ text/comment/label/type），能用的常用度信号只有引擎位次，所以
 | key | 类型 | 默认 | 含义 |
 |-----|------|------|------|
 | `prediction_enabled` | Bool | true | 候选词预测 |
+| `neural_prediction_enabled` | Bool | **false** | 神经下一词联想（要先装模型，见 [9.6.3](#963-神经联想nwp与短语补全路径-1)） |
+| `phrase_completion_enabled` | Bool | true | 成语 / 歇后语 / 诗句的短语补全 |
 | `traditional_chinese_enabled` | Bool | false | 繁体输出 |
 | `emoji_enabled` | Bool | false | Emoji 参与候选 |
 | `ascii_mode_enabled` | Bool | true | ASCII/英文模式 |

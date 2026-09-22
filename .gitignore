@@ -41,3 +41,9 @@ signing.properties
 /.refs/
 
 /.research/
+
+# ---- 神经联想（scripts/nwp）：语料 / 词表 / 权重 / venv 都放工作目录，不入库 ----
+/.nwp-work/
+
+# 协作工具在仓库根目录留下的会话文件（文件名以冒号开头），不是项目产物
+:memory:*.ses

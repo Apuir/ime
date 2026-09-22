@@ -1,0 +1,419 @@
+# scripts/nwp —— 神经下一词联想（NWP）的可复现训练管线
+
+> 对应设计与证据：`.research/联想升级-方案选型.md`（路径 2）、
+> `.research/小模型训练与端侧部署.md`、`.research/中文语料与词表资源.md`、
+> `.research/实施prompt-神经联想.md` §4/§5/§7。
+> 本目录只是**脚本**；语料、词表、权重全部落在 `<repo>/.nwp-work/`（已 gitignore）。
+
+## 一句话
+
+微调一个中文**字级**预训练底座（`uer/gpt2-chinese-cluecorpussmall` 或
+`IDEA-CCNL/Wenzhong-GPT2-110M`），在最后位置接一个**词级输出头** `Linear(d → 30000)`，
+导出成 **int8 ONNX + KV cache**；输入是最近 128 个词的**字**，输出是下一个**词**。
+
+## 在本容器里验证到什么程度（重要）
+
+这台机器**没有 GPU**（无 `/dev/nvidia*`，torch 是 `+cpu`），所以：
+
+| 环节 | 本机状态 | 说明 |
+|---|---|---|
+| 语料下载（wiki / THUCNews / lccc） | ✅ **实跑过小样本** | 分别取了 150 / 60 / 51 条文档，见下表实测耗时 |
+| char2id 构建（真实底座 tokenizer） | ✅ **实跑过** | 5351 个字，逐字 id 与 tokenizer 完全一致（0 处不符） |
+| word_vocab 30k（resource.zip 抽取） | ✅ **实跑过** | jichu 142.5 万 + lianxiang 16.3 万 + shici 33.5 万词 + 强制成语/名句 |
+| 滑窗样本 + ≥8 字 n-gram 去重 | ✅ **实跑过** | 含边界自检（8 字命中 / 7 字放过）与 hash≈exact 一致性 |
+| 训练管线（LoRA + 判别式 LR + 逐步解冻 + 断点续训） | ✅ **实跑过** | 随机小骨干 CPU 40 步；**真实底座 125.7M 也实跑过 3 步**（LoRA 解冻生效，1.9–2.4 s/步 @batch 2×2） |
+| ONNX 导出 + int8 + manifest（**真实 125.7M**） | ✅ **实跑过** | fp32 图 2353 节点、对拍 100%；int8 **126.2 MB**；KV cache 对拍通过 |
+| C++ n-gram 基线（marisa） | ✅ **实跑过** | 795 万条键全量枚举 1.2 s |
+| **110M 正式微调的质量数字** | ❌ **没做** | 需要用户的 4060。本目录给出的 4060 时间/显存都是**估算**，不是实测 |
+| **训练好之后的 int8 掉点** | ❌ **没测** | 见「未完成项」第 4 条：未训练模型的 int8 对拍说明不了问题 |
+| 真机（K90 ProMax）延迟/内存 | ❌ 不在本目录范围 | Phase 4/5 |
+
+一键自检：
+
+```bash
+bash scripts/nwp/smoke_test.sh          # CPU、离线、约 1 分钟，退出码 0 才算通过
+```
+
+## 磁盘布局
+
+```
+<repo>/scripts/nwp/            脚本（入库）
+<repo>/.nwp-work/              工作目录（gitignore，200+ GB 可用）
+  venv/                        Python 3.12 环境（见下）
+  hf/                          HF 缓存（HF_HOME，避免重复下载）
+  nwp/
+    corpus/  *.txt             一行一条文档的清洗后语料 + manifest.json
+    dicts/                    从 resource.zip 解出的 jichu/lianxiang/shici + 成语/名句表
+    vocab/   char2id.json     端侧输入表（字 → 骨干 token id）
+             word_vocab.txt   端侧输出表（第 0 行 <unk>，行号即 word id）
+             word_freq.json   词频（unigram 基线用）
+             vocab_manifest.json
+    samples/ train|valid|test.jsonl + report.json
+    ckpt/    best.pt last.pt
+    onnx/    nwp.onnx  nwp.int8.onnx  manifest.json  word_vocab.txt  char2id.json
+    bin/     ngram_baseline  predict.marisa
+    results/ eval_*.json  train_*.json  export_report.json
+    probe/   两个底座的对比报告
+```
+
+**语料与权重绝不入库**：`.gitignore` 里已有 `/.nwp-work/`。
+
+## 环境
+
+```bash
+cd <repo>
+export UV_PYTHON_INSTALL_DIR=$PWD/.nwp-work/uv-python
+export UV_CACHE_DIR=$PWD/.nwp-work/uv-cache
+export UV_DATA_DIR=$PWD/.nwp-work/uv-data
+export UV_LINK_MODE=copy
+uv venv --python 3.12 .nwp-work/venv
+uv pip install --python .nwp-work/venv/bin/python --index-url https://download.pytorch.org/whl/cpu torch
+uv pip install --python .nwp-work/venv/bin/python --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  transformers peft onnx onnxruntime accelerate datasets numpy tqdm
+# 4060 上把 torch 换成 CUDA 版即可（cu124/cu126 视驱动而定）
+```
+
+本机实测版本：`torch 2.14.0+cpu`、`transformers 5.17.0`、`onnxruntime 1.30.0`、
+`onnx 1.23.0`、`peft 0.21.0`、`numpy 2.5.3`。
+`transformers` **必须 ≥5**：v5 起 `GPT2Model` 只接受 `DynamicCache`，
+legacy tuple 会直接抛 `AttributeError: 'tuple' object has no attribute 'get_query_offset'`
+（`model.py` 里已做转换，见 `past_to_cache`）。
+
+网络：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com   # huggingface.co 在本机被封，镜像可用
+export HF_HOME=$PWD/.nwp-work/hf           # 缓存放工作目录（/tmp 每次调用都会重置）
+```
+
+n-gram 基线需要 `libmarisa` 与 `g++`（Debian 包 `libmarisa-dev`）：
+
+```bash
+ls /usr/include/marisa.h /usr/lib/libmarisa.so.0.3.1 && g++ --version
+```
+
+## 数据来源（许可证与实测体积）
+
+| 数据集 | 用途 | 全量体积 | 许可证 | 单条命令 |
+|---|---|---|---|---|
+| `0xDing/wikipedia-cn-20230720-filtered` | 百科长文本（主力通顺语料） | 524 MB（单 JSON 数组） | CC-BY-SA-3.0 | `--dataset wiki` |
+| `Tongjilibo/THUCNews` | 新闻，按 14 个分类各一个 jsonl | 2.24 GB | Apache-2.0 | `--dataset thucnews --categories ...` |
+| `silver/lccc` | 对话语体，**最贴输入法** | 979 MB（jsonl.gz） | MIT | `--dataset lccc` |
+| `thunlp/THUOCL` → `THUOCL_chengyu.txt` / `THUOCL_poem.txt` | 高频成语 8519 / 名句 13703（强制入词表） | 163 KB / 288 KB | MIT | 自动下载 |
+| 项目自带 `resource.zip` → `jichu` / `lianxiang` / `shici` | 词频来源 | 45 MB / 7.8 MB / 16 MB | 随项目 | 自动抽取 |
+
+抓取小样本（**不要一上来下 3.7 GB**，每一条都是先验证字段与清洗）：
+
+```bash
+PY=.nwp-work/venv/bin/python
+$PY scripts/nwp/fetch_corpus.py --dataset wiki     --limit 150
+$PY scripts/nwp/fetch_corpus.py --dataset thucnews --limit 60 --categories 体育,科技
+$PY scripts/nwp/fetch_corpus.py --dataset lccc     --limit 400
+```
+
+实测（本机）：wiki 150 条 **1.3 s**；thucnews 两条分类各 60 条 **2 s**；
+lccc 400 句 → 51 条文档 **4.8 s**。三者都是**边下边解析、够了就断开**，
+所以 `--limit` 不会把 524 MB / 979 MB 全拖下来。
+
+全量（用户的机器上）：
+
+```bash
+$PY scripts/nwp/fetch_corpus.py --dataset all --limit 4000000   # 三个数据集一起，各取上限
+$PY scripts/nwp/fetch_corpus.py --dataset thucnews --categories 体育,娱乐,社会,科技,财经
+```
+
+## 步骤
+
+### 0. 环境自检
+
+```bash
+$PY -c "import torch, transformers, onnx, onnxruntime, peft; print('READY')"
+```
+
+### 1. 语料 → `<work>/corpus/*.txt`
+
+见上一节。清洗规则（`nwp_common.clean_doc`）：去 HTML 标签、丢 emoji/控制符、
+**删掉汉字之间的分词空格**（lccc 是预分词的）、少于 20 个汉字的文档丢弃、
+超长文档按标点就近截断。输出一行一条文档。
+
+### 2. 词表 → `vocab/char2id.json` + `vocab/word_vocab.txt`
+
+```bash
+# 真实：char2id 取自底座 tokenizer，word_vocab 取自 resource.zip + 成语/名句
+$PY scripts/nwp/build_vocab.py --char-source backbone:cluecorpus --vocab-source resource --size 30000
+
+# 另一个底座（Phase 1 探针用）
+$PY scripts/nwp/build_vocab.py --char-source backbone:wenzhong --vocab-source resource
+```
+
+本机实测（16 s）：
+
+```json
+{"char_vocab_size": 8081, "char_count": 5349, "word_vocab_size": 30000,
+ "agreement": {"token_count": 391, "merged_tokens": 7, "merge_rate": 0.018,
+               "per_char_mismatch": 0, "unknown_rate": 0.015}}
+```
+
+三件事值得说清楚：
+
+- **逐字 id 必须等于该字单独编码的 id**（`per_char_mismatch=0`）。这是端侧 char2id
+  与骨干 `wte` 对齐的实质。
+- **合并率不是错误**：BPE 会把常见字对合成一个 token（400 字 → 391 token，1.8%）。
+  端侧没有合并表，所以字级模型按字喂；这个比例是这条设计的固有代价，脚本会报出来。
+- **1017 个字的 token 解不回原字**（字节级 BPE 的半截 token），一律降级为 `<unk>`；
+  实测真实文本上的未知字率 **1.5%**。
+- word_vocab 强制入表 **3000 条成语 + 1500 条名句**（按频次取前 N），
+  挤掉了 3365 个最低频普通词。**上限是必需的**：成语表 8519 条、名句 13703 条，
+  全塞进 3 万词表会挤掉 2 万条高频词，词表就不再是「高频词表」了。
+
+### 3. 样本 → `samples/{train,valid,test}.jsonl`
+
+```bash
+$PY scripts/nwp/build_samples.py --work $W --context-words 128 --min-context-words 16 \
+  --max-context-ids 256
+```
+
+样本形如 `{"ids":[字id...],"label":词id,"ctx":"上下文原文"}`：上下文是**前 128 个词的字**，
+标签是第 129 个词的 id。文档按内容 hash 分到 train/valid/test（同一文档绝不跨分片）。
+
+**`--max-context-ids`（默认 256）是硬上限，按输入 id 数（= 字数）算，超了保留尾部。**
+为什么按字数而不是词数设限：端侧按**字符预算**喂输入，`manifest.context_tokens` 也是字符数。
+128 个词实际对应 200–550 个字，训练若超过端侧能喂的长度，多出来的部分推理时永远见不到，
+等于白训。截尾（而不是截头）与端侧「取已上屏文本最后 N 个码点」的语义一致；
+标签不受影响——上下文只是前文，丢掉开头不影响预测下一个词。
+
+本机实测（真实语料 370 KB，默认 256）：`max_ids_seen`（截尾前最长）**546**，
+train 47398 条里截尾 **8620** 条、valid 49 条里截尾 231 条、test 67 条里截尾 79 条；
+截尾后所有分片的最大 id 数都正好是 256。`report.json` 会记下
+`max_context_ids`、`max_ids_seen`、每个分片的 `truncated_by_max_context_ids`。
+
+**去重**（不是可选项，Sloth 的教训是报 47.3 实际 10.9）：先建 train 的 ≥8 字 n-gram
+指纹集合，valid 对 train 去重、test 对 train+valid 去重，命中就整条丢弃并报数。
+
+```bash
+$PY scripts/nwp/build_samples.py --dedup-selftest     # 8 字命中 / 7 字放过的边界自检
+```
+
+本机实测（370 KB 语料）：train 47398 条、valid 49 条（丢 92.5%）、test 67 条（丢 92.6%）。
+**丢弃率这么高是小语料 + 同源评测的必然结果**：语料只有 37 万字符，8-gram 宇宙本来就小，
+train 覆盖了其中大部分，于是同源的测试样本几乎都带重叠。真实场景的正确做法是
+**让测试集来自不同语体**（例如训练用 wiki+新闻、测试用 lccc），或把 `--dedup-min-match`
+提到 2–4（要求多条 n-gram 同时命中）；脚本两者都支持，并会把丢弃率写进
+`samples/report.json`。
+
+### 4. 训练
+
+```bash
+# CPU 冒烟（随机小骨干，验证管线；结论无意义）
+$PY scripts/nwp/train.py --smoke --max-steps 40
+
+# 4060 Laptop 8 GB 上的正式微调（用户机器执行）
+$PY scripts/nwp/train.py --backbone cluecorpus --max-steps 20000 \
+  --batch-size 8 --grad-accum 8 --dtype fp16 \
+  --lora-rank 16 --lr-head 1e-3 --lr-lora 1e-4 \
+  --head-warmup-steps 500 --warmup-steps 200 --schedule cosine
+```
+
+方法（实施 prompt §5，两条证据交叉，照做即可）：
+
+| 部件 | 做法 | 为什么 |
+|---|---|---|
+| 骨干 | **冻结 + LoRA（rank 16 / 32 各试一次）** | *The Fine-Tuning Trap*：<300M 全参微调会把效果压到零样本基线以下 |
+| 词级输出头 | **全参训练** | ULMFiT Table 7：只训最后一层（`Last`）比从头训还差 |
+| 学习率 | **判别式**：head 1e-3 > LoRA 1e-4 > 骨干 0 | ULMFiT 最优组合是 `Freez + discr + stlr` |
+| 解冻 | **先只训头 500 步，再加 LoRA 组** | ULMFiT 的 gradual unfreezing；注意是**把参数组加进优化器**，不是改 `requires_grad`（AdamW 不看它） |
+| 调度 | warmup + cosine（或 `--schedule stlr`） | 每组各自 warmup，LoRA 从解冻那一步重新 warmup |
+| 精度 | **fp16**（`--dtype fp16`） | 4060 Laptop 上 fp16 比 bf16 快 43%（spec 实测） |
+| 显存 | micro-batch 8 × grad-accum 8 = **等效 batch 64**，S=128 | spec 的显存预算：25M 级约 1.9 GB；133M 挂 LoRA 比全参（5–6 GB）宽裕 |
+| 损失 | 词表交叉熵，`ignore_index=0` | `<unk>` 标签学不了，直接忽略 |
+| 断点 | `--resume ckpt/last.pt` | 每 `--save-every` 步存 last/best |
+
+4060 上的时间/显存**估算**（不是实测，按 spec 的 FLOPs 模型外推）：
+133M、S=128、等效 batch 64 时每步约 0.2–0.4 s，2 万步约 **1.5–2.5 小时**；
+LoRA 训练显存 **< 4 GB**（8 GB 有余量，可把 batch 提到 16）。
+这些数字请以自己机器上的 `sec_per_step` 为准——训练脚本每 `--log-every` 步会打印。
+
+### 5. 基线（探针阶段必跑）
+
+```bash
+$PY scripts/nwp/baselines.py eval --baseline all --limit 2000
+$PY scripts/nwp/baselines.py ngram-stats        # 枚举 predict.marisa 的规模
+```
+
+- **unigram**：`word_vocab.txt` 的词频排序（有 `word_freq.json` 时用它精确排）。
+- **n-gram**：编译 `ngram_baseline.cc`（`g++ -O2 -std=c++17 ... -lmarisa`）到 `<work>/bin/`，
+  从 `resource.zip` 抽出 `model/predict.marisa`，一次进程批量查询。
+  两种查询口径：`spaced`（用我们自己的分词拼 `"词 词 词"`，5→1 词回退，**这份模型的真实上限**）
+  和 `chars`（字符后缀 12→1 字，**复现 app 现在的行为**）。
+
+实测这份 marisa 模型（全量枚举，1.2 s）：
+
+```
+keys=7955783   contexts_multiword=6057569 (76.14%)   max_context_words=5   keys_without_count_sep=0
+```
+
+与调研文档的 7,955,783 / 76.14% 完全一致。键格式实测为
+`<词1> <词2> ...\t<下一个词>\xFF<次数>`。
+顺带实测到一件与文档不同的事：这份 trie 有 **3 个子 trie**，
+`reverse_lookup(id)` 取不回各自不同的键（只能从头 `predictive_search` 顺序枚举），
+脚本里已经改用后者——如果你要复现文档里的枚举统计，注意这一点。
+
+任何一步不可用（没有 `resource.zip`、没有 `g++`、没有 `libmarisa`、模型打不开）
+都会降级成 `{"available": false, "reason": ...}` 并打印原因，**不让整条评测挂掉**。
+
+### 6. 评测
+
+```bash
+$PY scripts/nwp/eval.py run --checkpoint ckpt/best.pt --baseline all --limit 2000
+$PY scripts/nwp/eval.py run --onnx onnx/nwp.int8.onnx --limit 2000
+$PY scripts/nwp/eval.py report --inputs results/eval_*.json --out results/compare.md
+```
+
+指标只有 **top-1 / top-5 / MRR**（+ 可选 **BPB**）。**不比 PPL**：跨分词器比 PPL 是错的。
+
+### 7. 导出与量化
+
+```bash
+$PY scripts/nwp/export_onnx.py --eval-limit 512
+```
+
+产出 `onnx/nwp.onnx`（fp32）、`onnx/nwp.int8.onnx`（**动态范围** int8）、
+`onnx/word_vocab.txt`、`onnx/char2id.json`、`onnx/manifest.json`。
+
+- 量化只用 `quantize_dynamic`，**不做静态校准**（spec：静态定点 int8 在这些小模型上是抽奖，
+  93.20 → 30.95 的崩法出现过）。
+- **top-k 不进图**：脚本会扫图断言没有 `TopK/ArgMax/ArgMin`，Kotlin 侧取 top-k。
+- 导出前自动 `merge_and_unload()` 合并 LoRA，图里就是干净的骨干 + 词头。
+
+`manifest.json` 的 schema 是 Kotlin 下载器解析的，**一个键不多不少**：
+
+```json
+{"version":1,"name":"ime-nwp-zh","format":"onnx-int8","context_tokens":256,
+ "vocab_size":30000,"char_vocab_size":8081,"num_layers":12,"num_heads":12,"head_dim":64,
+ "model":{"file":"nwp.int8.onnx","bytes":126211758,"sha256":"..."},
+ "word_vocab":{"file":"word_vocab.txt","bytes":286208,"sha256":"..."},
+ "char_vocab":{"file":"char2id.json","bytes":79809,"sha256":"..."},
+ "eval":{"top1":0.0,"top5":0.0,"mrr":0.0}}
+```
+
+字段含义（`model.py` 的「ONNX 契约」一节是权威定义处）：
+
+- **`context_tokens` = 模型能接受的输入 id 个数上限，也就是字数上限**（端侧当字符预算用：
+  取已上屏文本最后 `min(context_tokens, 210)` 个码点喂 `input_ids`，并据此预分配 KV cache）。
+  **它不是词数**——S=128 个词对应 200–550 个字，写 128 会让端侧少喂约 40% 上下文且不报错。
+  取值来自 `samples/report.json` 的 `max_context_ids`（即 `build_samples.py --max-context-ids`），
+  可用 `--context-tokens` 覆盖；**默认 256 ≥ 端侧 prompt 预算 210**，不得低于样本上限——
+  低于它 `export_onnx.py` 会直接报错退出（提前到导出之前，不会白跑）。导出前还会逐条核对
+  参与评测的样本没有超过这个值。
+- `vocab_size`=词表行数（30000），`char_vocab_size`=char2id 最大值+1（8081）。
+- int8 失败时 `format` 退化为 `onnx-fp32`、`model.file` 指向 `nwp.onnx`，
+  原因写进 `results/export_report.json`。
+
+### 8. 端侧 ONNX I/O 契约（固定，不要改）
+
+`model.py::onnx_io_contract` 是唯一来源；训练与导出共用同一个前向。
+
+| 方向 | 名字 | dtype | shape |
+|---|---|---|---|
+| 输入 | `input_ids` | int64 | `[B, S]`（**字** id，来自 `char2id.json`） |
+| 输入 | `attention_mask` | int64 | `[B, P+S]`（1=真实，0=左填充/丢弃） |
+| 输入 | `position_ids` | int64 | `[B, S]`（**必须显式给**，否则增量步位置会算错） |
+| 输入 | `past_key_values.{i}.key` / `.value` | float32 | `[B, H, P, D]`，prefill 时 P=0 |
+| 输出 | `logits` | float32 | `[B, V_word]`，**只有最后一个位置**（约 120 KB） |
+| 输出 | `present.{i}.key` / `.value` | float32 | `[B, H, P+S, D]` |
+
+动态轴：`batch` / `sequence_length` / `total_sequence_length` / `past_sequence_length`。
+没有 cache 时把 past 传成长度 0 的张量即可（实测 ORT 1.30 正常，prefill 与全量前向一致）。
+
+## 真实 125.7M 模型上的导出实测（`uer/gpt2-chinese-cluecorpussmall`）
+
+本机没有 GPU，所以在 CPU 上训了 3 步（batch 2 × 累计 2，1.9–2.4 s/步）直接走完导出，
+为的是拿到**真实规模**的图、体积、KV cache 与对拍数据：
+
+```bash
+$PY scripts/nwp/train.py --work .nwp-work/nwp --backbone cluecorpus --max-steps 3 \
+  --batch-size 2 --grad-accum 2 --head-warmup-steps 2 --warmup-steps 10 \
+  --eval-every 0 --save-every 0 --out .nwp-work/nwp/ckpt-real
+$PY scripts/nwp/export_onnx.py --work .nwp-work/nwp \
+  --checkpoint .nwp-work/nwp/ckpt-real/best.pt --eval-limit 64 --parity-rows 4
+```
+
+| 项 | 实测值 |
+|---|---|
+| 骨干 / 词头 / 合计 | 102M + 23.4M（768→30000）= **125.7M** |
+| ONNX 图 | **2353 个节点**，无 `TopK/ArgMax` |
+| `nwp.onnx`（fp32） | **500.9 MB** |
+| `nwp.int8.onnx`（动态范围） | **126.2 MB** ← 目标 130 MB 达成 |
+| fp32 对拍（ONNX vs PyTorch） | top-1 **100.00%**，top-5 **100.00%**，max\|Δ\|=2.62e-06（相对 9.8e-07） |
+| KV cache（PyTorch） | max\|Δ\|=1.07e-06，top-1/top-5 一致 |
+| KV cache（ONNX 增量 27 字，2 步回灌） | max\|Δ\|=1.60e-06，top-1/top-5 一致，`present_len=27` |
+| `manifest.context_tokens` | **256**（= `build_samples --max-context-ids 256`；端侧字符预算 210 得到满足） |
+| int8 对拍 | top-1 **0.00%**，top-5 重合 50%，max\|Δ\|=0.67（相对 25%）——**见下面的说明，这组数字不可用作结论** |
+| 评测（67 条真实测试样本） | 模型 top-1 0.00% / BPB 2.4140；unigram top-1 0.00% / top-5 1.49%；n-gram top-1 0.00% / top-5 1.49% |
+
+**关于 int8 那行数字**：这个模型只训了 3 步，词头基本是随机的，logits 几乎是平的
+（std 0.51、max 2.67）。量化后的 Pearson 相关仍有 **0.968**，但「幅值 0.5 的 logits 上
+有 0.12 的绝对误差」足以让 argmax 在近似并列的候选之间乱跳。所以：
+
+- fp32 对拍 100% 是有效结论（**Phase 3 的验收条件**，量化误差在 1e-6 量级）；
+- int8 的 top-1 一致率在**未训练模型上没有意义**，必须在用户机器上训完之后重测。
+  脚本会在 `relative_diff > 5%` 时把这个提醒打到 stderr，并把
+  `logit_absmax` / `relative_diff` 一起写进 `results/export_report.json`。
+  如果真实 int8 掉点明显，退路是 **fp16（约 260 MB，仍在 300 MB 内）**，
+  这也是 spec §8 的检查点 3。
+
+## 验收证据（本机实跑，CPU）
+
+`bash scripts/nwp/smoke_test.sh`（退出码 0）：
+
+```
+=== 3/7 滑窗样本 + ≥8 字 n-gram 去重（含边界自检） ===
+  [PASS] 完全相同的 8 字片段: overlap=True expect=True
+  [PASS] 跨边界拼接的 8 字片段: overlap=True expect=True
+  [PASS] 只共享 7 字: overlap=False expect=False
+  [PASS] 完全无关: overlap=False expect=False
+  [PASS] hash 模式同判定: True
+[PASS] 测试集 177 条，被 ≥8 字 n-gram 去重丢掉 7892 条（97.81%）
+
+=== 6/7 导出 ONNX（fp32 + 动态范围 int8）+ manifest + top-k / KV cache 对拍 ===
+[18:54:xx]   图：507 个节点，禁止算子 无
+[18:54:xx] 动态范围 int8 → .../nwp.int8.onnx（0.2 MB）
+[18:54:xx]   fp32 top-1 一致率 100.00%，top-5 重合率 100.00%，max|Δ|=1.192e-07
+[18:54:xx]   int8 top-1 一致率 100.00%，top-5 重合率 100.00%，max|Δ|=9.113e-03
+[18:54:xx]   PyTorch KV：max|Δ|=5.960e-08 top1=一致 top5=一致
+[18:54:xx]   ONNX KV：max|Δ|=8.941e-08 present_len=11/11 top5=一致
+验收通过：fp32 对拍 100%，KV cache 路径一致，图中无 TopK/ArgMax
+```
+
+> 注意：以上是**小骨干**上的数字（验证的是管线与契约，不是质量）。
+> 真实 110M 的 int8 掉点必须在用户的机器上重测——**int8 是否掉分只能用真实模型说话**
+> （见 `results/export_report.json` 的 `parity_int8` 与 `eval_int8`）。
+
+## 目录里每个文件的职责
+
+| 文件 | 作用 |
+|---|---|
+| `nwp_common.py` | 工作目录布局、文本清洗、词表/分词（前向最大匹配）、n-gram 指纹、指标 |
+| `fetch_corpus.py` | 抓取/清洗语料，`--limit`/`--shards`/`--categories`；`--dataset synthetic` 生成离线小语料 |
+| `build_vocab.py` | `char2id.json`（对齐底座 tokenizer）+ `word_vocab.txt`（词频 + 强制成语/名句） |
+| `build_samples.py` | 滑窗样本 + ≥8 字 n-gram 去重（含边界自检 `--dedup-selftest`） |
+| `model.py` | 模型定义、LoRA 挂载/合并、checkpoint、**ONNX I/O 契约**、`verify-chars` 自检 |
+| `train.py` | LoRA + 全参词头、判别式 LR、逐步解冻、fp16/梯度累积/续训、`--smoke` |
+| `baselines.py` | unigram 与 n-gram 基线（含 C++ 助手编译与降级） |
+| `ngram_baseline.cc` | marisa-trie 批量查询（prefix 枚举 + 回退），`g++ ... -lmarisa` 按需编译 |
+| `eval.py` | top-1/top-5/MRR/BPB，评 checkpoint / ONNX / 基线，出 JSON + markdown |
+| `probe.py` | Phase 1：两个底座同步数对比 + 基线 + 结论 |
+| `export_onnx.py` | 导出 fp32/int8、扫图断言无 TopK、top-k 与 KV cache 对拍、写 manifest |
+| `smoke_test.sh` | 一条命令跑通全链路并在 CPU 上做完全部断言 |
+
+## 已知边界与未完成项
+
+1. **110M 正式微调的质量数字没有**（本机无 GPU）。`probe.py` 已就绪，命令见上；
+   跑完把 `probe/report.md` 填进 `.research/`。
+2. **4060 的时间/显存是估算**（来自 spec 的 FLOPs 模型），不是实测。
+3. **去重在自建小语料上丢弃率 90%+**，这是同源评测的必然结果；真实训练请让测试集换语体，
+   或提高 `--dedup-min-match`。脚本会如实报数，不会偷偷放宽。
+4. **int8 掉分未在真实模型上验证**；小骨干上 top-1 一致率 100%，但那只说明量化链路是通的。
+5. **`scripts/phrase-index/`（路径 1，成语/诗句前缀补全）不由本目录负责**，
+   `build_vocab.py` 只在它存在时顺手吸收其清单，不依赖。
+6. 断言/文案都以**简体中文注释解释「为什么」**为准（AGENTS.md）。
