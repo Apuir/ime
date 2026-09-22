@@ -118,6 +118,66 @@ def add_work_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_onnx_provider_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--onnx-provider", default=None, metavar="PROVIDER",
+        help="ONNX Runtime 推理后端，默认自动（有 CUDA 就用 CUDA，否则 CPU）。"
+             "可写简称 cuda / cpu / trt / tensorrt，或完整名 CUDAExecutionProvider。"
+             "注意**这是评测/导出的后端**，端侧仍然只走 XNNPACK CPU；用 GPU 需要装 onnxruntime-gpu")
+
+
+# 简称 → ORT 的完整 provider 名。写全名当然也行，这里只为少记几个字符串。
+_PROVIDER_ALIASES = {
+    "cuda": "CUDAExecutionProvider",
+    "gpu": "CUDAExecutionProvider",
+    "cpu": "CPUExecutionProvider",
+    "trt": "TensorrtExecutionProvider",
+    "tensorrt": "TensorrtExecutionProvider",
+    "dml": "DmlExecutionProvider",
+    "directml": "DmlExecutionProvider",
+    "coreml": "CoreMLExecutionProvider",
+    "openvino": "OpenVINOExecutionProvider",
+}
+
+
+def resolve_onnx_provider(requested: str | None, available: list[str]) -> str:
+    """把用户写的名字（简称或全名、不区分大小写）对到 `available` 里的一个 provider。"""
+    if not requested:
+        return "CUDAExecutionProvider" if "CUDAExecutionProvider" in available else "CPUExecutionProvider"
+    wanted = requested.strip()
+    # 1) 全名（不区分大小写）2) 简称表 3) 去掉 ExecutionProvider 后缀再比
+    for name in available:
+        if name.lower() == wanted.lower():
+            return name
+    alias = _PROVIDER_ALIASES.get(wanted.lower())
+    if alias and alias in available:
+        return alias
+    stem = wanted.lower().removesuffix("executionprovider")
+    for name in available:
+        if name.lower().removesuffix("executionprovider") == stem:
+            return name
+    raise SystemExit(
+        f"--onnx-provider {requested} 不可用；当前可选 {available}。"
+        f"（GPU 要装 onnxruntime-gpu 并确认 CUDA/cuDNN 版本匹配）")
+
+
+def onnx_providers(requested: str | None) -> list[str]:
+    """给出 ONNX Runtime 的 provider 列表；`requested=None` 时按可用性挑最好的。
+
+    为什么不让 ORT 自己挑：会话默认列表在装了 GPU 包时会**自动**用 CUDA，
+    在只想复现 CPU 数字时反而不可控；这里显式化，并在请求的后端不可用时响亮报错，
+    而不是静默退回 CPU 跑几小时。
+
+    注意只返回**一个** provider：不附带 CPU 兜底，否则「以为在用 GPU、其实在 CPU」
+    这种最难查的情况就回来了。
+    """
+    try:
+        import onnxruntime as ort
+    except ImportError:  # 让调用方自己报「onnxruntime 没装」
+        return [requested] if requested else ["CPUExecutionProvider"]
+    return [resolve_onnx_provider(requested, ort.get_available_providers())]
+
+
 def layout_from_args(args: argparse.Namespace) -> Layout:
     lay = Layout(args.work)
     lay.make()

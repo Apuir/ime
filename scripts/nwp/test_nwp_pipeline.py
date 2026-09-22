@@ -526,6 +526,40 @@ def test_fp16_export() -> dict:
                 "kv_present_len": int(pr["present.0.key"].shape[2]), "detail": reason}
 
 
+def test_onnx_provider_aliases() -> dict:
+    """`--onnx-provider` 的简称要能对到 ORT 的完整 provider 名。
+
+    回归的是这个 bug：最初拿 `cuda` 去和 `CUDAExecutionProvider` 做**精确字符串比较**，
+    于是 `--onnx-provider cuda` 在装了 onnxruntime-gpu 的机器上照样报「cuda 不可用」。
+    """
+    from nwp_common import resolve_onnx_provider
+
+    available = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    cases = {
+        "cuda": "CUDAExecutionProvider",
+        "CUDA": "CUDAExecutionProvider",
+        "cudaexecutionprovider": "CUDAExecutionProvider",   # 全名不分大小写
+        "CUDAExecutionProvider": "CUDAExecutionProvider",
+        "cpu": "CPUExecutionProvider",
+        "trt": "TensorrtExecutionProvider",
+        "tensorrt": "TensorrtExecutionProvider",
+        None: "CUDAExecutionProvider",                      # 不指定时优先 GPU
+    }
+    for given, want in cases.items():
+        got = resolve_onnx_provider(given, available)
+        assert got == want, f"resolve_onnx_provider({given!r}) = {got}，应为 {want}"
+    # 只有 CPU 的机器上不指定就退 CPU
+    assert resolve_onnx_provider(None, ["CPUExecutionProvider"]) == "CPUExecutionProvider"
+    # 真的不可用时要响亮报错，而不是静默退回 CPU
+    for bad in ("rocm", "banana"):
+        try:
+            resolve_onnx_provider(bad, available)
+            raise AssertionError(f"{bad} 不可用却没报错")
+        except SystemExit:
+            pass
+    return {"aliases": len(cases), "available": available}
+
+
 def test_onnx_parity_after_multi_label() -> dict:
     """(A3) 多位置监督改动之后，ONNX 仍是 `logits [B,V]` 且与 PyTorch top-1 100% 一致。"""
     import numpy as np
@@ -648,6 +682,7 @@ def main() -> int:
         ("C 轮流采样：三个来源都进训练集", test_round_robin_sources),
         ("D 词头热启动 + resume 不重置", test_head_warmstart),
         ("E fp16 导出：I/O float32/无 TopK/更小/可跑", test_fp16_export),
+        ("--onnx-provider 简称 cuda/cpu/trt 能对上 ORT 全名", test_onnx_provider_aliases),
         ("约束 cap=128/160 都能跑", test_max_context_ids_variants),
         ("训练循环不变量：每窗口一次更新 + 迭代器只建一次", test_train_loop_invariants),
         ("评测量的是末位标签（必然答对的假模型 top1==1）", test_quick_metric_uses_last_position_label),

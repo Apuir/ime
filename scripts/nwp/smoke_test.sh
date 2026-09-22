@@ -101,6 +101,20 @@ step "6.5/9 fp16 导出路径（--fp16：I/O 仍 float32、无 TopK、体积更�
 "$PY" "$ROOT/scripts/nwp/export_onnx.py" --work "$WORK" --out-dir "$WORK/onnx-fp16" \
   --fp16 --eval-limit 32 --parity-rows 4 2>&1 | grep -E 'fp16|一致率|验收|格式' || true
 
+step "6.6/9 --also-fp16：主交付仍是 int8，同时落一份 fp16 供量掉点"
+"$PY" "$ROOT/scripts/nwp/export_onnx.py" --work "$WORK" --out-dir "$WORK/onnx-both" \
+  --also-fp16 --eval-limit 32 --parity-rows 4 2>&1 | grep -E 'int8|fp16|一致率|验收' || true
+"$PY" - "$WORK" <<'EOF'
+import json, os, sys
+d = os.path.join(sys.argv[1], "onnx-both")
+man = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
+# 两个文件写同一份 manifest.json，主交付只能有一个：--also-fp16 的主交付必须是 int8
+assert man["format"] == "onnx-int8" and man["model"]["file"] == "nwp.int8.onnx", man
+for f in ("nwp.int8.onnx", "nwp.fp16.onnx"):
+    assert os.path.getsize(os.path.join(d, f)) > 0, f"缺产物 {f}"
+print("[PASS] --also-fp16 同时产出 int8 与 fp16，manifest 指向 nwp.int8.onnx")
+EOF
+
 step "7/9 校验产物"
 PYTHONPATH="$ROOT/scripts/nwp" "$PY" - "$WORK" <<'EOF'
 import json, sys, os
@@ -127,6 +141,12 @@ print(f"[PASS] manifest.context_tokens={man['context_tokens']} == samples.max_co
       f"（默认配置 {DEFAULT_MAX_CONTEXT_IDS} ≥ 端侧预算 {DEVICE_PROMPT_BUDGET_CHARS}）")
 rep = json.load(open(os.path.join(work, "results", "export_report.json"), encoding="utf-8"))
 assert rep["context_tokens"] == man["context_tokens"]
+# 默认导出与 6.5 的 `--fp16` 写的是同一份 manifest.json，后者会把 format 改成 onnx-fp16。
+# 这里只断言「清单指向的文件确实存在且与 format 对得上」，不锁定具体格式。
+assert man["model"]["file"] == {
+    "onnx-int8": "nwp.int8.onnx", "onnx-fp16": "nwp.fp16.onnx",
+    "onnx-fp32": "nwp.onnx"}[man["format"]], f"manifest.format 与 model.file 不匹配：{man}"
+assert os.path.getsize(os.path.join(work, "onnx", man["model"]["file"])) > 0
 assert sum(rep["samples_truncated_by_max_context_ids"].values()) > 0, "导出报告里没有截尾计数"
 p32 = rep["parity_fp32"]
 assert p32["top1_agreement"] == 1.0, f"fp32 top-1 一致率不是 100%：{p32}"

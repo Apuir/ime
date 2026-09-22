@@ -35,12 +35,14 @@ from model import export_onnx, load_checkpoint  # noqa: E402
 from nwp_common import (  # noqa: E402
     DEFAULT_MAX_CONTEXT_IDS,
     DEVICE_PROMPT_BUDGET_CHARS,
+    add_onnx_provider_arg,
     add_work_arg,
     file_bytes,
     layout_from_args,
     load_char2id,
     load_word_vocab,
     log,
+    onnx_providers,
     prepare_hf_env,
     read_json,
     sha256_file,
@@ -57,13 +59,14 @@ MANIFEST_NAME = "ime-nwp-zh"
 
 
 class OnnxRunner:
-    def __init__(self, path: Path, num_layers: int, num_heads: int, head_dim: int) -> None:
+    def __init__(self, path: Path, num_layers: int, num_heads: int, head_dim: int,
+                 provider: str | None = None) -> None:
         import onnxruntime as ort
 
         so = ort.SessionOptions()
         so.log_severity_level = 3
         self.path = Path(path)
-        self.session = ort.InferenceSession(str(path), so, providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(str(path), so, providers=onnx_providers(provider))
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.head_dim = head_dim
@@ -322,13 +325,21 @@ def graph_op_check(path: Path) -> dict:
     }
 
 
-def quantize_int8(src: Path, dst: Path) -> tuple[bool, str]:
+def quantize_int8(src: Path, dst: Path, per_channel: bool = False) -> tuple[bool, str]:
+    """动态范围 int8。`per_channel=True` 时每个输出通道一组量化参数（默认每张量一组）。
+
+    为什么要开 per-channel：整份权重共用一组 scale/zero-point 时，动态范围被最大的那些通道
+    决定，小权重容易被压成 0。词头（768→30000）与骨干的权重分布差得远，实测 per-tensor
+    的 int8 在 20 万条上掉 1.01 pp、相对 logits 失真 12.9%。粒度变细不改变算子选择，
+    所以速度应当不变——但**这一点必须实测**，见 `bench_quant_speed.sh`。
+    """
     try:
         from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError as e:  # 量化工具缺 onnx 之类的依赖时降级为只出 fp32
         return False, f"onnxruntime.quantization 不可用：{e}"
     try:
-        quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8, op_types_to_quantize=None)
+        quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8,
+                         op_types_to_quantize=None, per_channel=per_channel)
     except Exception as e:  # noqa: BLE001 量化失败不该让整条导出挂掉，交 fp32 并报明原因
         return False, f"quantize_dynamic 失败：{type(e).__name__}: {e}"
     return True, ""
@@ -348,7 +359,15 @@ def main() -> int:
     ap.add_argument("--no-int8", action="store_true",
                     help="不量化 int8，改为交付 fp16（约 260 MB）；这是文档写的退化方案")
     ap.add_argument("--fp16", action="store_true",
-                    help="与 --no-int8 等价：交付 nwp.fp16.onnx（I/O 仍是 float32，端侧契约不变）")
+                    help="与 --no-int8 等价：**只**交付 nwp.fp16.onnx（I/O 仍是 float32，端侧契约不变）")
+    ap.add_argument("--also-fp16", action="store_true",
+                    help="主交付 int8，同时产出 nwp.fp16.onnx 供对比；manifest 仍指向 int8。"
+                         "单跑一次 --fp16 与一次 int8 导出写的是同一个 manifest.json，"
+                         "后跑的那次会覆盖前一次的，拿两个文件必须用这个开关")
+    ap.add_argument("--int8-per-tensor", action="store_true",
+                    help="int8 权重退回到「每张量一组」量化参数（旧的默认）。实测这样会把小权重压没："
+                         "20 万条 top-1 掉 1.01 pp、2 千条上与 per-channel 差 0.95 pp，"
+                         "体积只省 0.45 MB、速度一样——除非要复现旧数字，否则别开")
     ap.add_argument("--fp32", action="store_true",
                     help="只出 fp32 的 nwp.onnx（真正的保底逃生口，体积约 500 MB）")
     ap.add_argument("--parity", action="store_true", default=True)
@@ -357,6 +376,7 @@ def main() -> int:
     ap.add_argument("--no-kv-check", dest="kv_check", action="store_false")
     ap.add_argument("--parity-rows", type=int, default=8)
     add_work_arg(ap)
+    add_onnx_provider_arg(ap)
     args = ap.parse_args()
 
     lay = layout_from_args(args)
@@ -424,6 +444,9 @@ def main() -> int:
     fp16_ok, fp16_reason = (False, "未启用")
     fp16 = out_dir / "nwp.fp16.onnx"
 
+    if args.fp16 and args.also_fp16:
+        raise SystemExit("--fp16 与 --also-fp16 互斥：前者把 fp16 当作交付格式，后者是 int8 之外的补充")
+
     if args.fp32:
         log("按 --fp32 只交付 fp32（500 MB 级，仅作保底）")
     elif args.fp16 or args.no_int8:
@@ -433,13 +456,28 @@ def main() -> int:
             log(f"fp16 → {fp16}（{file_bytes(fp16) / 1e6:.1f} MB；I/O 仍是 float32）{fp16_reason}")
         else:
             log(f"⚠ fp16 转换失败，退回 int8 尝试：{fp16_reason}")
-    if not args.fp32 and not fp16_ok:
-        int8_ok, int8_reason = quantize_int8(fp32, int8)
+    # `--fp16` 是「不要 int8，改交 fp16」的意思：fp16 转换成功时它就是交付格式，
+    # 不能再回头做 int8 —— 两个文件写同一份 manifest.json，主交付只能有一个，
+    # 顺手把 int8 也生成出来只会让 manifest 指向一个用户没要的格式。
+    # `--also-fp16` 相反：主交付 int8，另外落一份 fp16 供对比量掉点。
+    int8_wanted = args.also_fp16 or (not fp16_ok and not args.fp32)
+    if int8_wanted:
+        per_channel = not args.int8_per_tensor
+        int8_ok, int8_reason = quantize_int8(fp32, int8, per_channel=per_channel)
         if int8_ok:
-            report["int8"] = {"file": int8.name, "bytes": file_bytes(int8)}
-            log(f"动态范围 int8 → {int8}（{file_bytes(int8) / 1e6:.1f} MB）")
+            report["int8"] = {"file": int8.name, "bytes": file_bytes(int8),
+                              "per_channel": per_channel}
+            log(f"动态范围 int8（{'per-channel' if per_channel else 'per-tensor'}）"
+                f" → {int8}（{file_bytes(int8) / 1e6:.1f} MB）")
         else:
             log(f"⚠ int8 失败，只交 fp32：{int8_reason}")
+    if args.also_fp16 and int8_ok and not fp16_ok:
+        fp16_ok, fp16_reason = convert_to_fp16(fp32, fp16)
+        if fp16_ok:
+            report["fp16"] = {"file": fp16.name, "bytes": file_bytes(fp16), "detail": fp16_reason}
+            log(f"fp16（对比用，不进 manifest）→ {fp16}（{file_bytes(fp16) / 1e6:.1f} MB）{fp16_reason}")
+        else:
+            log(f"⚠ fp16 转换失败，只剩 int8：{fp16_reason}")
     report["int8_available"] = int8_ok
     report["int8_reason"] = int8_reason
     report["fp16_available"] = fp16_ok
@@ -460,9 +498,10 @@ def main() -> int:
 
     # ------------------------------------------------------------------ 对拍
     H, D = model.num_heads, model.head_dim
-    runner = OnnxRunner(fp32, model.num_layers, H, D)
-    runner8 = OnnxRunner(int8, model.num_layers, H, D) if int8_ok else None
-    runner16 = OnnxRunner(fp16, model.num_layers, H, D) if fp16_ok else None
+    prov = args.onnx_provider
+    runner = OnnxRunner(fp32, model.num_layers, H, D, prov)
+    runner8 = OnnxRunner(int8, model.num_layers, H, D, prov) if int8_ok else None
+    runner16 = OnnxRunner(fp16, model.num_layers, H, D, prov) if fp16_ok else None
     if args.parity:
         # 对齐到同一长度：对拍批次内左填充后按行比较，ONNX 逐条跑（不填充）
         fixed = [[r["ids"] for r in rows[i : i + 4]] for i in range(0, min(len(rows), args.parity_rows), 4)]
